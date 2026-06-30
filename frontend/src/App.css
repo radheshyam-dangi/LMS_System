@@ -1,0 +1,164 @@
+.app-shell {
+  width: min(960px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0;
+  text-align: left;
+}
+
+.auth-panel,
+.content-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 24px;
+  background: var(--surface);
+}
+
+.auth-panel {
+  display: grid;
+  gap: 20px;
+  max-width: 520px;
+  margin: 48px auto;
+}
+
+.auth-panel p,
+.content-panel p {
+  color: var(--text);
+}
+
+.auth-form {
+  display: grid;
+  gap: 14px;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-h);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.auth-form input {
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 12px;
+  font: inherit;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+button {
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+button:hover,
+button.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.auth-form button,
+.request-actions button:first-child {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+}
+
+.topbar div {
+  display: grid;
+  gap: 2px;
+}
+
+.topbar span,
+.request-row span {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.content-panel {
+  margin-top: 16px;
+}
+
+.request-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.request-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.request-row div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.request-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.form-message {
+  color: var(--accent);
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    width: min(100% - 20px, 960px);
+    padding: 16px 0;
+  }
+
+  .auth-panel,
+  .content-panel {
+    padding: 16px;
+  }
+
+  .topbar,
+  .request-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .request-actions {
+    justify-content: stretch;
+  }
+
+  .request-actions button {
+    flex: 1 1 140px;
+  }
+}
