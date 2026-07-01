@@ -5,7 +5,10 @@ export declare class UserController {
     constructor(userService: UserService);
     findAll(): Promise<import("../../entities/user.entity").UserEntity[]>;
     signup(signUpDto: UserModel): Promise<import("../../entities/user.entity").UserEntity>;
-    login(body: Pick<UserModel, 'email' | 'password'>): Promise<import("../../entities/user.entity").UserEntity>;
+    login(body: Pick<UserModel, 'email' | 'password'>): Promise<{
+        user: import("../../entities/user.entity").UserEntity;
+        accessToken: string;
+    }>;
     roleRequests(): Promise<import("../../entities/user.entity").UserEntity[]>;
     findOne(id: string): Promise<import("../../entities/user.entity").UserEntity | null>;
     updateRole(id: string, body: {

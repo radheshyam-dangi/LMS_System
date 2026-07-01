@@ -6,4 +6,5 @@ export declare class UserEntity extends BaseEntity {
     lastName: string;
     password: string;
     roles: RoleEntity[];
+    primaryRole: RoleEntity;
 }

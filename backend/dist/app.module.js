@@ -21,6 +21,8 @@ const evaluation_module_1 = require("./databaseOrm/modules/evaluation/evaluation
 const document_module_1 = require("./databaseOrm/modules/document/document.module");
 const submission_module_1 = require("./databaseOrm/modules/submission/submission.module");
 const tag_module_1 = require("./databaseOrm/modules/tag/tag.module");
+const email_module_1 = require("./databaseOrm/modules/email/email.module");
+const auth_module_1 = require("./databaseOrm/auth/auth.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -42,6 +44,8 @@ exports.AppModule = AppModule = __decorate([
             document_module_1.DocumentModule,
             submission_module_1.SubmissionModule,
             tag_module_1.TagModule,
+            email_module_1.EmailModule,
+            auth_module_1.AuthModule
         ],
     })
 ], AppModule);

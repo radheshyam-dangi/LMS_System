@@ -11,7 +11,10 @@ export declare class UserService extends BaseService<UserEntity> {
     findOne(id: any): Promise<UserEntity | null>;
     create(data: UserModel): Promise<UserEntity>;
     findByEmail(email: string): Promise<UserEntity | null>;
-    login(email: string, password: string): Promise<UserEntity>;
+    login(email: string, password: string): Promise<{
+        user: UserEntity;
+        accessToken: string;
+    }>;
     findRoleRequests(): Promise<UserEntity[]>;
     updateUserRole(userId: string, roleName: string): Promise<UserEntity>;
     private ensureSystemRoles;

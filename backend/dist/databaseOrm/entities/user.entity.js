@@ -21,6 +21,8 @@ let UserEntity = class UserEntity extends base_entity_1.BaseEntity {
     lastName;
     password;
     roles;
+    // Inside user.entity.ts
+    primaryRole; // 👈 Check that this is exactly "primaryRole" and not "primary_role"
 };
 exports.UserEntity = UserEntity;
 __decorate([
@@ -69,6 +71,11 @@ __decorate([
     }),
     __metadata("design:type", Array)
 ], UserEntity.prototype, "roles", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => role_entity_1.RoleEntity, { eager: true, nullable: true }),
+    (0, typeorm_1.JoinColumn)({ name: 'primary_role_id' }),
+    __metadata("design:type", role_entity_1.RoleEntity)
+], UserEntity.prototype, "primaryRole", void 0);
 exports.UserEntity = UserEntity = __decorate([
     (0, typeorm_1.Entity)(entity_1.Entities.User)
 ], UserEntity);

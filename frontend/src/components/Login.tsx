@@ -12,10 +12,12 @@ type User = {
   firstName?: string;
   lastName?: string;
   roles?: UserRole[];
+  primaryRole?: { name: string }; // Match your TypeORM structure
 };
 
+// Upgraded: Adjust the type definition to match your backend's compound response
 type LoginProps = {
-  onLogin: (user: User) => void;
+  onLogin: (data: { user: User; accessToken: string }) => void;
 };
 
 function Login({ onLogin }: LoginProps) {
@@ -42,6 +44,7 @@ function Login({ onLogin }: LoginProps) {
         throw new Error(result.message || 'Login failed');
       }
 
+      // Upgraded: Hand the data directly to onLogin wrapper (handled inside App.tsx)
       onLogin(result);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Login failed');

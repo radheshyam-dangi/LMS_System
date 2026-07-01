@@ -13,6 +13,8 @@ import { EvaluationModule } from './databaseOrm/modules/evaluation/evaluation.mo
 import { DocumentModule } from './databaseOrm/modules/document/document.module';
 import { SubmissionModule } from './databaseOrm/modules/submission/submission.module';
 import { TagModule } from './databaseOrm/modules/tag/tag.module';
+import { EmailModule } from './databaseOrm/modules/email/email.module';
+import { AuthModule } from './databaseOrm/auth/auth.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { TagModule } from './databaseOrm/modules/tag/tag.module';
     DocumentModule,
     SubmissionModule,
     TagModule,
+    EmailModule,
+    AuthModule
   ],
 })
 export class AppModule {}

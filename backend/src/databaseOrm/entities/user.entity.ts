@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToMany, JoinTable } from 'typeorm';
+import { Entity, Column, ManyToMany, JoinTable, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { RoleEntity } from './role.entity';
 import { Entities, Junctions } from '../../constants/entity';
@@ -45,6 +45,11 @@ export class UserEntity extends BaseEntity {
       name: ForeignKeys.UserRoles.RoleId,
       referencedColumnName: 'id',
     },
+    
   })
   roles: RoleEntity[];
+  // Inside user.entity.ts
+@ManyToOne(() => RoleEntity, { eager: true, nullable: true })
+@JoinColumn({ name: 'primary_role_id' })
+primaryRole: RoleEntity; // 👈 Check that this is exactly "primaryRole" and not "primary_role"
 }

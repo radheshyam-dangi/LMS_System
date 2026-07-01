@@ -5,6 +5,8 @@ import { BaseService } from './base.service';
 import { UserEntity } from '../entities/user.entity'; // Path to where your actual entity class sits
 import { RoleEntity } from '../entities/role.entity';
 import { UserModel } from '../../types/models/user.model';
+import * as bcrypt from 'bcrypt';
+import * as jwt from 'jsonwebtoken';
 
 const SYSTEM_ROLES = ['Admin', 'Trainee', 'Trainer'] as const;
 type SystemRole = (typeof SYSTEM_ROLES)[number];
@@ -26,12 +28,13 @@ export class UserService extends BaseService<UserEntity> {
   }
 
   async findOne(id: any): Promise<UserEntity | null> {
+    console.log("User find succcessfully");
     return await this.userRepository.findOne({ where: { id }, relations: ['roles'] });
   }
 
   async create(data: UserModel): Promise<UserEntity> {
-    if (!data.email || !data.password) {
-      throw new BadRequestException('Email and password are required');
+    if (!data.password) {
+      throw new BadRequestException('password are required');
     }
 
     const existingUser = await this.findByEmail(data.email);
@@ -60,14 +63,41 @@ export class UserService extends BaseService<UserEntity> {
     return await this.userRepository.findOne({ where: { email }, relations: ['roles'] });
   }
 
-  async login(email: string, password: string): Promise<UserEntity> {
-    const user = await this.findByEmail(email);
-    if (!user || user.password !== password) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
+  async login(email: string, password: string): Promise<{ user: UserEntity; accessToken: string }> {
+  const user = await this.userRepository.findOne({ 
+    where: { email }, 
+    relations: ['roles', 'primaryRole'] // Ensure primaryRole is fetched!
+  });
 
-    return user;
+  if (!user || !user.password) {
+    throw new UnauthorizedException('Invalid email or password');
   }
+
+  // 1. Verify the hashed password
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) {
+    throw new UnauthorizedException('Invalid email or password');
+  }
+
+  // 2. Generate an access token containing the essential payload details
+  const JWT_SECRET = 'your-secure-invitation-secret-key'; // Keep this safe in env variables
+  const accessToken = jwt.sign(
+    {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      roles: user.roles?.map(r => r.name) || [],
+      primaryRole: user.primaryRole?.name || 'Trainee'
+    },
+    JWT_SECRET,
+    { expiresIn: '1d' }
+  );
+
+  // Remove password from returned data for security
+
+  return { user, accessToken };
+}
 
   async findRoleRequests(): Promise<UserEntity[]> {
     const users = await this.findAll();
