@@ -47,6 +47,11 @@ let EmailService = class EmailService {
     transporter;
     JWT_SECRET = 'your-secure-invitation-secret-key'; // Move to .env later
     async onModuleInit() {
+        /**
+         * If we have the smtp config in env then don't create test account, instead use the smtp config.
+         *
+         * ConfigService - For ENV, (create a env configuration client, which check the requred env before running the server, if required envs are not present then throw error.)
+         */
         const testAccount = await nodemailer.createTestAccount();
         this.transporter = nodemailer.createTransport({
             host: testAccount.smtp.host,

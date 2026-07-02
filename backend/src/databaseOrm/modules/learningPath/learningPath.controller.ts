@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { LearningPathService } from './learningPath.service';
+import { LearningPathEntityService } from './learningPath.service';
 import { RoutePaths } from '../../../constants/routePaths';
 
 // Clean 'import type' setup to keep isolatedModules fully happy
@@ -7,7 +7,7 @@ import type {LearningPathModel } from '../../../types/models/learningPath.model'
 
 @Controller(RoutePaths.LearningPaths)
 export class LearningPathController {
-  constructor(private readonly learningPathService: LearningPathService) {}
+  constructor(private readonly learningPathService: LearningPathEntityService) {}
 
   @Post()
   async create(@Body() dto: LearningPathModel) {

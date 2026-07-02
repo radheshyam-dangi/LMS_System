@@ -1,12 +1,12 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { AssignmentService } from './assignment.service';
+import { AssignmentEntityService } from './assignment.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { AssignmentModel } from '../../../types/models/assignment.model';
 
 
 @Controller(RoutePaths.Assignments)
 export class AssignmentController {
-  constructor(private readonly assignmentService: AssignmentService) {}
+  constructor(private readonly assignmentService: AssignmentEntityService) {}
 
   @Post()
   async create(@Body() dto: AssignmentModel) {

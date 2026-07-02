@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { LearningPathService as MainLearningPathService } from '../../services/learningPath.service';
+import { LearningPathEntityService } from '../../services/learningPath.service';
 
 @Injectable()
-export class LearningPathService extends MainLearningPathService {}
+export class LearningPathService{
+    constructor(private learningPathEntityService:LearningPathEntityService){}
+}
+export {LearningPathEntityService};

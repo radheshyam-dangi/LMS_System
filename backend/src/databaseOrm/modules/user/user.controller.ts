@@ -1,10 +1,10 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { UserService } from './user.service';
+import { UserEntityService } from './user.service';
 import type{ UserModel } from '../../../types/models/user.model';
 import { RoutePaths } from '../../../constants/routePaths';
 @Controller(RoutePaths.Users)
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(private readonly userService: UserEntityService) {}
 
   @Get()
   async findAll() {

@@ -1,12 +1,12 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { ModuleService } from './module.service';
+import { ModuleEntityService } from './module.service';
 import { RoutePaths } from '../../../constants/routePaths';
 // 'import type' ensures compliance with your strict isolatedModules config
 import type { ModuleModel } from '../../../types/models/module.model';
 
 @Controller(RoutePaths.Modules)
 export class ModuleController {
-  constructor(private readonly moduleService: ModuleService) {}
+  constructor(private readonly moduleService: ModuleEntityService) {}
 
   @Post()
   async create(@Body() dto: ModuleModel) {

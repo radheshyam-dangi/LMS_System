@@ -1,23 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { LearningPathEntity } from '../entities/learningPath.entity';
 
 @Injectable()
-export class LearningPathService extends BaseService<LearningPathEntity> {
+export class LearningPathEntityService extends BaseService<LearningPathEntity> {
+  protected repository: Repository<LearningPathEntity>;
   constructor(
-    @InjectRepository(LearningPathEntity)
-    private readonly learningPathRepository: Repository<LearningPathEntity>,
+    datasource : DataSource
   ) {
-    super(learningPathRepository);
+    super();
+    this.repository = datasource.getRepository<LearningPathEntity>(LearningPathEntity)
   }
 
   /**
    * Custom Query Example: Find all live learning paths with their assigned modules
    */
   async findActivePathsWithModules(): Promise<LearningPathEntity[]> {
-    return await this.learningPathRepository.find({
+    return await this.repository.find({
       where: { status: 'active' } as any,
       relations: ['modules'],
     });

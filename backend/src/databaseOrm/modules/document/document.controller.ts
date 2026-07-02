@@ -1,11 +1,11 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { DocumentService } from './document.service';
+import { DocumentEntityService } from './document.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { DocumentModel } from '../../../types/models/document.model';
 
 @Controller(RoutePaths.Documents)
 export class DocumentController {
-  constructor(private readonly documentService: DocumentService) {}
+  constructor(private readonly documentService: DocumentEntityService) {}
 
   @Post()
   async create(@Body() dto: DocumentModel) {

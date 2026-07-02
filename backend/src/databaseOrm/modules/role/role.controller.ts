@@ -1,10 +1,10 @@
 import { Controller,Get,Post,Body,Param,Put,Delete } from "@nestjs/common";
-import {RoleService} from "./role.service";
+import {RoleEntityService} from "./role.service";
 import type {RoleModel} from "../../../types/models/role.model"
 import { RoutePaths } from "../../../constants/routePaths";
 @Controller(RoutePaths.Roles)
 export class RoleConttroller{
-    constructor(private readonly roleService:RoleService){}
+    constructor(private readonly roleService:RoleEntityService){}
     @Post()
       async create(@Body() createUserDto: RoleModel) {
         return await this.roleService.create(createUserDto);

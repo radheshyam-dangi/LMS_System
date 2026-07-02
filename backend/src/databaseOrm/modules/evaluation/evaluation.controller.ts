@@ -1,11 +1,11 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { EvaluationService } from './evaluation.service';
+import { EvaluationEntitytService } from './evaluation.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { EvaluationModel } from '../../../types/models/evaluation.model';
 
 @Controller(RoutePaths.Evaluations)
 export class EvaluationController {
-  constructor(private readonly evaluationService: EvaluationService) {}
+  constructor(private readonly evaluationService: EvaluationEntitytService) {}
 
   @Post()
   async create(@Body() dto: EvaluationModel) {

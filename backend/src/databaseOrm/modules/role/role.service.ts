@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { RoleService as MainUserService } from "../../services/role.service";
+import { RoleEntityService} from "../../services/role.service";
 
 @Injectable()
-export class RoleService extends MainUserService {}
+export class RoleService  {
+constructor (private roleEntityService:RoleEntityService){}
+}
+export {RoleEntityService};

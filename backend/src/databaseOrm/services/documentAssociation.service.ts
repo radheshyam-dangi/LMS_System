@@ -3,13 +3,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { DocumentAssociationEntity } from '../entities/documentAssociation.entity';
+import { DataSource } from 'typeorm/browser';
 
 @Injectable()
-export class DocumentAssociationService extends BaseService<DocumentAssociationEntity> {
+export class DocumentAssociationEntityService extends BaseService<DocumentAssociationEntity> {
+  protected repository: Repository<DocumentAssociationEntity>;
   constructor(
-    @InjectRepository(DocumentAssociationEntity)
-    private readonly documentAssociationRepository: Repository<DocumentAssociationEntity>,
+      datasource:DataSource
+
   ) {
-    super(documentAssociationRepository);
+    super();
+    this.repository = datasource.getRepository<DocumentAssociationEntity>(DocumentAssociationEntity)
   }
 }

@@ -1,11 +1,11 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { TagService } from './tag.service';
+import { TagEntityService } from './tag.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { TagModel } from '../../../types/models/tag.model';
 
 @Controller(RoutePaths.Tags)
 export class TagController {
-  constructor(private readonly tagService: TagService) {}
+  constructor(private readonly tagService: TagEntityService) {}
 
   @Post()
   async create(@Body() dto: TagModel) {

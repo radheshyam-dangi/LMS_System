@@ -41,63 +41,56 @@ var __importStar = (this && this.__importStar) || (function () {
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UserService = void 0;
+exports.UserEntityService = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
-const typeorm_2 = require("typeorm");
+const typeorm_1 = require("typeorm");
 const base_service_1 = require("./base.service");
 const user_entity_1 = require("../entities/user.entity"); // Path to where your actual entity class sits
-const role_entity_1 = require("../entities/role.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const jwt = __importStar(require("jsonwebtoken"));
+const inspector_1 = require("inspector");
 const SYSTEM_ROLES = ['Admin', 'Trainee', 'Trainer'];
-let UserService = class UserService extends base_service_1.BaseService {
-    userRepository;
-    roleRepository;
-    constructor(userRepository, roleRepository) {
-        // Pass the user repository up to the generic BaseService
-        super(userRepository);
-        this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
+let UserEntityService = class UserEntityService extends base_service_1.BaseService {
+    repository;
+    constructor(datasource) {
+        super();
+        this.repository = datasource.getRepository(user_entity_1.UserEntity);
     }
     async findAll() {
-        return await this.userRepository.find({ relations: ['roles'] });
+        return await this.repository.find({ relations: ['roles'] });
     }
     async findOne(id) {
-        console.log("User find succcessfully");
-        return await this.userRepository.findOne({ where: { id }, relations: ['roles'] });
+        inspector_1.console.log("User find succcessfully");
+        return await this.repository.findOne({ where: { id }, relations: ['roles'] });
     }
-    async create(data) {
-        if (!data.password) {
-            throw new common_1.BadRequestException('password are required');
-        }
-        const existingUser = await this.findByEmail(data.email);
-        if (existingUser) {
-            throw new common_1.BadRequestException('User already exists with this email');
-        }
-        await this.ensureSystemRoles();
-        const userCount = await this.userRepository.count();
-        const roleName = userCount === 0 ? 'Admin' : 'Trainee';
-        const role = await this.getRoleByName(roleName);
-        const user = this.userRepository.create({
-            email: data.email,
-            password: data.password,
-            firstName: data.firstName,
-            lastName: data.lastName,
-            roles: [role],
-        });
-        return await this.userRepository.save(user);
-    }
+    // async create(data: UserModel): Promise<UserEntity> {
+    //   if (!data.password) {
+    //     throw new BadRequestException('password are required');
+    //   }
+    //   const existingUser = await this.findByEmail(data.email);
+    //   if (existingUser) {
+    //     throw new BadRequestException('User already exists with this email');
+    //   }
+    //   await this.ensureSystemRoles();
+    //   const userCount = await this.userRepository.count();
+    //   const roleName: SystemRole = userCount === 0 ? 'Admin' : 'Trainee';
+    //   const role = await this.getRoleByName(roleName);
+    //   const user = this.userRepository.create({
+    //     email: data.email,
+    //     password: data.password,
+    //     firstName: data.firstName,
+    //     lastName: data.lastName,
+    //     roles: [role],
+    //   });
+    //   return await this.userRepository.save(user);
+    // }
     // You can add specific custom queries for users here
     async findByEmail(email) {
-        return await this.userRepository.findOne({ where: { email }, relations: ['roles'] });
+        return await this.repository.findOne({ where: { email }, relations: ['roles'] });
     }
     async login(email, password) {
-        const user = await this.userRepository.findOne({
+        const user = await this.repository.findOne({
             where: { email },
             relations: ['roles', 'primaryRole'] // Ensure primaryRole is fetched!
         });
@@ -119,48 +112,16 @@ let UserService = class UserService extends base_service_1.BaseService {
             roles: user.roles?.map(r => r.name) || [],
             primaryRole: user.primaryRole?.name || 'Trainee'
         }, JWT_SECRET, { expiresIn: '1d' });
-        // Remove password from returned data for security
         return { user, accessToken };
     }
     async findRoleRequests() {
         const users = await this.findAll();
         return users.filter((user) => user.roles?.some((role) => role.name === 'Trainee'));
     }
-    async updateUserRole(userId, roleName) {
-        if (!SYSTEM_ROLES.includes(roleName)) {
-            throw new common_1.BadRequestException('Role must be Admin, Trainee, or Trainer');
-        }
-        await this.ensureSystemRoles();
-        const user = await this.findOne(userId);
-        if (!user) {
-            throw new common_1.NotFoundException('User not found');
-        }
-        const role = await this.getRoleByName(roleName);
-        user.roles = [role];
-        return await this.userRepository.save(user);
-    }
-    async ensureSystemRoles() {
-        for (const name of SYSTEM_ROLES) {
-            const existingRole = await this.roleRepository.findOneBy({ name });
-            if (!existingRole) {
-                await this.roleRepository.save(this.roleRepository.create({ name }));
-            }
-        }
-    }
-    async getRoleByName(name) {
-        const role = await this.roleRepository.findOneBy({ name });
-        if (!role) {
-            throw new common_1.NotFoundException(`${name} role not found`);
-        }
-        return role;
-    }
 };
-exports.UserService = UserService;
-exports.UserService = UserService = __decorate([
+exports.UserEntityService = UserEntityService;
+exports.UserEntityService = UserEntityService = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, typeorm_1.InjectRepository)(user_entity_1.UserEntity)),
-    __param(1, (0, typeorm_1.InjectRepository)(role_entity_1.RoleEntity)),
-    __metadata("design:paramtypes", [typeorm_2.Repository,
-        typeorm_2.Repository])
-], UserService);
+    __metadata("design:paramtypes", [typeorm_1.DataSource])
+], UserEntityService);
 //# sourceMappingURL=user.service.js.map

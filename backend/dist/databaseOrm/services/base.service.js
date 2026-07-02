@@ -2,10 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BaseService = void 0;
 class BaseService {
-    repository;
-    constructor(repository) {
-        this.repository = repository;
-    }
     async findAll() {
         return await this.repository.find();
     }

@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
-import { UserEntity } from '../entities/user.entity'; // Path to where your actual entity class sits
+import { UserEntity } from '../entities/user.entity'; 
 import { RoleEntity } from '../entities/role.entity';
 import { UserModel } from '../../types/models/user.model';
 import * as bcrypt from 'bcrypt';
@@ -12,29 +12,28 @@ const SYSTEM_ROLES = ['Admin', 'Trainee', 'Trainer'] as const;
 type SystemRole = (typeof SYSTEM_ROLES)[number];
 
 @Injectable()
-export class UserService extends BaseService<UserEntity> {
-  constructor(
-    @InjectRepository(UserEntity)
-    private readonly userRepository: Repository<UserEntity>,
-    @InjectRepository(RoleEntity)
-    private readonly roleRepository: Repository<RoleEntity>,
-  ) {
-    // Pass the user repository up to the generic BaseService
-    super(userRepository);
+export class UserEntityService extends BaseService<UserEntity> {
+  protected repository: Repository<UserEntity>;
+  protected roleRepository: Repository<RoleEntity>;
+
+  constructor(datasource: DataSource) {
+    super();
+    this.repository = datasource.getRepository<UserEntity>(UserEntity);
+    // Properly initializing the Role repository
+    this.roleRepository = datasource.getRepository<RoleEntity>(RoleEntity);
   }
 
   async findAll(): Promise<UserEntity[]> {
-    return await this.userRepository.find({ relations: ['roles'] });
+    return await this.repository.find({ relations: ['roles'] });
   }
 
   async findOne(id: any): Promise<UserEntity | null> {
-    console.log("User find succcessfully");
-    return await this.userRepository.findOne({ where: { id }, relations: ['roles'] });
+    return await this.repository.findOne({ where: { id }, relations: ['roles'] });
   }
 
   async create(data: UserModel): Promise<UserEntity> {
     if (!data.password) {
-      throw new BadRequestException('password are required');
+      throw new BadRequestException('Password is required');
     }
 
     const existingUser = await this.findByEmail(data.email);
@@ -43,76 +42,72 @@ export class UserService extends BaseService<UserEntity> {
     }
 
     await this.ensureSystemRoles();
-    const userCount = await this.userRepository.count();
+    const userCount = await this.repository.count();
     const roleName: SystemRole = userCount === 0 ? 'Admin' : 'Trainee';
     const role = await this.getRoleByName(roleName);
 
-    const user = this.userRepository.create({
+    // CRITICAL FIX: Hash the password before saving!
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(data.password, saltRounds);
+
+    const user = this.repository.create({
       email: data.email,
-      password: data.password,
+      password: hashedPassword,
       firstName: data.firstName,
       lastName: data.lastName,
       roles: [role],
     });
 
-    return await this.userRepository.save(user);
+    return await this.repository.save(user);
   }
 
-  // You can add specific custom queries for users here
   async findByEmail(email: string): Promise<UserEntity | null> {
-    return await this.userRepository.findOne({ where: { email }, relations: ['roles'] });
+    return await this.repository.findOne({ where: { email }, relations: ['roles'] });
   }
 
   async login(email: string, password: string): Promise<{ user: UserEntity; accessToken: string }> {
-  const user = await this.userRepository.findOne({ 
-    where: { email }, 
-    relations: ['roles', 'primaryRole'] // Ensure primaryRole is fetched!
-  });
+    const user = await this.repository.findOne({ 
+      where: { email }, 
+      relations: ['roles', 'primaryRole'] 
+    });
 
-  if (!user || !user.password) {
-    throw new UnauthorizedException('Invalid email or password');
+    if (!user || !user.password) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid email or password');
+    }
+
+    // TODO: Move this to an environment variable (e.g., process.env.JWT_SECRET)
+    const JWT_SECRET = 'your-secure-invitation-secret-key'; 
+    const accessToken = jwt.sign(
+      {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        roles: user.roles?.map(r => r.name) || [],
+        primaryRole: user.primaryRole?.name || 'Trainee'
+      },
+      JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+    return { user, accessToken };
   }
-
-  // 1. Verify the hashed password
-  const isPasswordValid = await bcrypt.compare(password, user.password);
-  if (!isPasswordValid) {
-    throw new UnauthorizedException('Invalid email or password');
-  }
-
-  // 2. Generate an access token containing the essential payload details
-  const JWT_SECRET = 'your-secure-invitation-secret-key'; // Keep this safe in env variables
-  const accessToken = jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      roles: user.roles?.map(r => r.name) || [],
-      primaryRole: user.primaryRole?.name || 'Trainee'
-    },
-    JWT_SECRET,
-    { expiresIn: '1d' }
-  );
-
-  // Remove password from returned data for security
-
-  return { user, accessToken };
-}
 
   async findRoleRequests(): Promise<UserEntity[]> {
     const users = await this.findAll();
-
     return users.filter((user) =>
       user.roles?.some((role) => role.name === 'Trainee'),
     );
   }
 
-  async updateUserRole(userId: string, roleName: string): Promise<UserEntity> {
+  async updateUserRole(userId: any, roleName: string): Promise<UserEntity> {
     if (!SYSTEM_ROLES.includes(roleName as SystemRole)) {
       throw new BadRequestException('Role must be Admin, Trainee, or Trainer');
     }
-
-    await this.ensureSystemRoles();
 
     const user = await this.findOne(userId);
     if (!user) {
@@ -122,7 +117,7 @@ export class UserService extends BaseService<UserEntity> {
     const role = await this.getRoleByName(roleName as SystemRole);
     user.roles = [role];
 
-    return await this.userRepository.save(user);
+    return await this.repository.save(user);
   }
 
   private async ensureSystemRoles(): Promise<void> {
@@ -139,7 +134,6 @@ export class UserService extends BaseService<UserEntity> {
     if (!role) {
       throw new NotFoundException(`${name} role not found`);
     }
-
     return role;
   }
 }

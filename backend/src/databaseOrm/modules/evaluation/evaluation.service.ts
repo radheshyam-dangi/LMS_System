@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { EvaluationService as MainEvaluationService } from '../../services/evaluation.service';
+import { EvaluationEntitytService} from '../../services/evaluation.service';
 
 @Injectable()
-export class EvaluationService extends MainEvaluationService {}
+export class EvaluationService{
+    constructor(
+        private EvaluationEntityService : EvaluationEntitytService){}
+    
+}
+export {EvaluationEntitytService}

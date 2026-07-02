@@ -3,21 +3,23 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { ModuleEntity } from '../entities/module.entity';
+import { DataSource } from 'typeorm/browser';
 
 @Injectable()
-export class ModuleService extends BaseService<ModuleEntity> {
+export class ModuleEntityService extends BaseService<ModuleEntity> {
+  protected repository: Repository<ModuleEntity>;
   constructor(
-    @InjectRepository(ModuleEntity)
-    private readonly moduleRepository: Repository<ModuleEntity>,
+  datasource:DataSource  
   ) {
-    super(moduleRepository);
+    super();
+    this.repository = datasource.getRepository<ModuleEntity>(ModuleEntity)
   }
 
   /**
    * Custom Query Example: Fetch parent modules along with their submodules
    */
   async findModulesWithSubModules(): Promise<ModuleEntity[]> {
-    return await this.moduleRepository.find({
+    return await this.repository.find({
       relations: ['subModules', 'lessons'],
     });
   }

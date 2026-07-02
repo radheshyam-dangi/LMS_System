@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { ModuleService as MainModuleService } from '../../services/module.service';
+import { ModuleEntityService } from '../../services/module.service';
 
 @Injectable()
-export class ModuleService extends MainModuleService {}
+export class ModuleService {
+    constructor(private moduleEntityService:ModuleEntityService){}
+}
+export {ModuleEntityService}

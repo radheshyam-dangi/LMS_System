@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { LessonService } from './lesson.service';
+import { LessonEntityService } from './lesson.service';
 import { RoutePaths } from '../../../constants/routePaths';
 
 // Using 'import type' to completely avoid isolatedModules compilation conflicts
@@ -7,7 +7,7 @@ import type { LessonModel } from '../../../types/models/lesson.model';
 
 @Controller(RoutePaths.Lessons)
 export class LessonController {
-  constructor(private readonly lessonService: LessonService) {}
+  constructor(private readonly lessonService: LessonEntityService) {}
 
   @Post()
   async create(@Body() dto: LessonModel) {

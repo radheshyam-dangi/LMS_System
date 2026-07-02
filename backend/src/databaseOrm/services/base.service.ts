@@ -2,7 +2,7 @@ import { Repository, DeleteResult } from 'typeorm';
 import { BaseModel } from '../../types/models/base.model';
 
 export abstract class BaseService<T extends BaseModel> {
-  constructor(protected readonly repository: Repository<T>) {}
+  protected abstract repository: Repository<T>
 
   async findAll(): Promise<T[]> {
     return await this.repository.find();

@@ -1,20 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { ModuleKeyPointEntity } from '../entities/moduleKeyPoint.entity';
 
 @Injectable()
-export class ModuleKeyPointService extends BaseService<ModuleKeyPointEntity> {
+export class ModuleKeyPointEntityService extends BaseService<ModuleKeyPointEntity> {
+  protected repository: Repository<ModuleKeyPointEntity>;
   constructor(
-    @InjectRepository(ModuleKeyPointEntity)
-    private readonly moduleKeyPointRepository: Repository<ModuleKeyPointEntity>,
+    datasource : DataSource  
   ) {
-    super(moduleKeyPointRepository);
+    super();
+    this.repository = datasource.getRepository<ModuleKeyPointEntity>(ModuleKeyPointEntity)
   }
 
   async findKeyPointsByModule(moduleId: string): Promise<ModuleKeyPointEntity[]> {
-    return await this.moduleKeyPointRepository.find({
+    return await this.repository.find({
       where: { module: { id: moduleId } } as any,
     });
   }

@@ -1,24 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { AssignmentEntity } from '../entities/assignment.entity';
 
 @Injectable()
-export class AssignmentService extends BaseService<AssignmentEntity> {
+export class AssignmentEntityService extends BaseService<AssignmentEntity> {
+  protected repository: Repository<AssignmentEntity>;
   constructor(
-    @InjectRepository(AssignmentEntity)
-    private readonly assignmentRepository: Repository<AssignmentEntity>,
+    datasource:DataSource  
   ) {
     // Pass the injected repository up to the generic BaseService handler
-    super(assignmentRepository);
+    super();
+    this.repository = datasource.getRepository<AssignmentEntity>(AssignmentEntity)
   }
 
   /**
    * Example Custom Query: Find all assignments belonging to a specific lesson
    */
   async findByLessonId(lessonId: string): Promise<AssignmentEntity[]> {
-    return await this.assignmentRepository.find({
+    return await this.repository.find({
       where: {
         lesson: { id: lessonId }
       } as any

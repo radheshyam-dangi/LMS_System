@@ -3,21 +3,23 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { LessonEntity } from '../entities/lesson.entity';
+import { DataSource } from 'typeorm/browser';
 
 @Injectable()
-export class LessonService extends BaseService<LessonEntity> {
+export class LessonEntityService extends BaseService<LessonEntity> {
+  protected repository: Repository<LessonEntity>;
   constructor(
-    @InjectRepository(LessonEntity)
-    private readonly lessonRepository: Repository<LessonEntity>,
+    datasource:DataSource
   ) {
-    super(lessonRepository);
+    super();
+    this.repository = datasource.getRepository<LessonEntity>(LessonEntity)
   }
 
   /**
    * Custom Query Example: Fetch lessons inside a module ordered by display position
    */
   async findByModuleId(moduleId: string): Promise<LessonEntity[]> {
-    return await this.lessonRepository.find({
+    return await this.repository.find({
       where: { module: { id: moduleId } } as any,
       order: { displayOrder: 'ASC' } as any,
     });

@@ -1,20 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { SubmissionEntity } from '../entities/submission.entity';
 
 @Injectable()
-export class SubmissionService extends BaseService<SubmissionEntity> {
+export class SubmissionEntityService extends BaseService<SubmissionEntity> {
+  protected repository: Repository<SubmissionEntity>;
   constructor(
-    @InjectRepository(SubmissionEntity)
-    private readonly submissionRepository: Repository<SubmissionEntity>,
+    datasource : DataSource
   ) {
-    super(submissionRepository);
+    super();
+    this.repository = datasource.getRepository<SubmissionEntity>(SubmissionEntity)
   }
 
   async findSubmissionsByUser(userId: string): Promise<SubmissionEntity[]> {
-    return await this.submissionRepository.find({
+    return await this.repository.find({
       where: { user: { id: userId } } as any,
     });
   }

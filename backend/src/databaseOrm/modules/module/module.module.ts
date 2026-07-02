@@ -1,7 +1,7 @@
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ModuleController } from "./module.controller";
-import { ModuleService } from "./module.service";
+import { ModuleEntityService } from "./module.service";
 import { ModuleEntity } from "../../entities/module.entity";
 import { ModuleKeyPointEntity } from "../../entities/moduleKeyPoint.entity";
 import { ModulePrerequisiteEntity } from "../../entities/modulePrerequisite.entity";
@@ -12,7 +12,7 @@ import { ModulePrerequisiteEntity } from "../../entities/modulePrerequisite.enti
 
   ],
   controllers:[ModuleController],
-  providers:[ModuleService],
-  exports:[ModuleService]
+  providers:[ModuleEntityService],
+  exports:[ModuleEntityService]
 })
 export class ModuleModule{}

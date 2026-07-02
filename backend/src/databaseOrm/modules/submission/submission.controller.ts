@@ -1,11 +1,11 @@
 import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
-import { SubmissionService } from './submission.service';
+import { SubmissionEntityService } from './submission.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { SubmissionModel } from '../../../types/models/submission.model';
 
 @Controller(RoutePaths.Submissions)
 export class SubmissionController {
-  constructor(private readonly submissionService: SubmissionService) {}
+  constructor(private readonly submissionService: SubmissionEntityService) {}
 
   @Post()
   async create(@Body() dto: SubmissionModel) {

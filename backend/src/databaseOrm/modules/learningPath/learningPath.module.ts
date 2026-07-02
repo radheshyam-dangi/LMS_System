@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LearningPathController } from './learningPath.controller';
-import { LearningPathService } from './learningPath.service';
+import { LearningPathEntityService } from './learningPath.service';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { LearningPathModuleEntity} from "../../entities/learningPathModule.entity"
 import {EnrollmentEntity} from "../../entities/enrollment.entity"
@@ -11,7 +11,7 @@ import {EnrollmentEntity} from "../../entities/enrollment.entity"
     TypeOrmModule.forFeature([LearningPathEntity,LearningPathModuleEntity,EnrollmentEntity])
   ],
   controllers: [LearningPathController],
-  providers: [LearningPathService],
-  exports: [LearningPathService],
+  providers: [LearningPathEntityService],
+  exports: [LearningPathEntityService],
 })
 export class LearningPathModule {}
