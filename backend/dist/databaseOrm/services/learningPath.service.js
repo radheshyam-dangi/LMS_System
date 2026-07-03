@@ -8,36 +8,31 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LearningPathService = void 0;
+exports.LearningPathEntityService = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
-const typeorm_2 = require("typeorm");
+const typeorm_1 = require("typeorm");
 const base_service_1 = require("./base.service");
 const learningPath_entity_1 = require("../entities/learningPath.entity");
-let LearningPathService = class LearningPathService extends base_service_1.BaseService {
-    learningPathRepository;
-    constructor(learningPathRepository) {
-        super(learningPathRepository);
-        this.learningPathRepository = learningPathRepository;
+let LearningPathEntityService = class LearningPathEntityService extends base_service_1.BaseService {
+    repository;
+    constructor(datasource) {
+        super();
+        this.repository = datasource.getRepository(learningPath_entity_1.LearningPathEntity);
     }
     /**
      * Custom Query Example: Find all live learning paths with their assigned modules
      */
     async findActivePathsWithModules() {
-        return await this.learningPathRepository.find({
+        return await this.repository.find({
             where: { status: 'active' },
             relations: ['modules'],
         });
     }
 };
-exports.LearningPathService = LearningPathService;
-exports.LearningPathService = LearningPathService = __decorate([
+exports.LearningPathEntityService = LearningPathEntityService;
+exports.LearningPathEntityService = LearningPathEntityService = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, typeorm_1.InjectRepository)(learningPath_entity_1.LearningPathEntity)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
-], LearningPathService);
+    __metadata("design:paramtypes", [typeorm_1.DataSource])
+], LearningPathEntityService);
 //# sourceMappingURL=learningPath.service.js.map

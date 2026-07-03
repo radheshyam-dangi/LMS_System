@@ -1,9 +1,9 @@
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { AssignmentEntity } from '../entities/assignment.entity';
-export declare class AssignmentService extends BaseService<AssignmentEntity> {
-    private readonly assignmentRepository;
-    constructor(assignmentRepository: Repository<AssignmentEntity>);
+export declare class AssignmentEntityService extends BaseService<AssignmentEntity> {
+    protected repository: Repository<AssignmentEntity>;
+    constructor(datasource: DataSource);
     /**
      * Example Custom Query: Find all assignments belonging to a specific lesson
      */

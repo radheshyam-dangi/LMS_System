@@ -1,3 +1,6 @@
-import { RoleService as MainUserService } from "../../services/role.service";
-export declare class RoleService extends MainUserService {
+import { RoleEntityService } from "../../services/role.service";
+export declare class RoleService {
+    private roleEntityService;
+    constructor(roleEntityService: RoleEntityService);
 }
+export { RoleEntityService };

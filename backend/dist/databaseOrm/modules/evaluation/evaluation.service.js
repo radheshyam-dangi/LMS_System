@@ -5,14 +5,23 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EvaluationService = void 0;
+exports.EvaluationEntitytService = exports.EvaluationService = void 0;
 const common_1 = require("@nestjs/common");
 const evaluation_service_1 = require("../../services/evaluation.service");
-let EvaluationService = class EvaluationService extends evaluation_service_1.EvaluationService {
+Object.defineProperty(exports, "EvaluationEntitytService", { enumerable: true, get: function () { return evaluation_service_1.EvaluationEntitytService; } });
+let EvaluationService = class EvaluationService {
+    EvaluationEntityService;
+    constructor(EvaluationEntityService) {
+        this.EvaluationEntityService = EvaluationEntityService;
+    }
 };
 exports.EvaluationService = EvaluationService;
 exports.EvaluationService = EvaluationService = __decorate([
-    (0, common_1.Injectable)()
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [evaluation_service_1.EvaluationEntitytService])
 ], EvaluationService);
 //# sourceMappingURL=evaluation.service.js.map

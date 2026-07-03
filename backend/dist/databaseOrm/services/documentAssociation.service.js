@@ -8,27 +8,22 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DocumentAssociationService = void 0;
+exports.DocumentAssociationEntityService = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
-const typeorm_2 = require("typeorm");
 const base_service_1 = require("./base.service");
 const documentAssociation_entity_1 = require("../entities/documentAssociation.entity");
-let DocumentAssociationService = class DocumentAssociationService extends base_service_1.BaseService {
-    documentAssociationRepository;
-    constructor(documentAssociationRepository) {
-        super(documentAssociationRepository);
-        this.documentAssociationRepository = documentAssociationRepository;
+const browser_1 = require("typeorm/browser");
+let DocumentAssociationEntityService = class DocumentAssociationEntityService extends base_service_1.BaseService {
+    repository;
+    constructor(datasource) {
+        super();
+        this.repository = datasource.getRepository(documentAssociation_entity_1.DocumentAssociationEntity);
     }
 };
-exports.DocumentAssociationService = DocumentAssociationService;
-exports.DocumentAssociationService = DocumentAssociationService = __decorate([
+exports.DocumentAssociationEntityService = DocumentAssociationEntityService;
+exports.DocumentAssociationEntityService = DocumentAssociationEntityService = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, typeorm_1.InjectRepository)(documentAssociation_entity_1.DocumentAssociationEntity)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
-], DocumentAssociationService);
+    __metadata("design:paramtypes", [browser_1.DataSource])
+], DocumentAssociationEntityService);
 //# sourceMappingURL=documentAssociation.service.js.map

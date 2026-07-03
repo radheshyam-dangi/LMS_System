@@ -4,6 +4,7 @@ import type { RoleName } from '../../types/auth';
 
 type InviteUserModalProps = {
   accessToken: string;
+  currentUser: any; 
   onClose: () => void;
   onInvited: (user: {
     email: string;
@@ -16,7 +17,7 @@ type InviteUserModalProps = {
 
 const selectableRoles: RoleName[] = ['Admin', 'Trainer', 'Trainee'];
 
-export function InviteUserModal({ accessToken, onClose, onInvited }: InviteUserModalProps) {
+export function InviteUserModal({ accessToken, currentUser, onClose, onInvited }: InviteUserModalProps) {
   const [formData, setFormData] = useState({
     email: '',
     firstName: '',
@@ -39,7 +40,9 @@ export function InviteUserModal({ accessToken, onClose, onInvited }: InviteUserM
       const next = current.includes(role)
         ? current.filter((currentRole) => currentRole !== role)
         : [...current, role];
-      const safeNext = next.length > 0 ? next : ['Trainee'];
+      
+      //  FIX 1: Cast the fallback array strictly as RoleName[]
+      const safeNext = (next.length > 0 ? next : ['Trainee']) as RoleName[];
 
       if (!safeNext.includes(primaryRole)) {
         setPrimaryRole(safeNext[0]);
@@ -55,6 +58,8 @@ export function InviteUserModal({ accessToken, onClose, onInvited }: InviteUserM
     setMessage('');
 
     try {
+      //  FIX 2: Cast the payload object to "any" temporarily if you haven't 
+      // updated your backend types/auth.ts file yet to accept sender details.
       await sendInvitation(
         {
           to: formData.email,
@@ -63,7 +68,9 @@ export function InviteUserModal({ accessToken, onClose, onInvited }: InviteUserM
           lastName: formData.lastName,
           roles,
           isPrimary: primaryRole,
-        },
+          senderName: `${currentUser?.firstName ?? 'Admin'} ${currentUser?.lastName ?? 'User'}`,
+          senderEmail: currentUser?.email ?? '',
+        } as any, 
         accessToken,
       );
       onInvited({
@@ -132,6 +139,7 @@ export function InviteUserModal({ accessToken, onClose, onInvited }: InviteUserM
 
           <label>
             Primary role
+            {/* FIX 3: Value explicitly cast as RoleName */}
             <select value={primaryRole} onChange={(event) => setPrimaryRole(event.target.value as RoleName)}>
               {availablePrimaryRoles.map((role) => (
                 <option key={role} value={role}>

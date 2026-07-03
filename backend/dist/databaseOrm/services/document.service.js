@@ -9,19 +9,21 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DocumentService = void 0;
+exports.DocumentEntityService = void 0;
 const common_1 = require("@nestjs/common");
 const base_service_1 = require("./base.service");
-const browser_1 = require("typeorm/browser");
-let DocumentService = class DocumentService extends base_service_1.BaseService {
+const document_entity_1 = require("../entities/document.entity");
+const typeorm_1 = require("typeorm");
+let DocumentEntityService = class DocumentEntityService extends base_service_1.BaseService {
     repository;
     constructor(datasource) {
         super();
+        this.repository = datasource.getRepository(document_entity_1.DocumentEntity);
     }
 };
-exports.DocumentService = DocumentService;
-exports.DocumentService = DocumentService = __decorate([
+exports.DocumentEntityService = DocumentEntityService;
+exports.DocumentEntityService = DocumentEntityService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [browser_1.DataSource])
-], DocumentService);
+    __metadata("design:paramtypes", [typeorm_1.DataSource])
+], DocumentEntityService);
 //# sourceMappingURL=document.service.js.map

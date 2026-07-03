@@ -1,9 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { LessonEntity } from '../entities/lesson.entity';
-import { DataSource } from 'typeorm/browser';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class LessonEntityService extends BaseService<LessonEntity> {

@@ -75,6 +75,6 @@ __decorate([
 ], EvaluationController.prototype, "remove", null);
 exports.EvaluationController = EvaluationController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Evaluations),
-    __metadata("design:paramtypes", [evaluation_service_1.EvaluationService])
+    __metadata("design:paramtypes", [evaluation_service_1.EvaluationEntitytService])
 ], EvaluationController);
 //# sourceMappingURL=evaluation.controller.js.map

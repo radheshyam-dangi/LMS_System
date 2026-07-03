@@ -1,3 +1,6 @@
-import { TagService as MainTagService } from '../../services/tag.service';
-export declare class TagService extends MainTagService {
+import { TagEntityService } from '../../services/tag.service';
+export declare class TagService {
+    private tagEntityService;
+    constructor(tagEntityService: TagEntityService);
 }
+export { TagEntityService };

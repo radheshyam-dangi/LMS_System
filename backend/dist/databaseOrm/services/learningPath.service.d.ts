@@ -1,9 +1,9 @@
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { LearningPathEntity } from '../entities/learningPath.entity';
-export declare class LearningPathService extends BaseService<LearningPathEntity> {
-    private readonly learningPathRepository;
-    constructor(learningPathRepository: Repository<LearningPathEntity>);
+export declare class LearningPathEntityService extends BaseService<LearningPathEntity> {
+    protected repository: Repository<LearningPathEntity>;
+    constructor(datasource: DataSource);
     /**
      * Custom Query Example: Find all live learning paths with their assigned modules
      */

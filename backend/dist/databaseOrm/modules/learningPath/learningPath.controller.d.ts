@@ -1,8 +1,8 @@
-import { LearningPathService } from './learningPath.service';
+import { LearningPathEntityService } from './learningPath.service';
 import type { LearningPathModel } from '../../../types/models/learningPath.model';
 export declare class LearningPathController {
     private readonly learningPathService;
-    constructor(learningPathService: LearningPathService);
+    constructor(learningPathService: LearningPathEntityService);
     create(dto: LearningPathModel): Promise<import("../../entities/learningPath.entity").LearningPathEntity>;
     findAll(): Promise<import("../../entities/learningPath.entity").LearningPathEntity[]>;
     findOne(id: string): Promise<import("../../entities/learningPath.entity").LearningPathEntity | null>;

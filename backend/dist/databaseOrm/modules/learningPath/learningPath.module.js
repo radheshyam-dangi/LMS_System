@@ -23,8 +23,8 @@ exports.LearningPathModule = LearningPathModule = __decorate([
             typeorm_1.TypeOrmModule.forFeature([learningPath_entity_1.LearningPathEntity, learningPathModule_entity_1.LearningPathModuleEntity, enrollment_entity_1.EnrollmentEntity])
         ],
         controllers: [learningPath_controller_1.LearningPathController],
-        providers: [learningPath_service_1.LearningPathService],
-        exports: [learningPath_service_1.LearningPathService],
+        providers: [learningPath_service_1.LearningPathEntityService],
+        exports: [learningPath_service_1.LearningPathEntityService],
     })
 ], LearningPathModule);
 //# sourceMappingURL=learningPath.module.js.map

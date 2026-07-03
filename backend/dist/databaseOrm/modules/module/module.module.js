@@ -23,8 +23,8 @@ exports.ModuleModule = ModuleModule = __decorate([
             typeorm_1.TypeOrmModule.forFeature([module_entity_1.ModuleEntity, moduleKeyPoint_entity_1.ModuleKeyPointEntity, modulePrerequisite_entity_1.ModulePrerequisiteEntity])
         ],
         controllers: [module_controller_1.ModuleController],
-        providers: [module_service_1.ModuleService],
-        exports: [module_service_1.ModuleService]
+        providers: [module_service_1.ModuleEntityService],
+        exports: [module_service_1.ModuleEntityService]
     })
 ], ModuleModule);
 //# sourceMappingURL=module.module.js.map

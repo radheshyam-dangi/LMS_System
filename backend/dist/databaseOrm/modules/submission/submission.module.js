@@ -19,8 +19,8 @@ exports.SubmissionModule = SubmissionModule = __decorate([
     (0, common_1.Module)({
         imports: [typeorm_1.TypeOrmModule.forFeature([submission_entity_1.SubmissionEntity])],
         controllers: [submission_controller_1.SubmissionController],
-        providers: [submission_service_1.SubmissionService],
-        exports: [submission_service_1.SubmissionService],
+        providers: [submission_service_1.SubmissionEntityService],
+        exports: [submission_service_1.SubmissionEntityService],
     })
 ], SubmissionModule);
 //# sourceMappingURL=submission.module.js.map

@@ -75,6 +75,6 @@ __decorate([
 ], RoleConttroller.prototype, "remove", null);
 exports.RoleConttroller = RoleConttroller = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Roles),
-    __metadata("design:paramtypes", [role_service_1.RoleService])
+    __metadata("design:paramtypes", [role_service_1.RoleEntityService])
 ], RoleConttroller);
 //# sourceMappingURL=role.controller.js.map

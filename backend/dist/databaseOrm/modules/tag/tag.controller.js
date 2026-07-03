@@ -75,6 +75,6 @@ __decorate([
 ], TagController.prototype, "remove", null);
 exports.TagController = TagController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Tags),
-    __metadata("design:paramtypes", [tag_service_1.TagService])
+    __metadata("design:paramtypes", [tag_service_1.TagEntityService])
 ], TagController);
 //# sourceMappingURL=tag.controller.js.map

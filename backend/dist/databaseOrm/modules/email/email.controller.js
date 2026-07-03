@@ -23,6 +23,8 @@ class SendInvitationDto {
     lastName;
     roles;
     isPrimary;
+    senderName;
+    senderEmail;
 }
 let EmailController = class EmailController {
     emailService;

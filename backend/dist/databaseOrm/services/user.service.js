@@ -46,64 +46,89 @@ exports.UserEntityService = void 0;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("typeorm");
 const base_service_1 = require("./base.service");
-const user_entity_1 = require("../entities/user.entity"); // Path to where your actual entity class sits
+const user_entity_1 = require("../entities/user.entity");
+const role_entity_1 = require("../entities/role.entity");
 const bcrypt = __importStar(require("bcrypt"));
 const jwt = __importStar(require("jsonwebtoken"));
-const inspector_1 = require("inspector");
 const SYSTEM_ROLES = ['Admin', 'Trainee', 'Trainer'];
 let UserEntityService = class UserEntityService extends base_service_1.BaseService {
     repository;
+    roleRepository;
     constructor(datasource) {
         super();
         this.repository = datasource.getRepository(user_entity_1.UserEntity);
+        // Properly initializing the Role repository
+        this.roleRepository = datasource.getRepository(role_entity_1.RoleEntity);
     }
     async findAll() {
         return await this.repository.find({ relations: ['roles'] });
     }
     async findOne(id) {
-        inspector_1.console.log("User find succcessfully");
         return await this.repository.findOne({ where: { id }, relations: ['roles'] });
     }
-    // async create(data: UserModel): Promise<UserEntity> {
-    //   if (!data.password) {
-    //     throw new BadRequestException('password are required');
-    //   }
-    //   const existingUser = await this.findByEmail(data.email);
-    //   if (existingUser) {
-    //     throw new BadRequestException('User already exists with this email');
-    //   }
-    //   await this.ensureSystemRoles();
-    //   const userCount = await this.userRepository.count();
-    //   const roleName: SystemRole = userCount === 0 ? 'Admin' : 'Trainee';
-    //   const role = await this.getRoleByName(roleName);
-    //   const user = this.userRepository.create({
-    //     email: data.email,
-    //     password: data.password,
-    //     firstName: data.firstName,
-    //     lastName: data.lastName,
-    //     roles: [role],
-    //   });
-    //   return await this.userRepository.save(user);
-    // }
-    // You can add specific custom queries for users here
+    async create(data) {
+        if (!data.password) {
+            throw new common_1.BadRequestException('Password is required');
+        }
+        const existingUser = await this.findByEmail(data.email);
+        if (existingUser) {
+            throw new common_1.BadRequestException('User already exists with this email');
+        }
+        await this.ensureSystemRoles();
+        // 1. Resolve the array of roles sent in the payload body
+        const assignedRoles = [];
+        if (data.roles && data.roles.length > 0) {
+            for (const rName of data.roles) {
+                const rEntity = await this.getRoleByName(rName);
+                assignedRoles.push(rEntity);
+            }
+        }
+        else {
+            // Fallback if no roles are passed
+            const userCount = await this.repository.count();
+            const defaultRoleName = userCount === 0 ? 'Admin' : 'Trainee';
+            const defaultRole = await this.getRoleByName(defaultRoleName);
+            assignedRoles.push(defaultRole);
+        }
+        // 2. Resolve the targeted Primary Role relation
+        let primaryRoleEntity;
+        if (data.primaryRole) {
+            primaryRoleEntity = await this.getRoleByName(data.primaryRole);
+        }
+        else {
+            primaryRoleEntity = assignedRoles[0]; // Fallback to first role
+        }
+        // 3. Securely hash the secret string
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(data.password, saltRounds);
+        // 4. Instantiate the record
+        const user = this.repository.create({
+            email: data.email,
+            password: hashedPassword,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            roles: assignedRoles,
+            primaryRole: primaryRoleEntity, // ◄ Assigning the relation mapping
+        });
+        return await this.repository.save(user);
+    }
     async findByEmail(email) {
         return await this.repository.findOne({ where: { email }, relations: ['roles'] });
     }
     async login(email, password) {
         const user = await this.repository.findOne({
             where: { email },
-            relations: ['roles', 'primaryRole'] // Ensure primaryRole is fetched!
+            relations: ['roles', 'primaryRole']
         });
         if (!user || !user.password) {
             throw new common_1.UnauthorizedException('Invalid email or password');
         }
-        // 1. Verify the hashed password
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
             throw new common_1.UnauthorizedException('Invalid email or password');
         }
-        // 2. Generate an access token containing the essential payload details
-        const JWT_SECRET = 'your-secure-invitation-secret-key'; // Keep this safe in env variables
+        // TODO: Move this to an environment variable (e.g., process.env.JWT_SECRET)
+        const JWT_SECRET = 'secret-key';
         const accessToken = jwt.sign({
             id: user.id,
             email: user.email,
@@ -117,6 +142,33 @@ let UserEntityService = class UserEntityService extends base_service_1.BaseServi
     async findRoleRequests() {
         const users = await this.findAll();
         return users.filter((user) => user.roles?.some((role) => role.name === 'Trainee'));
+    }
+    async updateUserRole(userId, roleName) {
+        if (!SYSTEM_ROLES.includes(roleName)) {
+            throw new common_1.BadRequestException('Role must be Admin, Trainee, or Trainer');
+        }
+        const user = await this.findOne(userId);
+        if (!user) {
+            throw new common_1.NotFoundException('User not found');
+        }
+        const role = await this.getRoleByName(roleName);
+        user.roles = [role];
+        return await this.repository.save(user);
+    }
+    async ensureSystemRoles() {
+        for (const name of SYSTEM_ROLES) {
+            const existingRole = await this.roleRepository.findOneBy({ name });
+            if (!existingRole) {
+                await this.roleRepository.save(this.roleRepository.create({ name }));
+            }
+        }
+    }
+    async getRoleByName(name) {
+        const role = await this.roleRepository.findOneBy({ name });
+        if (!role) {
+            throw new common_1.NotFoundException(`${name} role not found`);
+        }
+        return role;
     }
 };
 exports.UserEntityService = UserEntityService;

@@ -1,3 +1,6 @@
-import { AssignmentService as MainAssignmentService } from '../../services/assignment.service';
-export declare class AssignmentService extends MainAssignmentService {
+import { AssignmentEntityService } from '../../services/assignment.service';
+export declare class AssignmentService {
+    private AssignmentEntityService;
+    constructor(AssignmentEntityService: AssignmentEntityService);
 }
+export { AssignmentEntityService };

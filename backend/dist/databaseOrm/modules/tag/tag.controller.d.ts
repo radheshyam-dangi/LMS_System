@@ -1,8 +1,8 @@
-import { TagService } from './tag.service';
+import { TagEntityService } from './tag.service';
 import type { TagModel } from '../../../types/models/tag.model';
 export declare class TagController {
     private readonly tagService;
-    constructor(tagService: TagService);
+    constructor(tagService: TagEntityService);
     create(dto: TagModel): Promise<import("../../entities/tag.entity").TagEntity>;
     findAll(): Promise<import("../../entities/tag.entity").TagEntity[]>;
     findOne(id: string): Promise<import("../../entities/tag.entity").TagEntity | null>;

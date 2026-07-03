@@ -1,8 +1,8 @@
-import { ModuleService } from './module.service';
+import { ModuleEntityService } from './module.service';
 import type { ModuleModel } from '../../../types/models/module.model';
 export declare class ModuleController {
     private readonly moduleService;
-    constructor(moduleService: ModuleService);
+    constructor(moduleService: ModuleEntityService);
     create(dto: ModuleModel): Promise<import("../../entities/module.entity").ModuleEntity>;
     findAll(): Promise<import("../../entities/module.entity").ModuleEntity[]>;
     findOne(id: string): Promise<import("../../entities/module.entity").ModuleEntity | null>;

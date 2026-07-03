@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { RoleEntity } from '../entities/role.entity'; // Path to where your actual entity class sits
-import { DataSource } from 'typeorm/browser';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class RoleEntityService extends BaseService<RoleEntity> {

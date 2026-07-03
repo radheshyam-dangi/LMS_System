@@ -47,17 +47,12 @@ let EmailService = class EmailService {
     transporter;
     JWT_SECRET = 'your-secure-invitation-secret-key'; // Move to .env later
     async onModuleInit() {
-        /**
-         * If we have the smtp config in env then don't create test account, instead use the smtp config.
-         *
-         * ConfigService - For ENV, (create a env configuration client, which check the requred env before running the server, if required envs are not present then throw error.)
-         */
         const testAccount = await nodemailer.createTestAccount();
         this.transporter = nodemailer.createTransport({
-            host: testAccount.smtp.host,
-            port: testAccount.smtp.port,
-            secure: testAccount.smtp.secure,
-            auth: { user: testAccount.user, pass: testAccount.pass },
+            host: 'smtp.ethereal.email',
+            port: 587,
+            secure: false,
+            auth: { user: 'jerad81@ethereal.email', pass: '9euSm5D9M5UHtQ3b66' },
         });
     }
     async sendInvitationEmail(dto) {
@@ -71,10 +66,15 @@ let EmailService = class EmailService {
         }, this.JWT_SECRET, { expiresIn: '24h' });
         // 2. Your frontend "Set Password" application URL route
         const frontendAcceptUrl = `http://localhost:5173/set-password?token=${invitationToken}`;
-        // 3. Build the rich HTML template with the structural Accept Button
+        // 3. Build the rich HTML template with the dynamic sender inline text
         const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
         <h2 style="color: #333;">Welcome to the Tech Team, ${dto.firstName}!</h2>
+        
+        <p style="color: #555; font-size: 14px; margin-bottom: 20px;">
+          You have been invited by <strong>${dto.senderName}</strong> (${dto.senderEmail}) to join our workspace.
+        </p>
+        
         <p>We are excited to have you join us to contribute within our team. Please verify your details below:</p>
         
         <table style="width: 100%; margin-bottom: 20px; border-collapse: collapse;">
@@ -90,11 +90,12 @@ let EmailService = class EmailService {
         </div>
       </div>
     `;
+        // 4. Send the mail using dynamic 'from' formatting: "SenderName" <senderEmail>
         const info = await this.transporter.sendMail({
-            from: '"Tech Team Tech" <noreply@techteam.com>',
+            from: `"${dto.senderName}" <${dto.senderEmail}>`, // ◄ Changes display name and email in receiver inbox
             to: dto.to,
             subject: dto.subject,
-            html: htmlContent, // Render as standard web viewable HTML
+            html: htmlContent,
         });
         console.log('Preview Link: %s', nodemailer.getTestMessageUrl(info));
         return { previewUrl: nodemailer.getTestMessageUrl(info) };

@@ -75,6 +75,6 @@ __decorate([
 ], ModuleController.prototype, "remove", null);
 exports.ModuleController = ModuleController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Modules),
-    __metadata("design:paramtypes", [module_service_1.ModuleService])
+    __metadata("design:paramtypes", [module_service_1.ModuleEntityService])
 ], ModuleController);
 //# sourceMappingURL=module.controller.js.map

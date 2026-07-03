@@ -9,6 +9,8 @@ class SendInvitationDto {
   lastName: string;
   roles: string[];
   isPrimary: string;
+  senderName:string;
+  senderEmail:string;
 }
 
 @Controller('email')

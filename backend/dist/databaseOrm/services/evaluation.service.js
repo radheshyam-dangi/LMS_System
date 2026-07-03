@@ -8,27 +8,22 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EvaluationService = void 0;
+exports.EvaluationEntitytService = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
-const typeorm_2 = require("typeorm");
+const typeorm_1 = require("typeorm");
 const base_service_1 = require("./base.service");
 const evaluation_entity_1 = require("../entities/evaluation.entity");
-let EvaluationService = class EvaluationService extends base_service_1.BaseService {
-    evaluationRepository;
-    constructor(evaluationRepository) {
-        super(evaluationRepository);
-        this.evaluationRepository = evaluationRepository;
+let EvaluationEntitytService = class EvaluationEntitytService extends base_service_1.BaseService {
+    repository;
+    constructor(datasource) {
+        super();
+        this.repository = datasource.getRepository(evaluation_entity_1.EvaluationEntity);
     }
 };
-exports.EvaluationService = EvaluationService;
-exports.EvaluationService = EvaluationService = __decorate([
+exports.EvaluationEntitytService = EvaluationEntitytService;
+exports.EvaluationEntitytService = EvaluationEntitytService = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, typeorm_1.InjectRepository)(evaluation_entity_1.EvaluationEntity)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
-], EvaluationService);
+    __metadata("design:paramtypes", [typeorm_1.DataSource])
+], EvaluationEntitytService);
 //# sourceMappingURL=evaluation.service.js.map

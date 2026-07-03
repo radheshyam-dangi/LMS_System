@@ -39,4 +39,5 @@ export type InviteUserPayload = {
   lastName: string;
   roles: RoleName[];
   isPrimary: RoleName;
+  
 };

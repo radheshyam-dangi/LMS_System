@@ -1,8 +1,8 @@
-import { RoleService } from "./role.service";
+import { RoleEntityService } from "./role.service";
 import type { RoleModel } from "../../../types/models/role.model";
 export declare class RoleConttroller {
     private readonly roleService;
-    constructor(roleService: RoleService);
+    constructor(roleService: RoleEntityService);
     create(createUserDto: RoleModel): Promise<import("../../entities/role.entity").RoleEntity>;
     findAll(): Promise<import("../../entities/role.entity").RoleEntity[]>;
     findOne(id: string): Promise<import("../../entities/role.entity").RoleEntity | null>;

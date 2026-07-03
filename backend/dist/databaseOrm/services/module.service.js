@@ -8,35 +8,30 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ModuleService = void 0;
+exports.ModuleEntityService = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
-const typeorm_2 = require("typeorm");
 const base_service_1 = require("./base.service");
 const module_entity_1 = require("../entities/module.entity");
-let ModuleService = class ModuleService extends base_service_1.BaseService {
-    moduleRepository;
-    constructor(moduleRepository) {
-        super(moduleRepository);
-        this.moduleRepository = moduleRepository;
+const typeorm_1 = require("typeorm");
+let ModuleEntityService = class ModuleEntityService extends base_service_1.BaseService {
+    repository;
+    constructor(datasource) {
+        super();
+        this.repository = datasource.getRepository(module_entity_1.ModuleEntity);
     }
     /**
      * Custom Query Example: Fetch parent modules along with their submodules
      */
     async findModulesWithSubModules() {
-        return await this.moduleRepository.find({
+        return await this.repository.find({
             relations: ['subModules', 'lessons'],
         });
     }
 };
-exports.ModuleService = ModuleService;
-exports.ModuleService = ModuleService = __decorate([
+exports.ModuleEntityService = ModuleEntityService;
+exports.ModuleEntityService = ModuleEntityService = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, typeorm_1.InjectRepository)(module_entity_1.ModuleEntity)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
-], ModuleService);
+    __metadata("design:paramtypes", [typeorm_1.DataSource])
+], ModuleEntityService);
 //# sourceMappingURL=module.service.js.map

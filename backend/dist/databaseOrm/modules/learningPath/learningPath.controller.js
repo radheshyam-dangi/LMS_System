@@ -75,6 +75,6 @@ __decorate([
 ], LearningPathController.prototype, "remove", null);
 exports.LearningPathController = LearningPathController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.LearningPaths),
-    __metadata("design:paramtypes", [learningPath_service_1.LearningPathService])
+    __metadata("design:paramtypes", [learningPath_service_1.LearningPathEntityService])
 ], LearningPathController);
 //# sourceMappingURL=learningPath.controller.js.map

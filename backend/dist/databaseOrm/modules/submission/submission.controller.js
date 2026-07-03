@@ -75,6 +75,6 @@ __decorate([
 ], SubmissionController.prototype, "remove", null);
 exports.SubmissionController = SubmissionController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Submissions),
-    __metadata("design:paramtypes", [submission_service_1.SubmissionService])
+    __metadata("design:paramtypes", [submission_service_1.SubmissionEntityService])
 ], SubmissionController);
 //# sourceMappingURL=submission.controller.js.map

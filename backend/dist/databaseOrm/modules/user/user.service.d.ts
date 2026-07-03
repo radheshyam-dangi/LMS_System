@@ -1,5 +1,6 @@
 import { UserEntityService } from '../../services/user.service';
 export declare class UserService {
-    private userEntiryServce;
-    constructor(userEntiryServce: UserEntityService);
+    private userEntityService;
+    constructor(userEntityService: UserEntityService);
 }
+export { UserEntityService };

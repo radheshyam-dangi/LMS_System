@@ -20,8 +20,8 @@ exports.DocumentModule = DocumentModule = __decorate([
     (0, common_1.Module)({
         imports: [typeorm_1.TypeOrmModule.forFeature([document_entity_1.DocumentEntity, documentAssociation_entity_1.DocumentAssociationEntity])],
         controllers: [document_controller_1.DocumentController],
-        providers: [document_service_1.DocumentService],
-        exports: [document_service_1.DocumentService],
+        providers: [document_service_1.DocumentEntityService],
+        exports: [document_service_1.DocumentEntityService],
     })
 ], DocumentModule);
 //# sourceMappingURL=document.module.js.map

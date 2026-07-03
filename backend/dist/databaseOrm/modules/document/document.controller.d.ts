@@ -1,8 +1,8 @@
-import { DocumentService } from './document.service';
+import { DocumentEntityService } from './document.service';
 import type { DocumentModel } from '../../../types/models/document.model';
 export declare class DocumentController {
     private readonly documentService;
-    constructor(documentService: DocumentService);
+    constructor(documentService: DocumentEntityService);
     create(dto: DocumentModel): Promise<import("../../entities/document.entity").DocumentEntity>;
     findAll(): Promise<import("../../entities/document.entity").DocumentEntity[]>;
     findOne(id: string): Promise<import("../../entities/document.entity").DocumentEntity | null>;

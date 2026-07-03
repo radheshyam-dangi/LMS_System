@@ -6,6 +6,8 @@ declare class SendInvitationDto {
     lastName: string;
     roles: string[];
     isPrimary: string;
+    senderName: string;
+    senderEmail: string;
 }
 export declare class EmailController {
     private readonly emailService;

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+
 import { Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { ModulePrerequisiteEntity } from '../entities/modulePrerequisite.entity';
-import { DataSource } from 'typeorm/browser';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class ModulePrerequisiteEntityService extends BaseService<ModulePrerequisiteEntity> {

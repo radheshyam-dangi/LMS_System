@@ -10,6 +10,8 @@ export declare class EmailService implements OnModuleInit {
         lastName: string;
         roles: string[];
         isPrimary: string;
+        senderName: string;
+        senderEmail: string;
     }): Promise<{
         previewUrl: string | false;
     }>;

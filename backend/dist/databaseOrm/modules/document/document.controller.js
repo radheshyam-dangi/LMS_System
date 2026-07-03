@@ -75,6 +75,6 @@ __decorate([
 ], DocumentController.prototype, "remove", null);
 exports.DocumentController = DocumentController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Documents),
-    __metadata("design:paramtypes", [document_service_1.DocumentService])
+    __metadata("design:paramtypes", [document_service_1.DocumentEntityService])
 ], DocumentController);
 //# sourceMappingURL=document.controller.js.map

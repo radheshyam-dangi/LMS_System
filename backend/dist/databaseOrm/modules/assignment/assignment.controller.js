@@ -75,6 +75,6 @@ __decorate([
 ], AssignmentController.prototype, "remove", null);
 exports.AssignmentController = AssignmentController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Assignments),
-    __metadata("design:paramtypes", [assignment_service_1.AssignmentService])
+    __metadata("design:paramtypes", [assignment_service_1.AssignmentEntityService])
 ], AssignmentController);
 //# sourceMappingURL=assignment.controller.js.map

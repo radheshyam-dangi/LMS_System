@@ -1,7 +1,7 @@
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { EvaluationEntity } from '../entities/evaluation.entity';
-export declare class EvaluationService extends BaseService<EvaluationEntity> {
-    private readonly evaluationRepository;
-    constructor(evaluationRepository: Repository<EvaluationEntity>);
+export declare class EvaluationEntitytService extends BaseService<EvaluationEntity> {
+    protected repository: Repository<EvaluationEntity>;
+    constructor(datasource: DataSource);
 }

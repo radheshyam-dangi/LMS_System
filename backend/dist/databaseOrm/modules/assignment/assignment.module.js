@@ -19,8 +19,8 @@ exports.AssignmentModule = AssignmentModule = __decorate([
     (0, common_1.Module)({
         imports: [typeorm_1.TypeOrmModule.forFeature([assignment_entity_1.AssignmentEntity])],
         controllers: [assignment_controller_1.AssignmentController],
-        providers: [assignment_service_1.AssignmentService],
-        exports: [assignment_service_1.AssignmentService],
+        providers: [assignment_service_1.AssignmentEntityService],
+        exports: [assignment_service_1.AssignmentEntityService],
     })
 ], AssignmentModule);
 //# sourceMappingURL=assignment.module.js.map

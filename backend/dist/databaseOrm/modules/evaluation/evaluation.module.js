@@ -19,8 +19,8 @@ exports.EvaluationModule = EvaluationModule = __decorate([
     (0, common_1.Module)({
         imports: [typeorm_1.TypeOrmModule.forFeature([evaluation_entity_1.EvaluationEntity])],
         controllers: [evaluation_controller_1.EvaluationController],
-        providers: [evaluation_service_1.EvaluationService],
-        exports: [evaluation_service_1.EvaluationService],
+        providers: [evaluation_service_1.EvaluationEntitytService],
+        exports: [evaluation_service_1.EvaluationEntitytService],
     })
 ], EvaluationModule);
 //# sourceMappingURL=evaluation.module.js.map

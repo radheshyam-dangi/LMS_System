@@ -22,8 +22,8 @@ exports.LessonModule = LessonModule = __decorate([
             typeorm_1.TypeOrmModule.forFeature([lesson_entity_1.LessonEntity, userLessonProgress_entity_1.UserLessonProgressEntity])
         ],
         controllers: [lesson_controller_1.LessonController],
-        providers: [lesson_service_1.LessonService],
-        exports: [lesson_service_1.LessonService],
+        providers: [lesson_service_1.LessonEntityService],
+        exports: [lesson_service_1.LessonEntityService],
     })
 ], LessonModule);
 //# sourceMappingURL=lesson.module.js.map

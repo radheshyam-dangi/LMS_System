@@ -75,6 +75,6 @@ __decorate([
 ], LessonController.prototype, "remove", null);
 exports.LessonController = LessonController = __decorate([
     (0, common_1.Controller)(routePaths_1.RoutePaths.Lessons),
-    __metadata("design:paramtypes", [lesson_service_1.LessonService])
+    __metadata("design:paramtypes", [lesson_service_1.LessonEntityService])
 ], LessonController);
 //# sourceMappingURL=lesson.controller.js.map

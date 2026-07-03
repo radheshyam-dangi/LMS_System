@@ -146,6 +146,7 @@ export function DashboardPage({
       {showInviteModal && (
         <InviteUserModal
           accessToken={accessToken}
+          currentUser={currentUser} // ◄ ADD THIS LINE HERE
           onClose={() => setShowInviteModal(false)}
           onInvited={addInvitedUser}
         />

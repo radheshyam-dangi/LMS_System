@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
+
 import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { UserEntity } from '../entities/user.entity'; 
@@ -31,7 +31,7 @@ export class UserEntityService extends BaseService<UserEntity> {
     return await this.repository.findOne({ where: { id }, relations: ['roles'] });
   }
 
-  async create(data: UserModel): Promise<UserEntity> {
+  async create(data: UserModel & { roles?: string[]; primaryRole?: string }): Promise<UserEntity> {
     if (!data.password) {
       throw new BadRequestException('Password is required');
     }
@@ -42,20 +42,42 @@ export class UserEntityService extends BaseService<UserEntity> {
     }
 
     await this.ensureSystemRoles();
-    const userCount = await this.repository.count();
-    const roleName: SystemRole = userCount === 0 ? 'Admin' : 'Trainee';
-    const role = await this.getRoleByName(roleName);
 
-    // CRITICAL FIX: Hash the password before saving!
+    // 1. Resolve the array of roles sent in the payload body
+    const assignedRoles: RoleEntity[] = [];
+    if (data.roles && data.roles.length > 0) {
+      for (const rName of data.roles) {
+        const rEntity = await this.getRoleByName(rName as SystemRole);
+        assignedRoles.push(rEntity);
+      }
+    } else {
+      // Fallback if no roles are passed
+      const userCount = await this.repository.count();
+      const defaultRoleName: SystemRole = userCount === 0 ? 'Admin' : 'Trainee';
+      const defaultRole = await this.getRoleByName(defaultRoleName);
+      assignedRoles.push(defaultRole);
+    }
+
+    // 2. Resolve the targeted Primary Role relation
+    let primaryRoleEntity: RoleEntity | undefined;
+    if (data.primaryRole) {
+      primaryRoleEntity = await this.getRoleByName(data.primaryRole as SystemRole);
+    } else {
+      primaryRoleEntity = assignedRoles[0]; // Fallback to first role
+    }
+
+    // 3. Securely hash the secret string
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(data.password, saltRounds);
 
+    // 4. Instantiate the record
     const user = this.repository.create({
       email: data.email,
       password: hashedPassword,
       firstName: data.firstName,
       lastName: data.lastName,
-      roles: [role],
+      roles: assignedRoles,
+      primaryRole: primaryRoleEntity, // ◄ Assigning the relation mapping
     });
 
     return await this.repository.save(user);
@@ -81,7 +103,7 @@ export class UserEntityService extends BaseService<UserEntity> {
     }
 
     // TODO: Move this to an environment variable (e.g., process.env.JWT_SECRET)
-    const JWT_SECRET = 'your-secure-invitation-secret-key'; 
+    const JWT_SECRET = 'secret-key'; 
     const accessToken = jwt.sign(
       {
         id: user.id,

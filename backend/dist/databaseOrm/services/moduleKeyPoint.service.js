@@ -8,32 +8,27 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-var __param = (this && this.__param) || function (paramIndex, decorator) {
-    return function (target, key) { decorator(target, key, paramIndex); }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ModuleKeyPointService = void 0;
+exports.ModuleKeyPointEntityService = void 0;
 const common_1 = require("@nestjs/common");
-const typeorm_1 = require("@nestjs/typeorm");
-const typeorm_2 = require("typeorm");
+const typeorm_1 = require("typeorm");
 const base_service_1 = require("./base.service");
 const moduleKeyPoint_entity_1 = require("../entities/moduleKeyPoint.entity");
-let ModuleKeyPointService = class ModuleKeyPointService extends base_service_1.BaseService {
-    moduleKeyPointRepository;
-    constructor(moduleKeyPointRepository) {
-        super(moduleKeyPointRepository);
-        this.moduleKeyPointRepository = moduleKeyPointRepository;
+let ModuleKeyPointEntityService = class ModuleKeyPointEntityService extends base_service_1.BaseService {
+    repository;
+    constructor(datasource) {
+        super();
+        this.repository = datasource.getRepository(moduleKeyPoint_entity_1.ModuleKeyPointEntity);
     }
     async findKeyPointsByModule(moduleId) {
-        return await this.moduleKeyPointRepository.find({
+        return await this.repository.find({
             where: { module: { id: moduleId } },
         });
     }
 };
-exports.ModuleKeyPointService = ModuleKeyPointService;
-exports.ModuleKeyPointService = ModuleKeyPointService = __decorate([
+exports.ModuleKeyPointEntityService = ModuleKeyPointEntityService;
+exports.ModuleKeyPointEntityService = ModuleKeyPointEntityService = __decorate([
     (0, common_1.Injectable)(),
-    __param(0, (0, typeorm_1.InjectRepository)(moduleKeyPoint_entity_1.ModuleKeyPointEntity)),
-    __metadata("design:paramtypes", [typeorm_2.Repository])
-], ModuleKeyPointService);
+    __metadata("design:paramtypes", [typeorm_1.DataSource])
+], ModuleKeyPointEntityService);
 //# sourceMappingURL=moduleKeyPoint.service.js.map
