@@ -39,37 +39,46 @@ function App() {
   const [activeSection, setActiveSection] = useState('Dashboard');
   const [loading, setLoading] = useState(true);
 
+  // Synchronous initial token check to prevent flicker and race conditions
   useEffect(() => {
-    const savedToken = localStorage.getItem(TOKEN_KEY) ?? localStorage.getItem('token');
+    const savedToken = localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token');
 
     if (savedToken) {
       const tokenUser = userFromToken(savedToken);
       if (tokenUser) {
+        // Keep storage in sync
         localStorage.setItem(TOKEN_KEY, savedToken);
         setAccessToken(savedToken);
         setCurrentUser(tokenUser);
         setActiveRole(tokenUser.primaryRole);
 
+        // Auto-redirect authenticated user directly to dashboard
         if (route !== 'set-password') {
           setRoute('dashboard');
           window.history.replaceState(null, '', '/dashboard');
         }
       } else {
+        // Token was invalid or expired -> Clear it
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem('token');
+        if (route === 'dashboard') {
+          setRoute('login'); // Require credentials if trying to access dashboard directly
+          window.history.replaceState(null, '', '/login');
+        }
       }
     } else if (route === 'dashboard') {
-      setRoute('home');
-      window.history.replaceState(null, '', '/homeRoute');
+      // No token and trying to view dashboard -> Redirect to login
+      setRoute('login');
+      window.history.replaceState(null, '', '/login');
     }
 
     setLoading(false);
   }, []);
 
+  // Listen to browser forward/back button actions
   useEffect(() => {
     const handlePopState = () => setRoute(routeFromPath());
     window.addEventListener('popstate', handlePopState);
-
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
@@ -104,11 +113,11 @@ function App() {
     setActiveSection('Dashboard');
   };
 
+  // Guard routing logic cleanly based on state 
   const visibleRoute = useMemo(() => {
     if (currentUser && route !== 'set-password') {
       return 'dashboard';
     }
-
     return route;
   }, [currentUser, route]);
 
@@ -116,6 +125,7 @@ function App() {
     return <main className="loading-shell">Loading SkillForge...</main>;
   }
 
+  // --- Route Rendering Logic ---
   if (visibleRoute === 'set-password') {
     return <SetPasswordForm onSuccess={() => navigate('login', '/login')} />;
   }
@@ -124,10 +134,12 @@ function App() {
     return <LoginPage onBackHome={() => navigate('home', '/homeRoute')} onLogin={handleLogin} />;
   }
 
+  // If there's no user logged in or the route is home, show homepage
   if (!currentUser || visibleRoute === 'home') {
     return <HomePage onLoginClick={() => navigate('login', '/login')} />;
   }
 
+  // Dashboard Fallback (Authenticated Area)
   return (
     <AppLayout
       activeRole={activeRole}

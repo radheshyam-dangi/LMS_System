@@ -13,6 +13,7 @@ export declare class EmailService implements OnModuleInit {
         senderName: string;
         senderEmail: string;
     }): Promise<{
+        success: boolean;
         previewUrl: string | false;
     }>;
 }

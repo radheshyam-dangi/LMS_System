@@ -127,7 +127,6 @@ let UserEntityService = class UserEntityService extends base_service_1.BaseServi
         if (!isPasswordValid) {
             throw new common_1.UnauthorizedException('Invalid email or password');
         }
-        // TODO: Move this to an environment variable (e.g., process.env.JWT_SECRET)
         const JWT_SECRET = 'secret-key';
         const accessToken = jwt.sign({
             id: user.id,

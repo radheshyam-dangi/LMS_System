@@ -13,6 +13,7 @@ export declare class EmailController {
     private readonly emailService;
     constructor(emailService: EmailService);
     sendEmail(invitationDto: SendInvitationDto): Promise<{
+        success: boolean;
         previewUrl: string | false;
     }>;
 }

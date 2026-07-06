@@ -12,8 +12,8 @@ type AppLayoutProps = {
 
 const navigationByRole: Record<RoleName, { main: string[]; tools: string[] }> = {
   Admin: {
-    main: ['Dashboard', 'Learning Paths', 'Modules', 'Assignments', 'Evaluations', 'Progress'],
-    tools: ['AI Coach', 'Analytics', 'Users', 'Settings'],
+    main: ['Dashboard','Users', 'Settings'],
+    tools: ['AI Coach'],
   },
   Trainer: {
     main: ['Dashboard', 'My Cohorts', 'Assignments', 'Reviews', 'Progress'],
