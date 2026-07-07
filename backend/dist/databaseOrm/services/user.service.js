@@ -57,7 +57,6 @@ let UserEntityService = class UserEntityService extends base_service_1.BaseServi
     constructor(datasource) {
         super();
         this.repository = datasource.getRepository(user_entity_1.UserEntity);
-        // Properly initializing the Role repository
         this.roleRepository = datasource.getRepository(role_entity_1.RoleEntity);
     }
     async findAll() {

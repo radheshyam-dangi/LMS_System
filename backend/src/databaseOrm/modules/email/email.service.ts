@@ -5,21 +5,31 @@ import * as jwt from 'jsonwebtoken';
 @Injectable()
 export class EmailService implements OnModuleInit {
   private transporter: nodemailer.Transporter;
-  
-  // TODO: In production, pull these from ConfigService: this.configService.get('JWT_SECRET')
   private readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secure-invitation-secret-key'; 
 
   async onModuleInit() {
-    // REMOVED: nodemailer.createTestAccount() call to speed up startup
-    this.transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false,
-      auth: { 
-        user: process.env.SMTP_USER || 'evie.treutel70@ethereal.email', 
-        pass: process.env.SMTP_PASS || 'KBm4fNz1U7X5HwGMrF' 
-      },
-    });
+    try {
+      // Automatically creates a dynamic dummy account from Ethereal on the fly
+      const testAccount = await nodemailer.createTestAccount();
+      
+      console.log('------------------------------------------------------');
+      console.log('Ethereal Dynamic Account Created Successfully!');
+      console.log(`Username: ${testAccount.user}`);
+      console.log(`Password: ${testAccount.pass}`);
+      console.log('------------------------------------------------------');
+
+      this.transporter = nodemailer.createTransport({
+        host: testAccount.smtp.host,
+        port: testAccount.smtp.port,
+        secure: testAccount.smtp.secure,
+        auth: { 
+          user: testAccount.user, 
+          pass: testAccount.pass 
+        },
+      });
+    } catch (error) {
+      console.error('Failed to provision Ethereal test environment account:', error);
+    }
   }
 
   async sendInvitationEmail(dto: {
@@ -32,7 +42,6 @@ export class EmailService implements OnModuleInit {
     senderName: string;   
     senderEmail: string;  
   }) {
-    // 1. Generate a secure invitation token valid for 24 hours
     const invitationToken = jwt.sign(
       { 
         email: dto.to, 
@@ -45,10 +54,8 @@ export class EmailService implements OnModuleInit {
       { expiresIn: '24h' }
     );
 
-    // 2. Frontend application URL route
     const frontendAcceptUrl = `http://localhost:5173/set-password?token=${invitationToken}`;
 
-    // 3. Build HTML template
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
         <h2 style="color: #333;">Welcome to the Tech Team, ${dto.firstName}!</h2>
@@ -68,24 +75,28 @@ export class EmailService implements OnModuleInit {
       </div>
     `;
 
-    // 4. Send the mail wrapped in a try/catch block
     try {
       const info = await this.transporter.sendMail({
-        // Best practice: Name comes from dynamic sender, but email address matches your authorized SMTP user domain
-        from: `"${dto.senderName}" ${dto.senderEmail}`, 
-        // replyTo: dto.senderEmail, // ◄ Allows recipient to reply directly to the person who invited them
-        to: dto.to,
+        // Maps the targeted admin custom email details natively
+        from: `"${dto.senderName}" <${dto.senderEmail}>`, 
+        to: dto.to, // Displays target user on UI layout screen
         subject: dto.subject,
         html: htmlContent, 
       });
 
+      // Generates the browser execution preview URL string 
       const previewUrl = nodemailer.getTestMessageUrl(info);
-      console.log('Preview Link: %s', previewUrl);
+      console.log('\n========= EMAIL SENT (SANDBOX) =========');
+      console.log(`From: "${dto.senderName}" <${dto.senderEmail}>`);
+      console.log(`To: <${dto.to}>`);
+      console.log(`Direct Preview Link: ${previewUrl}`);
+      console.log('========================================\n');
+
       return { success: true, previewUrl };
 
     } catch (error) {
-      console.error('Failed to send invitation email:', error);
-      throw new InternalServerErrorException('Email service is temporarily unavailable');
+      console.error('Failed to send mock invitation payload:', error);
+      throw new InternalServerErrorException('Email service sandbox is temporarily offline');
     }
   }
 }

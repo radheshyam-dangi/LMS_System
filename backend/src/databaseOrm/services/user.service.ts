@@ -19,7 +19,6 @@ export class UserEntityService extends BaseService<UserEntity> {
   constructor(datasource: DataSource) {
     super();
     this.repository = datasource.getRepository<UserEntity>(UserEntity);
-    // Properly initializing the Role repository
     this.roleRepository = datasource.getRepository<RoleEntity>(RoleEntity);
   }
 

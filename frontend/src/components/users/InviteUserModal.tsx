@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { sendInvitation } from '../../services/authService';
 import type { RoleName } from '../../types/auth';
+import './InviteUserModal.css';
 
 type InviteUserModalProps = {
   accessToken: string;
-  currentUser: any; 
+  currentUser: any;
   onClose: () => void;
   onInvited: (user: {
     email: string;
@@ -15,7 +16,13 @@ type InviteUserModalProps = {
   }) => void;
 };
 
-const selectableRoles: RoleName[] = ['Admin', 'Trainer', 'Trainee'];
+const selectableRoles: RoleName[] = ['Trainee', 'Trainer', 'Admin'];
+
+const roleCopy: Record<RoleName, string> = {
+  Trainee: 'Learns paths',
+  Trainer: 'Builds & guides',
+  Admin: 'Runs the platform',
+};
 
 export function InviteUserModal({ accessToken, currentUser, onClose, onInvited }: InviteUserModalProps) {
   const [formData, setFormData] = useState({
@@ -40,8 +47,8 @@ export function InviteUserModal({ accessToken, currentUser, onClose, onInvited }
       const next = current.includes(role)
         ? current.filter((currentRole) => currentRole !== role)
         : [...current, role];
-      
-      //  FIX 1: Cast the fallback array strictly as RoleName[]
+
+      // FIX 1: Cast the fallback array strictly as RoleName[]
       const safeNext = (next.length > 0 ? next : ['Trainee']) as RoleName[];
 
       if (!safeNext.includes(primaryRole)) {
@@ -58,7 +65,7 @@ export function InviteUserModal({ accessToken, currentUser, onClose, onInvited }
     setMessage('');
 
     try {
-      //  FIX 2: Cast the payload object to "any" temporarily if you haven't 
+      // FIX 2: Cast the payload object to "any" temporarily if you haven't
       // updated your backend types/auth.ts file yet to accept sender details.
       await sendInvitation(
         {
@@ -70,7 +77,7 @@ export function InviteUserModal({ accessToken, currentUser, onClose, onInvited }
           isPrimary: primaryRole,
           senderName: `${currentUser?.firstName ?? 'Admin'} ${currentUser?.lastName ?? 'User'}`,
           senderEmail: currentUser?.email ?? '',
-        } as any, 
+        } as any,
         accessToken,
       );
       onInvited({
@@ -89,74 +96,117 @@ export function InviteUserModal({ accessToken, currentUser, onClose, onInvited }
   };
 
   return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="modal-panel" role="dialog" aria-modal="true" aria-labelledby="invite-title">
-        <div className="modal-header">
+    <div className="sf-invite-backdrop" role="presentation" onClick={onClose}>
+      <section
+        className="sf-invite-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invite-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sf-invite-header">
           <div>
-            <p className="eyebrow">Admin action</p>
-            <h2 id="invite-title">Add user</h2>
+            <p className="sf-invite-eyebrow">Admin access · new member</p>
+            <h2 className="sf-invite-title" id="invite-title">Add to SkillForge</h2>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close modal">
-            x
+          <button className="sf-invite-close" type="button" onClick={onClose} aria-label="Close modal">
+            ×
           </button>
         </div>
 
-        <form className="modal-form" onSubmit={handleSubmit}>
-          <div className="form-grid">
-            <label>
-              First name
-              <input name="firstName" value={formData.firstName} onChange={updateField} required />
+        <form className="sf-invite-form" onSubmit={handleSubmit}>
+          <div className="sf-form-row">
+            <label className="sf-field">
+              <span className="sf-field-label">First name</span>
+              <input name="firstName" value={formData.firstName} onChange={updateField} placeholder="Jane" required />
             </label>
-            <label>
-              Last name
-              <input name="lastName" value={formData.lastName} onChange={updateField} required />
+            <label className="sf-field">
+              <span className="sf-field-label">Last name</span>
+              <input name="lastName" value={formData.lastName} onChange={updateField} placeholder="Doe" required />
             </label>
           </div>
-          <label>
-            Email
-            <input name="email" type="email" value={formData.email} onChange={updateField} required />
+
+          <label className="sf-field">
+            <span className="sf-field-label">Email</span>
+            <input
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={updateField}
+              placeholder="jane.doe@example.com"
+              required
+            />
           </label>
-          <label>
-            Subject
+
+          <label className="sf-field">
+            <span className="sf-field-label">Invitation subject</span>
             <input name="subject" value={formData.subject} onChange={updateField} required />
           </label>
 
-          <div className="field-group">
-            <span>Roles</span>
-            <div className="role-options">
-              {selectableRoles.map((role) => (
-                <label key={role}>
-                  <input
-                    checked={roles.includes(role)}
-                    type="checkbox"
-                    onChange={() => toggleRole(role)}
-                  />
-                  {role}
-                </label>
-              ))}
+          <div className="sf-gauge-block">
+            <div className="sf-gauge-heading">
+              <span className="sf-field-label">Access level</span>
+              <span className="sf-gauge-hint">tap to mark primary</span>
+            </div>
+
+            <div className="sf-temper-gauge">
+              {selectableRoles.map((role) => {
+                const isSelected = roles.includes(role);
+                const isPrimary = primaryRole === role;
+                return (
+                  <div
+                    key={role}
+                    data-role={role}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
+                    className={`sf-temper-cell${isSelected ? ' is-selected' : ''}${isPrimary ? ' is-primary' : ''}`}
+                    onClick={() => toggleRole(role)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleRole(role);
+                      }
+                    }}
+                  >
+                    <div className="sf-temper-fill" />
+                    <div className="sf-temper-label-row">
+                      <span className="sf-temper-name">
+                        {role} <span className="sf-temper-flame" aria-hidden="true">●</span>
+                      </span>
+                      <span className="sf-temper-check" aria-hidden="true">{isSelected ? '✓' : ''}</span>
+                    </div>
+                    <span className="sf-field-label" style={{ fontSize: 11.5, fontWeight: 500 }}>
+                      {roleCopy[role]}
+                    </span>
+                    <button
+                      type="button"
+                      className="sf-temper-make-primary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (isSelected) setPrimaryRole(role);
+                      }}
+                    >
+                      {isPrimary ? 'Primary role' : 'Set as primary'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <label>
-            Primary role
-            {/* FIX 3: Value explicitly cast as RoleName */}
-            <select value={primaryRole} onChange={(event) => setPrimaryRole(event.target.value as RoleName)}>
-              {availablePrimaryRoles.map((role) => (
-                <option key={role} value={role}>
-                  {role}
-                </option>
-              ))}
-            </select>
-          </label>
+          {message && <p className="sf-form-message is-error">{message}</p>}
 
-          {message && <p className="form-message error">{message}</p>}
-
-          <div className="modal-actions">
-            <button className="ghost-button" type="button" onClick={onClose}>
+          <div className="sf-invite-actions">
+            <button className="sf-btn sf-btn-ghost" type="button" onClick={onClose}>
               Cancel
             </button>
-            <button className="primary-button" type="submit" disabled={submitting}>
-              {submitting ? 'Sending...' : 'Send invitation'}
+            <button
+              className="sf-btn sf-btn-primary"
+              type="submit"
+              disabled={submitting || !formData.firstName || !formData.lastName || !formData.email}
+            >
+              {submitting ? 'Sending…' : 'Send invitation'}
             </button>
           </div>
         </form>
