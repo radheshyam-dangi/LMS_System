@@ -141,21 +141,21 @@ function App() {
 
   // Dashboard Fallback (Authenticated Area)
   return (
-    <AppLayout
-      activeRole={activeRole}
-      activeSection={activeSection}
-      onLogout={handleLogout}
-      onRoleChange={handleRoleChange}
-      onSectionChange={setActiveSection}
-      user={currentUser}
-    >
-      <DashboardPage
-        accessToken={accessToken}
-        activeRole={activeRole}
-        activeSection={activeSection}
-        currentUser={currentUser}
-      />
-    </AppLayout>
+    // <AppLayout
+    //   activeRole={activeRole}
+    //   activeSection={activeSection}
+    //   onLogout={handleLogout}
+    //   onRoleChange={handleRoleChange}
+    //   onSectionChange={setActiveSection}
+    //   user={currentUser}
+    // >
+    //   <DashboardPage
+    //     accessToken={accessToken}
+    //     activeRole={activeRole}
+    //     activeSection={activeSection}
+    //     currentUser={currentUser}
+    //   />
+    // </AppLayout>
   );
 }
 
