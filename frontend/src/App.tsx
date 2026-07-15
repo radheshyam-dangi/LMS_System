@@ -156,6 +156,7 @@ function App() {
     //     currentUser={currentUser}
     //   />
     // </AppLayout>
+    <h1>Welcome to homepage</h1>
   );
 }
 
