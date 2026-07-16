@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { login } from '../../services/authService';
 import type { LoginResponse } from '../../types/auth';
 
@@ -32,24 +32,69 @@ export function LoginForm({ onLogin }: LoginFormProps) {
 
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
-      <label>
-        Email
-        <input name="email" type="email" value={formData.email} onChange={handleChange} required />
-      </label>
-      <label>
-        Password
-        <input
-          name="password"
-          type="password"
-          value={formData.password}
-          onChange={handleChange}
-          required
-        />
-      </label>
-      <button className="primary-button" type="submit" disabled={submitting}>
-        {submitting ? 'Signing in...' : 'Login'}
+      {/* Alert Error Message Box banner */}
+      {message && (
+        <div className="auth-error-banner" role="alert">
+          <span className="error-icon">⚠️</span>
+          <p className="error-text">{message}</p>
+        </div>
+      )}
+
+      {/* Email Input Field Container Stack */}
+      <div className="auth-input-group">
+        <label htmlFor="login-email">Email Address</label>
+        <div className="input-with-icon-wrapper">
+          <span className="field-icon">✉️</span>
+          <input
+            id="login-email"
+            name="email"
+            type="email"
+            className="auth-text-input"
+            placeholder="name@company.com"
+            value={formData.email}
+            onChange={handleChange}
+            disabled={submitting}
+            required
+          />
+        </div>
+      </div>
+
+      {/* Password Input Field Container Stack */}
+      <div className="auth-input-group">
+        <div className="label-row-meta">
+          <label htmlFor="login-password">Password</label>
+        </div>
+        <div className="input-with-icon-wrapper">
+          <span className="field-icon">🔒</span>
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            className="auth-text-input"
+            placeholder="••••••••"
+            value={formData.password}
+            onChange={handleChange}
+            disabled={submitting}
+            required
+          />
+        </div>
+      </div>
+
+      {/* Primary Action Button */}
+      <button 
+        className={`primary-button auth-submit-btn ${submitting ? 'btn-loading' : ''}`} 
+        type="submit" 
+        disabled={submitting}
+      >
+        {submitting ? (
+          <span className="loading-spinner-flex">
+            <span className="spinner-dot" />
+            Signing in...
+          </span>
+        ) : (
+          'Sign In to Dashboard'
+        )}
       </button>
-      {message && <p className="form-message error">{message}</p>}
     </form>
   );
 }

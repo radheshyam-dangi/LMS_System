@@ -3,13 +3,12 @@ import { SetPasswordForm } from './components/auth/SetPasswordForm';
 import { AppLayout } from './components/layout/AppLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { HomePage } from './pages/HomePage';
-import { LoginPage } from './pages/LoginPage';
+import { LoginPage } from './components/auth/LoginPage';
 import type { LoginResponse, RoleName, SessionUser } from './types/auth';
 import { normalizeUser, userFromToken } from './utils/auth';
 import './App.css';
 
 const TOKEN_KEY = 'skillforge_access_token';
-
 type RouteName = 'home' | 'login' | 'set-password' | 'dashboard';
 
 const routeFromPath = (): RouteName => {
@@ -19,15 +18,12 @@ const routeFromPath = (): RouteName => {
   if (hasInvitationToken || path.includes('set-password')) {
     return 'set-password';
   }
-
   if (path.includes('login')) {
     return 'login';
   }
-
   if (path.includes('dashboard')) {
     return 'dashboard';
   }
-
   return 'home';
 };
 
@@ -39,43 +35,35 @@ function App() {
   const [activeSection, setActiveSection] = useState('Dashboard');
   const [loading, setLoading] = useState(true);
 
-  // Synchronous initial token check to prevent flicker and race conditions
   useEffect(() => {
     const savedToken = localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token');
-
     if (savedToken) {
       const tokenUser = userFromToken(savedToken);
       if (tokenUser) {
-        // Keep storage in sync
         localStorage.setItem(TOKEN_KEY, savedToken);
         setAccessToken(savedToken);
         setCurrentUser(tokenUser);
         setActiveRole(tokenUser.primaryRole);
 
-        // Auto-redirect authenticated user directly to dashboard
         if (route !== 'set-password') {
           setRoute('dashboard');
           window.history.replaceState(null, '', '/dashboard');
         }
       } else {
-        // Token was invalid or expired -> Clear it
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem('token');
         if (route === 'dashboard') {
-          setRoute('login'); // Require credentials if trying to access dashboard directly
+          setRoute('login');
           window.history.replaceState(null, '', '/login');
         }
       }
     } else if (route === 'dashboard') {
-      // No token and trying to view dashboard -> Redirect to login
       setRoute('login');
       window.history.replaceState(null, '', '/login');
     }
-
     setLoading(false);
   }, []);
 
-  // Listen to browser forward/back button actions
   useEffect(() => {
     const handlePopState = () => setRoute(routeFromPath());
     window.addEventListener('popstate', handlePopState);
@@ -113,7 +101,6 @@ function App() {
     setActiveSection('Dashboard');
   };
 
-  // Guard routing logic cleanly based on state 
   const visibleRoute = useMemo(() => {
     if (currentUser && route !== 'set-password') {
       return 'dashboard';
@@ -125,7 +112,6 @@ function App() {
     return <main className="loading-shell">Loading SkillForge...</main>;
   }
 
-  // --- Route Rendering Logic ---
   if (visibleRoute === 'set-password') {
     return <SetPasswordForm onSuccess={() => navigate('login', '/login')} />;
   }
@@ -134,12 +120,10 @@ function App() {
     return <LoginPage onBackHome={() => navigate('home', '/homeRoute')} onLogin={handleLogin} />;
   }
 
-  // If there's no user logged in or the route is home, show homepage
   if (!currentUser || visibleRoute === 'home') {
     return <HomePage onLoginClick={() => navigate('login', '/login')} />;
   }
 
-  // Dashboard Fallback (Authenticated Area)
   return (
     <AppLayout
       activeRole={activeRole}
@@ -149,6 +133,7 @@ function App() {
       onSectionChange={setActiveSection}
       user={currentUser}
     >
+      {/* ActiveSection state is fully captured here */}
       <DashboardPage
         accessToken={accessToken}
         activeRole={activeRole}
@@ -156,7 +141,6 @@ function App() {
         currentUser={currentUser}
       />
     </AppLayout>
-    
   );
 }
 

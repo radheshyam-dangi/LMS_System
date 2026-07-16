@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import "../../App.css"
+import "../../App.css";
 import { API_BASE_URL } from '../../api';
 
 export type UserStatus = 'Active' | 'Inactive' | 'At Risk';
@@ -13,15 +13,15 @@ export interface UserDetail {
   roles: AppRole[];
   primaryRole: AppRole;
   status: UserStatus;
-  joinedDate: string;
+  created_at: string; 
+  
+  // UPGRADED FIELD: For customized UI display string
+  joinedDisplay: string;
   progress: number;
   currentModule: string;
   score: number;
 }
 
-
-// The API returns primaryRole/roles as objects (e.g. { id, name: 'Admin', ... }),
-// not plain strings. This normalizes either shape down to just the role name.
 function extractRoleName(role: any): AppRole {
   if (!role) return 'Trainee';
   if (typeof role === 'string') return role as AppRole;
@@ -30,6 +30,14 @@ function extractRoleName(role: any): AppRole {
 
 function mapApiUser(u: any): UserDetail {
   const rawRoles = u.roles ?? (u.primaryRole ? [u.primaryRole] : []);
+  // 1. Capture the raw timestamp from the Base Entity column
+  const rawDate = u.createdAt ?? u.joined_date ?? u.joinedDate;
+  
+  // 2. Customize the date format (e.g., "Jul 3, 2026")
+  const customizedDate = rawDate 
+    ? new Date(rawDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) 
+    : '—';
+
   return {
     id: u.id ?? u.user_id,
     firstName: u.firstName ?? u.first_name ?? '',
@@ -38,7 +46,8 @@ function mapApiUser(u: any): UserDetail {
     roles: rawRoles.map(extractRoleName),
     primaryRole: extractRoleName(u.primaryRole ?? u.primary_role),
     status: u.status ?? 'Active',
-    joinedDate: u.joinedDate ?? u.joined_date ?? '',
+    created_at : rawDate ?? '',
+    joinedDisplay: customizedDate, 
     progress: Number(u.progress ?? 0),
     currentModule: u.currentModule ?? u.current_module ?? '—',
     score: Number(u.score ?? 0),
@@ -50,8 +59,8 @@ async function fetchUsers(signal?: AbortSignal): Promise<UserDetail[]> {
   if (!response.ok) {
     throw new Error(`Failed to load users (status ${response.status})`);
   }
+
   const data = await response.json();
-  console.log(data);
   return (data.users ?? data).map(mapApiUser);
 }
 
@@ -67,7 +76,7 @@ async function createUser(payload: {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`Failed to invite user (status ${response.status})`);
+    throw new Error(`Failed to add user to Skillforge (status ${response.status})`);
   }
   const data = await response.json();
   return mapApiUser(data.user ?? data);
@@ -91,9 +100,11 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<'All' | AppRole>('All');
+  
+  // MUTUALLY EXCLUSIVE MODAL STATE MANAGER
+  const [activeModal, setActiveModal] = useState<'NONE' | 'ADD_USER' | 'VIEW_DETAILS'>('NONE');
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
 
-  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -117,7 +128,6 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
     return () => controller.abort();
   }, [loadUsers]);
 
-  // Stats calculated from the real, fetched dataset
   const metrics = useMemo(() => {
     return users.reduce(
       (acc, user) => {
@@ -145,23 +155,24 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
     });
   }, [users, searchTerm, selectedRoleFilter]);
 
-  // Dynamic progress bar styling color based on percentage
-  const getProgressColor = (progress: number) => {
-    if (progress === 100) return '#10b981'; // Teal/Green
-    if (progress < 30) return '#f59e0b'; // Amber/Orange
-    return '#4f46e5'; // Indigo
+  const handleOpenAddUserModal = () => {
+    // setInviteForm(EMPTY_INVITE_FORM);
+    // setInviteError(null);
+    // setSelectedUser(null); // Clear any open user profiles
+    // setActiveModal('ADD_USER');
+    onOpenInviteModal(); 
   };
 
-  const lhandleOpenInviteModal = () => {
-    setInviteForm(EMPTY_INVITE_FORM);
+  const handleOpenDetailsModal = (user: UserDetail) => {
     setInviteError(null);
-    setIsInviteModalOpen(true);
-    onOpenInviteModal(); // notify parent, in case it also tracks this
+    setSelectedUser(user);
+    setActiveModal('VIEW_DETAILS'); // Overwrites ADD_USER entirely
   };
 
-  const handleCloseInviteModal = () => {
-    if (isSubmittingInvite) return; // don't let the modal close mid-request
-    setIsInviteModalOpen(false);
+  const handleCloseAnyModal = () => {
+    if (isSubmittingInvite) return;
+    setActiveModal('NONE');
+    setSelectedUser(null);
   };
 
   const handleInviteFormChange = (
@@ -177,9 +188,9 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
     try {
       const newUser = await createUser(inviteForm);
       setUsers((prev) => [newUser, ...prev]);
-      setIsInviteModalOpen(false);
+      setActiveModal('NONE');
     } catch (err: any) {
-      setInviteError(err.message ?? 'Could not send invite. Please try again.');
+      setInviteError(err.message ?? 'Could not add user. Please try again.');
     } finally {
       setIsSubmittingInvite(false);
     }
@@ -187,15 +198,15 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
 
   return (
     <div className="users-management-wrapper">
-      {/* 1. Header Typography Area */}
+      {/* 1. Header Area */}
       <div className="section-header-meta">
         <div className="section-header-row">
           <div>
             <h1 className="main-section-title">User Management</h1>
             <p className="sub-heading-text">{metrics.total} total users • {metrics.atRisk} at risk</p>
           </div>
-          <button type="button" className="invite-user-btn" onClick={handleOpenInviteModal}>
-            + Invite User
+          <button type="button" className="invite-user-btn" onClick={handleOpenAddUserModal}>
+            + Invite New User 
           </button>
         </div>
       </div>
@@ -235,7 +246,7 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
         </div>
       </section>
 
-      {/* 3. Controls Filters & Action Strip */}
+      {/* 3. Controls Filters Strip */}
       <section className="filter-action-strip">
         <div className="filter-left-group">
           <div className="search-box-container">
@@ -268,9 +279,7 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
 
       {/* 4. High Fidelity Data Table */}
       <section className="table-viewport-container">
-        {isLoading && (
-          <div className="table-status-message">Loading users…</div>
-        )}
+        {isLoading && <div className="table-status-message">Loading users…</div>}
 
         {!isLoading && loadError && (
           <div className="table-status-message table-status-error">
@@ -298,7 +307,6 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
             <tbody>
               {filteredUsers.map((user) => (
                 <tr key={user.id} className="interactive-data-row">
-                  {/* Identity Block */}
                   <td className="identity-data-cell">
                     <div className="user-initials-avatar">
                       {user.firstName[0]}{user.lastName[0]}
@@ -308,25 +316,19 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
                       <span className="email-string">{user.email}</span>
                     </div>
                   </td>
-
-                  {/* Role Pill */}
                   <td>
                     <span className={`role-pill-badge role-${user.primaryRole.toLowerCase()}`}>
                       {user.primaryRole}
                     </span>
                   </td>
-
-                  {/* Joined Date */}
-                  <td><span className="registry-date-label">{user.joinedDate}</span></td>
-
-                  {/* Actions Button */}
+                  <td><span className="registry-date-label">{user.joinedDisplay}</span></td>
                   <td className="text-right-aligned">
                     <div className="actions-button-wrapper">
                       <button type="button" className="row-ellipsis-menu">•••</button>
                       <button
                         type="button"
                         className="view-details-action-btn"
-                        onClick={() => setSelectedUser(user)}
+                        onClick={() => handleOpenDetailsModal(user)}
                       >
                         View Details
                       </button>
@@ -339,56 +341,50 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
         )}
       </section>
 
-      {/* 5. 🌟 USER DETAILS POPUP MODAL WITH BACKGROUND BLUR EFFECT */}
-      {selectedUser && (
-        <div className="modal-backdrop-blur-overlay" onClick={() => setSelectedUser(null)}>
+      {/* 5. USER DETAILS MODAL (ONLY OPEN IF STATE IS VIEW_DETAILS) */}
+      {activeModal === 'VIEW_DETAILS' && selectedUser && (
+        <div className="modal-backdrop-blur-overlay" onClick={handleCloseAnyModal}>
           <div className="modal-popup-container" onClick={(e) => e.stopPropagation()}>
-
             <header className="modal-popup-header">
               <h2>User Details Profile</h2>
-              <button type="button" className="modal-close-icon-btn" onClick={() => setSelectedUser(null)}>
+              <button type="button" className="modal-close-icon-btn" onClick={handleCloseAnyModal}>
                 Close ×
               </button>
             </header>
 
             <div className="modal-profile-hero-section">
-              <div className="modal-large-avatar">
-                {selectedUser.firstName[0]}{selectedUser.lastName[0]}
-              </div>
+              
               <h2 className="modal-user-fullname">{selectedUser.firstName} {selectedUser.lastName}</h2>
               <p className="modal-user-email">{selectedUser.email}</p>
             </div>
 
-            {/* Profile Grid Metadata exactly matching the screenshot panel items info */}
             <div className="modal-profile-metadata-grid">
               <div className="grid-meta-box">
-                <label>Primary Role</label>
+                <label>Primary Role - </label>
                 <strong>{selectedUser.primaryRole}</strong>
               </div>
               <div className="grid-meta-box">
-                <label>Status</label>
+                <label>Status - </label>
                 <strong className={`status-text-${selectedUser.status.toLowerCase()}`}>
                   {selectedUser.status}
                 </strong>
               </div>
               <div className="grid-meta-box">
-                <label>Joined</label>
-                <strong>{selectedUser.joinedDate}</strong>
+                <label>Joined - </label>
+                <strong>{selectedUser.joinedDisplay}</strong>
               </div>
             </div>
-
           </div>
         </div>
       )}
 
-      {/* 6. 🌟 INVITE USER MODAL WITH BACKGROUND BLUR EFFECT */}
-      {isInviteModalOpen && (
-        <div className="modal-backdrop-blur-overlay" onClick={handleCloseInviteModal}>
+      {/* 6. ADD TO SKILLFORGE MODAL (ONLY OPEN IF STATE IS ADD_USER) */}
+      {activeModal === 'ADD_USER' && (
+        <div className="modal-backdrop-blur-overlay" onClick={handleCloseAnyModal}>
           <div className="modal-popup-container" onClick={(e) => e.stopPropagation()}>
-
             <header className="modal-popup-header">
-              <h2>Invite New User</h2>
-              <button type="button" className="modal-close-icon-btn" onClick={handleCloseInviteModal}>
+              <h2>Add to Skillforge</h2>
+              <button type="button" className="modal-close-icon-btn" onClick={handleCloseAnyModal}>
                 Close ×
               </button>
             </header>
@@ -449,7 +445,7 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
             </div>
 
             <footer className="modal-popup-footer">
-              <button type="button" className="modal-cancel-btn" onClick={handleCloseInviteModal} disabled={isSubmittingInvite}>
+              <button type="button" className="modal-cancel-btn" onClick={handleCloseAnyModal} disabled={isSubmittingInvite}>
                 Cancel
               </button>
               <button
@@ -458,10 +454,9 @@ export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
                 disabled={!inviteForm.firstName || !inviteForm.lastName || !inviteForm.email || isSubmittingInvite}
                 onClick={handleSendInvite}
               >
-                {isSubmittingInvite ? 'Sending…' : 'Send Invite'}
+                {isSubmittingInvite ? 'Adding…' : 'Add User'}
               </button>
             </footer>
-
           </div>
         </div>
       )}

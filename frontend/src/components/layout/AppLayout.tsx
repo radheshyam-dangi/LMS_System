@@ -1,3 +1,4 @@
+import React from 'react';
 import type { RoleName, SessionUser } from '../../types/auth';
 
 type AppLayoutProps = {
@@ -10,13 +11,14 @@ type AppLayoutProps = {
   user: SessionUser;
 };
 
+// 🔥 UPGRADED NAVIGATION: Added 'Learning Paths' to Admin & Trainer main panels
 const navigationByRole: Record<RoleName, { main: string[]; tools: string[] }> = {
   Admin: {
-    main: ['Dashboard','Users', 'Settings'],
+    main: ['Dashboard', 'Learning Paths', 'Users', 'Settings'],
     tools: ['AI Coach'],
   },
   Trainer: {
-    main: ['Dashboard', 'My Cohorts', 'Assignments', 'Reviews', 'Progress'],
+    main: ['Dashboard', 'Learning Paths', 'My Cohorts', 'Assignments', 'Reviews', 'Progress'],
     tools: ['AI Coach', 'Learners', 'Content Library'],
   },
   Trainee: {
@@ -40,7 +42,7 @@ export function AppLayout({
   onSectionChange,
   user,
 }: AppLayoutProps) {
-  const navigation = navigationByRole[activeRole];
+  const navigation = navigationByRole[activeRole] || navigationByRole['Trainee'];
   const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
 
   return (
@@ -123,6 +125,7 @@ export function AppLayout({
           </div>
         </header>
 
+        {/* This outputs the active view mapped inside DashboardPage routing hooks cleanly */}
         {children}
       </section>
     </main>

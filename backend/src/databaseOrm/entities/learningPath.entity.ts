@@ -24,4 +24,5 @@ export class LearningPathEntity extends BaseEntity {
   // Relation: One-to-Many with Modules via your mapped ModuleEntity configuration
   @OneToMany(() => ModuleEntity, (module) => module.learningPath)
   modules: ModuleEntity[];
+  assignedToTraineeIds: any;
 }

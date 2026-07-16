@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type SetStateAction } from 'react';
 import { InviteUserModal } from '../components/users/InviteUserModal';
-import { UsersSection } from '../components/users/UserManagement'; // 👈 Yahan apna user management component import karein
+import { UsersSection } from '../components/users/UserManagement';
+import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection'; // Ensure path is matching your file structural route
 import type { RoleName, SessionUser } from '../types/auth';
 
 type DashboardPageProps = {
@@ -47,6 +48,8 @@ export function DashboardPage({
   currentUser,
 }: DashboardPageProps) {
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
+  
   const [users, setUsers] = useState<VisibleUser[]>([
     {
       email: currentUser.email,
@@ -63,6 +66,12 @@ export function DashboardPage({
   const addInvitedUser = (user: Omit<VisibleUser, 'status'>) => {
     setUsers((current) => [{ ...user, status: 'invited' }, ...current]);
   };
+
+  // ========================================================
+  // ROUTING ENGINE VIEW CONDITIONALS 
+  // ========================================================
+
+  // VIEW 1: USER MANAGEMENT SECTION
   if (isAdmin && activeSection === 'Users') {
     return (
       <div className="dashboard-content">
@@ -80,10 +89,28 @@ export function DashboardPage({
     );
   }
 
-  // 📋 Fallback: Baaki saare normal sections (Dashboard, Learning Paths, Settings, etc.) ke liye default metrics aur graphs load honge
+  // VIEW 2: LEARNING PATHS CARD GRID SYSTEM (Admin, Trainer & Trainee Contexts)
+  if (activeSection === 'Learning Paths') {
+    return (
+      <div className="dashboard-content">
+        <LearningPathsSection 
+          currentUser={{
+            id: currentUser.id ?? 'trainee-99',
+            name: currentUser.firstName ?? 'User',
+            role: activeRole as any // Maps perfectly into Admin | Trainer | Trainee inside LearningPathsSection
+          }}
+          onNavigateToModules={(pathId: SetStateAction<string | null>, pathName: any) => {
+            console.log(`Loading modules view tracking parameter path map: ${pathName} ID: ${pathId}`);
+            setSelectedPathId(pathId);
+          }}
+        />
+      </div>
+    );
+  }
+
+  // VIEW 3: FALLBACK COMPONENT DEFAULT INSIGHT GRAPHS & METRIC CARDS
   return (
     <div className="dashboard-content">
-      {/* Top Welcome Title Area */}
       <section className="workspace-heading">
         <div>
           <h1>Good morning, {currentUser.firstName || 'Maya'} 👋</h1>
@@ -107,7 +134,6 @@ export function DashboardPage({
         </div>
       </section>
 
-      {/* High Fidelity Metric Cards */}
       <section className="metric-grid" aria-label={`${activeRole} metrics`}>
         {(metricsByRole[activeRole] || metricsByRole['Trainee']).map((metric) => (
           <article className="metric-card" key={metric.label}>
@@ -122,7 +148,6 @@ export function DashboardPage({
         ))}
       </section>
 
-      {/* Main Charts Insight Grid Section */}
       <section className="insight-grid">
         <article className="panel wide-panel">
           <div className="panel-heading">
@@ -148,15 +173,12 @@ export function DashboardPage({
                   <stop offset="100%" stopColor="#14b8a6" stopOpacity="0" />
                 </linearGradient>
               </defs>
-              
               <line x1="0" y1="50" x2="600" y2="50" stroke="#f1f5f9" strokeWidth="1" />
               <line x1="0" y1="100" x2="600" y2="100" stroke="#f1f5f9" strokeWidth="1" />
               <line x1="0" y1="150" x2="600" y2="150" stroke="#f1f5f9" strokeWidth="1" />
               <line x1="0" y1="198" x2="600" y2="198" stroke="#cbd5e1" strokeWidth="1.5" />
-              
               <path d="M 0 130 Q 150 110, 300 90 T 600 50 L 600 200 L 0 200 Z" fill="url(#purpleGlow)" />
               <path d="M 0 160 Q 150 145, 300 130 T 600 80 L 600 200 L 0 200 Z" fill="url(#tealGlow)" />
-              
               <path d="M 0 130 Q 150 110, 300 90 T 600 50" fill="none" stroke="#4f46e5" strokeWidth="2.5" />
               <path d="M 0 160 Q 150 145, 300 130 T 600 80" fill="none" stroke="#14b8a6" strokeWidth="2.5" />
             </svg>

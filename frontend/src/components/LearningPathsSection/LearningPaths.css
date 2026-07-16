@@ -1,0 +1,366 @@
+/* ==========================================
+   LEARNING PATHS DASHBOARD LAYOUT
+   ========================================== */
+
+.learning-paths-management-container {
+  width: 100%;
+  padding: 24px;
+  background-color: #f8fafc;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  box-sizing: border-box;
+}
+
+.learning-paths-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.learning-paths-main-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.learning-paths-sub-heading {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+}
+
+.btn-create-learning-path {
+  background-color: #4f46e5;
+  color: #ffffff;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-create-learning-path:hover {
+  background-color: #4338ca;
+}
+
+/* SEARCH & ACTION CONTROL ROW */
+.learning-paths-control-strip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+  padding: 12px 16px;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  margin-bottom: 24px;
+  gap: 16px;
+}
+
+.filter-tabs-cluster {
+  display: flex;
+  gap: 8px;
+}
+
+.tab-pill-item {
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-weight: 500;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.tab-pill-active {
+  background-color: #e0e7ff;
+  color: #4f46e5;
+}
+
+.search-filter-input-wrapper {
+  max-width: 300px;
+  width: 100%;
+}
+
+.paths-search-field {
+  width: 100%;
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+}
+
+/* CARDS CAROUSEL GRID ENGINE */
+.learning-paths-grid-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 24px;
+}
+
+.learning-path-card-item {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
+}
+
+.card-top-badges-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.card-avatar-icon-box {
+  background: #e0e7ff;
+  font-size: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.badge-meta-group {
+  display: flex;
+  gap: 6px;
+}
+
+.difficulty-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.diff-beginner { background: #dcfce7; color: #15803d; }
+.diff-intermediate { background: #fef3c7; color: #b45309; }
+.diff-advanced { background: #fee2e2; color: #b91c1c; }
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.stat-active { background: #e0f2fe; color: #0369a1; }
+.stat-upcoming { background: #f1f5f9; color: #475569; }
+
+.card-title-string {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px 0;
+}
+
+.card-description-string {
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 16px;
+  flex-grow: 1;
+}
+
+.card-tags-cloud-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.skill-tag-pill-item {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.card-counters-flex-strip {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 20px;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 12px;
+}
+
+/* CARD SLIDER PROGRESS indicator */
+.card-progress-tracking-block {
+  margin-bottom: 20px;
+}
+
+.progress-labels-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: #475569;
+}
+
+.progress-bar-track-line {
+  background: #e2e8f0;
+  height: 6px;
+  border-radius: 3px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.progress-bar-fill-indicator {
+  background: #4f46e5;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.btn-card-action-continue {
+  width: 100%;
+  padding: 10px;
+  background: #f8fafc;
+  color: #4f46e5;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-card-action-continue:hover {
+  background: #4f46e5;
+  color: #ffffff;
+  border-color: #4f46e5;
+}
+
+/* ==========================================
+   ISOLATED FLOATING OVERLAY MODAL SYSTEM
+   ========================================== */
+.modal-backdrop-blur-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background-color: rgba(15, 23, 42, 0.3) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 99999 !important;
+}
+
+.modal-popup-container {
+  background: #ffffff !important;
+  border-radius: 16px !important;
+  padding: 28px !important;
+  width: 92% !important;
+  max-width: 520px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15) !important;
+  z-index: 100000 !important;
+}
+
+.modal-popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.modal-popup-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.modal-close-icon-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.modal-subtext-meta-label {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 20px 0;
+}
+
+.invite-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.invite-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.invite-form-field label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.invite-form-input {
+  padding: 10px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+  font-size: 14px;
+}
+
+.invite-form-input:focus {
+  border-color: #4f46e5;
+}
+
+.invite-form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.flex-half {
+  flex: 1;
+}
+
+.textarea-field {
+  resize: none;
+}
+
+.modal-popup-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.modal-cancel-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.modal-confirm-btn {
+  background: #4f46e5;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.modal-confirm-btn:hover {
+  background-color: #4338ca;
+}
