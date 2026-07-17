@@ -102,8 +102,7 @@ export function DashboardPage({
           onNavigateToModules={(pathId: SetStateAction<string | null>, pathName: any) => {
             console.log(`Loading modules view tracking parameter path map: ${pathName} ID: ${pathId}`);
             setSelectedPathId(pathId);
-          }}
-        />
+          } } accessToken={''}        />
       </div>
     );
   }

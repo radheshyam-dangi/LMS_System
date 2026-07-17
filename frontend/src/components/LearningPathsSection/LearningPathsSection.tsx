@@ -9,7 +9,7 @@ interface LearningPathsSectionProps {
     name: string;
     role: RoleName;
   };
-  accessToken: string; // Dynamic verification token passed from App layer
+  accessToken: string; 
   onNavigateToModules: (pathId: string, pathName: string) => void;
 }
 
@@ -34,7 +34,6 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
   const canModifyOrCreate = currentUser.role === 'Admin' || currentUser.role === 'Trainer';
   const isTrainee = currentUser.role === 'Trainee';
 
-  // ASYNC HOOK: Fetch direct database tracks from API on render mount
   const loadDatabasePaths = async () => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -52,13 +51,42 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
     loadDatabasePaths();
   }, [accessToken]);
 
+  // 🔥 NEW INTERACTION: Assign Trainee Action Handler
+  const handleAssignTrainee = async (pathId: string) => {
+    const traineeId = prompt('Enter the UUID of the Trainee you want to assign to this path:');
+    if (!traineeId || !traineeId.trim()) return;
+
+    try {
+      const updatedPath = await learningPathService.assignTraineeToPath(pathId, traineeId.trim(), accessToken);
+      
+      // Update local state smoothly so the UI updates counters in real-time
+      setPaths((prevPaths) => 
+        prevPaths.map((p) => (p.id === pathId ? { ...p, assignedToTraineeIds: updatedPath.assignedToTraineeIds } : p))
+      );
+      alert('Trainee successfully assigned to this track!');
+    } catch (err: any) {
+      alert(err.message ?? 'Failed to complete assignment registration.');
+    }
+  };
+
   const filteredPaths = useMemo(() => {
     return paths.filter((path) => {
       if (isTrainee && !path.assignedToTraineeIds?.includes(currentUser.id)) return false;
+      
       const matchesTab = activeTabFilter === 'All' || path.status === activeTabFilter;
+      const pathDisplayName = path.title || path.name || '';
+      
+      let tagsArray: string[] = [];
+      if (Array.isArray(path.skillsTags)) {
+        tagsArray = path.skillsTags;
+      } else if (typeof path.skillsTags === 'string') {
+        tagsArray = (path.skillsTags as string).split(',').map(t => t.trim());
+      }
+
       const matchesSearch = 
-        path.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        path.skillsTags.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+        pathDisplayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        tagsArray.some((tag: string) => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+        
       return matchesTab && matchesSearch;
     });
   }, [paths, activeTabFilter, searchQuery, isTrainee, currentUser.id]);
@@ -71,7 +99,6 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
     setIsCreateModalOpen(true);
   };
 
-  // ASYNC FORM INTERACTION HANDLER
   const handleCreatePathSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || isSubmitting) return;
@@ -92,10 +119,7 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
         skillsTags: tagsArray.length > 0 ? tagsArray : ['General']
       };
 
-      // Direct write call sequence executing a secure transaction to the database
       const savedDatabasePath = await learningPathService.createPath(payload, accessToken);
-      
-      // Update UI state with the returned structural DB entry smoothly
       setPaths((prev) => [savedDatabasePath, ...prev]);
       setIsCreateModalOpen(false);
     } catch (err: any) {
@@ -121,7 +145,6 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
         )}
       </header>
 
-      {/* FILTER CONTROL BAR STRIP */}
       <section className="learning-paths-control-strip">
         <div className="filter-tabs-cluster">
           {(['All', 'Active', 'Upcoming', 'Completed'] as const).map((tab) => (
@@ -146,7 +169,6 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
         </div>
       </section>
 
-      {/* RENDER RUNTIME BLOCK ACTIONS */}
       {isLoading ? (
         <div className="table-status-message">Fetching records from backend pipeline...</div>
       ) : errorMessage ? (
@@ -158,42 +180,79 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
           {filteredPaths.length === 0 ? (
             <div className="empty-paths-state-box">No learning tracks available.</div>
           ) : (
-            filteredPaths.map((path) => (
-              <div key={path.id} className="learning-path-card-item">
-                <div className="card-top-badges-row">
-                  <div className="card-avatar-icon-box">🎒</div>
-                  <div className="badge-meta-group">
-                    <span className={`difficulty-badge diff-${path.difficulty.toLowerCase()}`}>{path.difficulty}</span>
-                    <span className={`status-badge stat-${path.status.toLowerCase()}`}>{path.status}</span>
+            filteredPaths.map((path) => {
+              const currentTitle = path.title || path.name || 'Untitled Track';
+              const currentDifficulty = path.difficulty || 'Intermediate';
+              const currentStatus = path.status || 'Active';
+              
+              let currentTags: string[] = [];
+              if (Array.isArray(path.skillsTags)) {
+                currentTags = path.skillsTags;
+              } else if (typeof path.skillsTags === 'string') {
+                currentTags = (path.skillsTags as string).split(',').map(t => t.trim());
+              }
+
+              return (
+                <div key={path.id} className="learning-path-card-item">
+                  <div className="card-top-badges-row">
+                    <div className="card-avatar-icon-box">🎒</div>
+                    <div className="badge-meta-group">
+                      <span className={`difficulty-badge diff-${currentDifficulty.toLowerCase()}`}>{currentDifficulty}</span>
+                      <span className={`status-badge stat-${currentStatus.toLowerCase()}`}>{currentStatus}</span>
+                    </div>
+                  </div>
+                  <h2 className="card-title-string">{currentTitle}</h2>
+                  <p className="card-description-string">{path.description || 'No description provided.'}</p>
+                  
+                  <div className="card-tags-cloud-row">
+                    {currentTags.map((tag: string, idx: number) => (
+                      <span key={idx} className="skill-tag-pill-item">{tag}</span>
+                    ))}
+                  </div>
+                  
+                  <div className="card-counters-flex-strip">
+                    <span>⏱️ {path.duration || '12 weeks'}</span>
+                    <span>📦 {path.modules?.length || 0} modules</span>
+                    <span>👥 Enrolled: {path.assignedToTraineeIds?.length || 0}</span>
+                  </div>
+                  
+                  <div className="card-progress-tracking-block">
+                    <div className="progress-labels-row">
+                      <label>Overall progress</label>
+                      <strong>{path.overallProgress || 0}%</strong>
+                    </div>
+                    <div className="progress-bar-track-line">
+                      <div className="progress-bar-fill-indicator" style={{ width: `${path.overallProgress || 0}%` }} />
+                    </div>
+                  </div>
+
+                  {/* 🔥 SYSTEM ACTIONS ROW CONTAINER */}
+                  <div className="card-actions-row-cluster" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <button 
+                      type="button" 
+                      className="btn-card-action-continue" 
+                      style={{ flex: 1 }}
+                      onClick={() => onNavigateToModules(path.id, currentTitle)}
+                    >
+                      {isTrainee ? 'Continue Learning →' : 'Manage Curriculums →'}
+                    </button>
+                    
+                    {/* Only Trainer or Admin can see the fast assignment feature actions */}
+                    {canModifyOrCreate && (
+                      <button 
+                        type="button" 
+                        className="btn-card-action-assign"
+                        style={{ padding: '0 12px', background: '#e2e8f0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                        onClick={() => handleAssignTrainee(path.id)}
+                        title="Assign Trainee to this Path"
+                      >
+                        👥 Assign
+                      </button>
+                    )}
                   </div>
                 </div>
-                <h2 className="card-title-string">{path.name}</h2>
-                <p className="card-description-string">{path.description}</p>
-                <div className="card-tags-cloud-row">
-                  {path.skillsTags.map((tag: string, idx: number) => (
-                    <span key={idx} className="skill-tag-pill-item">{tag}</span>
-                  ))}
-                </div>
-                <div className="card-counters-flex-strip">
-                  <span>⏱️ {path.weeksCount || path.duration || '12 weeks'}</span>
-                  <span>📦 {path.modulesCount} modules</span>
-                  <span>📝 {path.tasksCount} tasks</span>
-                  <span>👥 {path.enrolledCount} enrolled</span>
-                </div>
-                <div className="card-progress-tracking-block">
-                  <div className="progress-labels-row">
-                    <label>Overall progress</label>
-                    <strong>{path.overallProgress}%</strong>
-                  </div>
-                  <div className="progress-bar-track-line">
-                    <div className="progress-bar-fill-indicator" style={{ width: `${path.overallProgress}%` }} />
-                  </div>
-                </div>
-                <button type="button" className="btn-card-action-continue" onClick={() => onNavigateToModules(path.id, path.name)}>
-                  {isTrainee ? 'Continue Learning →' : 'Manage Curriculums →'}
-                </button>
-              </div>
-            ))
+              );
+            })
           )}
         </section>
       )}

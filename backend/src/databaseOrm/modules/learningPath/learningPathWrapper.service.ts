@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { LearningPathEntityService } from './learningPath.service';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 
@@ -8,16 +8,15 @@ export class LearningPathService {
     private readonly learningPathEntityService: LearningPathEntityService
   ) {}
 
-  // High-level pipeline forwarding to fetch structured tracks based on active workspace sessions
   async getPathsForUserContext(role: string, userId: string): Promise<LearningPathEntity[]> {
-    return this.learningPathEntityService.findAllPathsForUser(role, userId);
+    return this.learningPathEntityService.findAllPathsForUser(role, userId) as Promise<LearningPathEntity[]>;
   }
 
-  // Assign an existing database track to a designated Trainee student cohort profile pool
   async assignPathToTrainee(pathId: string, traineeId: string): Promise<LearningPathEntity> {
-    const path = await this.learningPathEntityService.findOne(pathId);
+    const path = await this.learningPathEntityService.findOne(pathId) as LearningPathEntity | null;
+    
     if (!path) {
-      throw new Error('Target database entry reference row not found.');
+      throw new NotFoundException('Target database entry reference row not found.');
     }
 
     if (!path.assignedToTraineeIds) {
@@ -28,8 +27,14 @@ export class LearningPathService {
       path.assignedToTraineeIds.push(traineeId);
     }
 
-    return this.learningPathEntityService.update(pathId, {
+    const updatedPath = await this.learningPathEntityService.update(pathId, {
       assignedToTraineeIds: path.assignedToTraineeIds
-    } as any);
+    } as any) as LearningPathEntity | null;
+
+    if (!updatedPath) {
+      throw new NotFoundException('Failed to update the learning path.');
+    }
+
+    return updatedPath;
   }
 }

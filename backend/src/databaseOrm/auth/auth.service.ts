@@ -8,7 +8,8 @@ import { RoleEntity } from '../entities/role.entity';
 
 @Injectable()
 export class AuthService {
-  private readonly JWT_SECRET = 'your-secure-invitation-secret-key';
+  // 🔥 FIX: Ensure matching token signature verification key matches JwtStrategy layout perfectly
+  private readonly JWT_SECRET = process.env.JWT_SECRET || 'secret-key';
 
   constructor(
     @InjectRepository(UserEntity)
@@ -19,22 +20,19 @@ export class AuthService {
 
   async registerInvitedUser(token: string, plainPassword: string) {
     try {
-      // 1. Verify and decode the JWT token
       const decoded = jwt.verify(token, this.JWT_SECRET) as {
         email: string;
         firstName: string;
         lastName: string;
-        roles: string[];      // e.g. ["Trainee", "Trainer"]
-        isPrimary: string;    // e.g. "Trainer"
+        roles: string[]; 
+        isPrimary: string; 
       };
 
-      // 2. Prevent duplicates
       const existingUser = await this.userRepository.findOneBy({ email: decoded.email });
       if (existingUser) {
         throw new BadRequestException('User already registered.');
       }
 
-      // 3. Look up all requested Role Entities from the Database at once
       const dbRoles = await this.roleRepository.findBy({
         name: In(decoded.roles),
       });
@@ -43,29 +41,24 @@ export class AuthService {
         throw new NotFoundException('Assigned token roles could not be found in system.');
       }
 
-      // 4. Find which specific entity represents their primary role selection
       const primaryRoleEntity = dbRoles.find(role => role.name === decoded.isPrimary);
       if (!primaryRoleEntity) {
         throw new BadRequestException(`Primary role specification "${decoded.isPrimary}" missing from token assignment.`);
       }
 
-      // 5. Hash the password
       const saltRounds = 10;
       const hashedPassword = await bcrypt.hash(plainPassword, saltRounds);
 
-      // 6. Build the entity instance payload using TypeORM's constructor pattern
       const newUser = this.userRepository.create({
         email: decoded.email,
         firstName: decoded.firstName,
         lastName: decoded.lastName,
         password: hashedPassword,
-        roles: dbRoles,                 // Matches ManyToMany array
-        primaryRole: primaryRoleEntity, // Matches ManyToOne single column relation
+        roles: dbRoles, 
+        primaryRole: primaryRoleEntity, 
       });
 
-      // 7. Persist to DB
       await this.userRepository.save(newUser);
-      
       return { message: 'Account successfully created' };
 
     } catch (error) {

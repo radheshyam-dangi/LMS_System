@@ -4,6 +4,7 @@ import { LearningPathController } from './learningPath.controller';
 import { LearningPathEntityService } from './learningPath.service';
 import { LearningPathService } from './learningPathWrapper.service'; // Path matching your architecture directory
 import { LearningPathEntity } from '../../entities/learningPath.entity';
+import { AuthModule } from '../../auth/auth.module';
 import { LearningPathModuleEntity } from "../../entities/learningPathModule.entity";
 import { EnrollmentEntity } from "../../entities/enrollment.entity";
 
@@ -14,7 +15,8 @@ import { EnrollmentEntity } from "../../entities/enrollment.entity";
       LearningPathEntity, 
       LearningPathModuleEntity, 
       EnrollmentEntity
-    ])
+    ]),
+    AuthModule
   ],
   controllers: [LearningPathController],
   providers: [

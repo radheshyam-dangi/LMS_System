@@ -4,6 +4,7 @@ import { UserEntity } from './user.entity';
 import { ModuleEntity } from './module.entity';
 import { Entities } from '../../constants/entity';
 import { ForeignKeys } from '../../constants/foreignKeys';
+
 @Entity(Entities.LearningPath)
 export class LearningPathEntity extends BaseEntity {
 
@@ -13,16 +14,25 @@ export class LearningPathEntity extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   description: string;
 
-  @Column({ type: 'varchar', nullable: true }) // maps back to your DBML enum type
+  @Column({ type: 'varchar', nullable: true }) 
   status: string;
 
-  // Relation: Many learning paths can be created by 1 User
+  @Column({ type: 'varchar', default: 'Intermediate' })
+  difficulty: string;
+
+  @Column({ type: 'varchar', default: '12 weeks' })
+  duration: string;
+
+  @Column({ type: 'simple-array', nullable: true })
+  skillsTags: string[];
+
+  @Column({ type: 'simple-array', nullable: true })
+  assignedToTraineeIds: string[];
+
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: ForeignKeys.LearningPath.CreatedBy })
   createdBy: UserEntity;
 
-  // Relation: One-to-Many with Modules via your mapped ModuleEntity configuration
   @OneToMany(() => ModuleEntity, (module) => module.learningPath)
   modules: ModuleEntity[];
-  assignedToTraineeIds: any;
 }

@@ -101,7 +101,7 @@ export class UserEntityService extends BaseService<UserEntity> {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const JWT_SECRET = 'secret-key'; 
+    const JWT_SECRET = process.env.JWT_SECRET || 'secret-key'; 
     const accessToken = jwt.sign(
       {
         id: user.id,
