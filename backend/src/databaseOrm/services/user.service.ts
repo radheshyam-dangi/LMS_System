@@ -76,7 +76,7 @@ export class UserEntityService extends BaseService<UserEntity> {
       firstName: data.firstName,
       lastName: data.lastName,
       roles: assignedRoles,
-      primaryRole: primaryRoleEntity, // ◄ Assigning the relation mapping
+      primaryRole: primaryRoleEntity, 
     });
 
     return await this.repository.save(user);

@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn, OneToMany, ManyToMany, JoinTable } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { UserEntity } from './user.entity';
 import { LearningPathEntity } from './learningPath.entity';
@@ -8,37 +8,37 @@ import { ForeignKeys } from '../../constants/foreignKeys';
 
 @Entity(Entities.Module)
 export class ModuleEntity extends BaseEntity {
-
   @Column({ type: 'varchar', nullable: false })
   title: string;
 
   @Column({ type: 'text', nullable: true })
   description: string;
 
-  @Column({ type: 'varchar', name: 'difficulty_level', nullable: true })
+  @Column({ type: 'varchar', name: 'difficulty_level', nullable: true, default: 'Intermediate' })
   difficultyLevel: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', nullable: true, default: 'Active' })
   status: string;
 
-  // Self-referencing relationship (parent_id points back to Module)
-  @ManyToOne(() => ModuleEntity, (module) => module.subModules, { nullable: true })
-  @JoinColumn({ name: ForeignKeys.Module.ParentId })
-  parent: ModuleEntity;
+  // Self-referencing Parent/Child Submodule Relationship
+  @ManyToOne(() => ModuleEntity, (module) => module.subModules, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: ForeignKeys.Module.ParentId || 'parentId' })
+  parent?: ModuleEntity;
 
   @OneToMany(() => ModuleEntity, (module) => module.parent)
   subModules: ModuleEntity[];
 
-  // Relation: Many modules belong to a LearningPath
-  @ManyToOne(() => LearningPathEntity, (lp) => lp.modules)
-  learningPath: LearningPathEntity;
+  // Direct LearningPath reference
+  @ManyToOne(() => LearningPathEntity, (lp) => lp.modules, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'learningPathId' })
+  learningPath?: LearningPathEntity;
 
-  // Relation: Created By User
-  @ManyToOne(() => UserEntity)
-  @JoinColumn({ name: ForeignKeys.Module.CreatedBy })
-  createdBy: UserEntity;
+  // Creator User Reference
+  @ManyToOne(() => UserEntity, { nullable: true })
+  @JoinColumn({ name: ForeignKeys.Module.CreatedBy || 'createdBy' })
+  createdBy?: UserEntity;
 
-  // Relation: One Module has Many Lessons
-  @OneToMany(() => LessonEntity, (lesson) => lesson.module)
+  // Lessons within Module
+  @OneToMany(() => LessonEntity, (lesson) => lesson.module, { cascade: true })
   lessons: LessonEntity[];
 }

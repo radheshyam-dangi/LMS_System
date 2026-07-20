@@ -7,7 +7,6 @@ import { ForeignKeys } from '../../constants/foreignKeys';
 
 @Entity(Entities.Assignment)
 export class AssignmentEntity extends BaseEntity {
-
   @Column({ type: 'varchar', nullable: false })
   title: string;
 
@@ -17,24 +16,25 @@ export class AssignmentEntity extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   instructions: string;
 
-  @Column({ type: 'varchar', name: 'difficulty_level', nullable: true })
-  difficultyLevel: string;
-
-  @Column({ type: 'varchar', name: 'assignment_type', nullable: true })
+  // 'Subjective' | 'MCQ'
+  @Column({ type: 'varchar', name: 'assignment_type', default: 'Subjective' })
   assignmentType: string;
 
-  @Column({ type: 'integer', name: 'max_score', nullable: true })
+  // Stores MCQ Options & Correct Answer index as JSON string:
+  // e.g. {"options":["Option A","Option B"],"correctIndex":0}
+  @Column({ type: 'jsonb', nullable: true })
+  mcqConfig: { options: string[]; correctIndex: number };
+
+  @Column({ type: 'integer', name: 'max_score', default: 100 })
   maxScore: number;
 
   @Column({ type: 'timestamp', name: 'due_date', nullable: true })
   dueDate: Date;
 
-  // Relation: Assignment belongs to a Lesson
-  @ManyToOne(() => LessonEntity, (lesson) => lesson.assignments)
+  @ManyToOne(() => LessonEntity, (lesson) => lesson.assignments, { onDelete: 'CASCADE' })
   @JoinColumn({ name: ForeignKeys.Assignment.LessonId })
   lesson: LessonEntity;
 
-  // Relation: Assignment created by User
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: ForeignKeys.Assignment.CreatedBy })
   createdBy: UserEntity;

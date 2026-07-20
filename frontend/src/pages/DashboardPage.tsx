@@ -1,8 +1,9 @@
-import { useMemo, useState, type SetStateAction } from 'react';
+import { useMemo, useState } from 'react';
 import { InviteUserModal } from '../components/users/InviteUserModal';
 import { UsersSection } from '../components/users/UserManagement';
-import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection'; // Ensure path is matching your file structural route
+import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
 import type { RoleName, SessionUser } from '../types/auth';
+import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
 
 type DashboardPageProps = {
   accessToken: string;
@@ -49,6 +50,7 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
+  const [selectedPathTitle, setSelectedPathTitle] = useState<string>(''); // Track path name for UI headers
   
   const [users, setUsers] = useState<VisibleUser[]>([
     {
@@ -89,23 +91,38 @@ export function DashboardPage({
     );
   }
 
-  // VIEW 2: LEARNING PATHS CARD GRID SYSTEM (Admin, Trainer & Trainee Contexts)
-  if (activeSection === 'Learning Paths') {
-    return (
-      <div className="dashboard-content">
+  // VIEW 2: LEARNING PATHS & MODULES DRILL-DOWN SYSTEM
+if (activeSection === 'Learning Paths') {
+  return (
+    <div className="dashboard-content">
+      {selectedPathId ? (
+        <ModulesManagementSection
+          currentPathId={selectedPathId}
+          currentPathTitle={selectedPathTitle || 'Curriculum Modules'}
+          userRole={activeRole as any} // Passes 'Admin' | 'Trainer' | 'Trainee'
+          accessToken={accessToken}
+          onBack={() => {
+            setSelectedPathId(null);
+            setSelectedPathTitle('');
+          }}
+        />
+      ) : (
         <LearningPathsSection 
           currentUser={{
             id: currentUser.id ?? 'trainee-99',
             name: currentUser.firstName ?? 'User',
-            role: activeRole as any // Maps perfectly into Admin | Trainer | Trainee inside LearningPathsSection
+            role: activeRole as any
           }}
-          onNavigateToModules={(pathId: SetStateAction<string | null>, pathName: any) => {
-            console.log(`Loading modules view tracking parameter path map: ${pathName} ID: ${pathId}`);
+          accessToken={accessToken}
+          onNavigateToModules={(pathId: string, pathName: string) => {
             setSelectedPathId(pathId);
-          } } accessToken={''}        />
-      </div>
-    );
-  }
+            setSelectedPathTitle(pathName);
+          }} 
+        />
+      )}
+    </div>
+  );
+}
 
   // VIEW 3: FALLBACK COMPONENT DEFAULT INSIGHT GRAPHS & METRIC CARDS
   return (

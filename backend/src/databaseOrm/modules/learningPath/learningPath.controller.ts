@@ -1,73 +1,39 @@
-import { 
-  Controller, 
-  Get, 
-  Post, 
-  Body, 
-  Param, 
-  Put, 
-  Delete, 
-  HttpCode, 
-  HttpStatus, 
-  UseGuards, 
-  BadRequestException 
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, UseGuards, BadRequestException } from '@nestjs/common';
 import { LearningPathEntityService } from './learningPath.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import { GetUser } from '../../../common/decorator/GetUser.decorator';
-import { JwtAuthGuard } from '../../auth/guards/JWT.auth.guard'; 
-import type { LearningPathModel } from '../../../types/models/learningPath.model';
+import { JwtAuthGuard } from '../../auth/guards/JWT.auth.guard';
+import { RolesGuard } from '../../../common/guards/roles.guard';
+import { Roles } from '../../../common/decorator/roles.decorator';
 
 @Controller(RoutePaths.LearningPaths)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LearningPathController {
   constructor(private readonly learningPathService: LearningPathEntityService) {}
 
- 
+  // ONLY Admin and Trainer can create Learning Paths
   @Post()
-  @UseGuards(JwtAuthGuard) 
+  @Roles('Admin', 'Trainer')
   async create(@Body() dto: any, @GetUser() currentUser: any) {
-    if (!currentUser) {
-      throw new BadRequestException('Unauthorized request: No active user session detected.');
-    }
-                                   
-    // Extract user tracking metrics cleanly from passport token payload strategy
-    const creatorId = currentUser.id || currentUser.sub;
-    
+    const creatorId = currentUser?.id || currentUser?.sub;
     if (!creatorId) {
-      throw new BadRequestException('User identification parameters are missing from dynamic session.');
+      throw new BadRequestException('User session parameters missing.');
     }
-
     return await this.learningPathService.createPathWithUser(dto, creatorId);
   }
 
+  // Everyone (Admin, Trainer, Trainee) can view paths (filtered dynamically inside service by role)
   @Get()
-  async findAll() {
-    return await this.learningPathService.findActivePathsWithModules();
+  async findAll(@GetUser() currentUser: any) {
+    const role = currentUser?.role || currentUser?.primaryRole || 'Trainee';
+    const userId = currentUser?.id || currentUser?.sub;
+    return await this.learningPathService.findAllPathsForUser(role, userId);
   }
 
-
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return await this.learningPathService.findOne(id);
-  }
-
- 
-  @Put(':id')
-  async update(@Param('id') id: string, @Body() dto: Partial<LearningPathModel>) {
-    return await this.learningPathService.update(id, dto);
-  }
-
-  @Delete(':id')
-  async remove(@Param('id') id: string) {
-    return await this.learningPathService.remove(id);
-  }
-
- 
+  // ONLY Admin and Trainer can assign paths to Trainees
   @Put(':id/assign')
-  @HttpCode(HttpStatus.OK)
-  async assignTrainee(
-    @Param('id') pathId: string,
-    @Body() body: { traineeId: string }
-  ) {
+  @Roles('Admin', 'Trainer')
+  async assignTrainee(@Param('id') pathId: string, @Body() body: { traineeId: string }) {
     return await this.learningPathService.assignPathToTrainee(pathId, body.traineeId);
   }
 }
