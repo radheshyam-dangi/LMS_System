@@ -1,21 +1,15 @@
-import { Entity, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Entity, Column, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
-import { UserEntity } from './user.entity';
 import { ModuleEntity } from './module.entity';
-import { Entities } from '../../constants/entity';
-import { ForeignKeys } from '../../constants/foreignKeys';
+import { UserEntity } from './user.entity';
 
-@Entity(Entities.LearningPath)
+@Entity('learning_paths')
 export class LearningPathEntity extends BaseEntity {
-
   @Column({ type: 'varchar', nullable: false })
   title: string;
 
   @Column({ type: 'text', nullable: true })
   description: string;
-
-  @Column({ type: 'varchar', nullable: true }) 
-  status: string;
 
   @Column({ type: 'varchar', default: 'Intermediate' })
   difficulty: string;
@@ -23,16 +17,23 @@ export class LearningPathEntity extends BaseEntity {
   @Column({ type: 'varchar', default: '12 weeks' })
   duration: string;
 
-  @Column({ type: 'simple-array', nullable: true })
+  @Column({ type: 'jsonb', nullable: true })
   skillsTags: string[];
 
-  @Column({ type: 'simple-array', nullable: true })
+  @Column({ type: 'varchar', default: 'Active' })
+  status: string;
+
+  // 🌟 FIX: Add overallProgress column definition here
+  @Column({ type: 'integer', name: 'overall_progress', default: 0 })
+  overallProgress: number;
+
+  @Column({ type: 'jsonb', nullable: true, default: [] })
   assignedToTraineeIds: string[];
 
-  @ManyToOne(() => UserEntity)
-  @JoinColumn({ name: ForeignKeys.LearningPath.CreatedBy })
+  @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'createdById' })
   createdBy: UserEntity;
 
-  @OneToMany(() => ModuleEntity, (module) => module.learningPath)
+  @OneToMany(() => ModuleEntity, (module) => module.learningPath, { cascade: true })
   modules: ModuleEntity[];
 }

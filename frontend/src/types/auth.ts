@@ -3,6 +3,7 @@ export type PathDifficulty = 'Beginner' | 'Intermediate' | 'Advanced';
 export type PathStatus = 'Active' | 'Upcoming' | 'Completed';
 
 export interface LearningPath {
+  createdBy: any;
   modules: any;
   id: string;
   name: string;

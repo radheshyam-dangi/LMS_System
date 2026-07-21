@@ -1,6 +1,8 @@
 import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { LessonEntity } from './lesson.entity';
+import { ModuleEntity } from './module.entity';
+import { LearningPathEntity } from './learningPath.entity';
 import { UserEntity } from './user.entity';
 import { Entities } from '../../constants/entity';
 import { ForeignKeys } from '../../constants/foreignKeys';
@@ -20,8 +22,8 @@ export class AssignmentEntity extends BaseEntity {
   @Column({ type: 'varchar', name: 'assignment_type', default: 'Subjective' })
   assignmentType: string;
 
-  // Stores MCQ Options & Correct Answer index as JSON string:
-  // e.g. {"options":["Option A","Option B"],"correctIndex":0}
+  // MCQ Options & Correct Answer index JSON structure:
+  // e.g., {"options":["Option A","Option B"],"correctIndex":0}
   @Column({ type: 'jsonb', nullable: true })
   mcqConfig: { options: string[]; correctIndex: number };
 
@@ -31,10 +33,22 @@ export class AssignmentEntity extends BaseEntity {
   @Column({ type: 'timestamp', name: 'due_date', nullable: true })
   dueDate: Date;
 
-  @ManyToOne(() => LessonEntity, (lesson) => lesson.assignments, { onDelete: 'CASCADE' })
+  // 1. Optional attachment to Lesson
+  @ManyToOne(() => LessonEntity, (lesson) => lesson.assignments, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: ForeignKeys.Assignment.LessonId })
-  lesson: LessonEntity;
+  lesson?: LessonEntity;
 
+  // 2. Optional direct attachment to Module
+  @ManyToOne(() => ModuleEntity, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'moduleId' })
+  module?: ModuleEntity;
+
+  // 3. Optional direct attachment to LearningPath
+  @ManyToOne(() => LearningPathEntity, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'learningPathId' })
+  learningPath?: LearningPathEntity;
+
+  // Creator / Trainer reference
   @ManyToOne(() => UserEntity)
   @JoinColumn({ name: ForeignKeys.Assignment.CreatedBy })
   createdBy: UserEntity;

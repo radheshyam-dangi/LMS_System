@@ -94,33 +94,35 @@ export function DashboardPage({
   // VIEW 2: LEARNING PATHS & MODULES DRILL-DOWN SYSTEM
 if (activeSection === 'Learning Paths') {
   return (
-    <div className="dashboard-content">
-      {selectedPathId ? (
-        <ModulesManagementSection
-          currentPathId={selectedPathId}
-          currentPathTitle={selectedPathTitle || 'Curriculum Modules'}
-          userRole={activeRole as any} // Passes 'Admin' | 'Trainer' | 'Trainee'
-          accessToken={accessToken}
-          onBack={() => {
-            setSelectedPathId(null);
-            setSelectedPathTitle('');
-          }}
-        />
-      ) : (
-        <LearningPathsSection 
-          currentUser={{
-            id: currentUser.id ?? 'trainee-99',
-            name: currentUser.firstName ?? 'User',
-            role: activeRole as any
-          }}
-          accessToken={accessToken}
-          onNavigateToModules={(pathId: string, pathName: string) => {
-            setSelectedPathId(pathId);
-            setSelectedPathTitle(pathName);
-          }} 
-        />
-      )}
-    </div>
+// Inside DashboardPage.tsx
+
+<div className="dashboard-content">
+  {selectedPathId ? (
+    <ModulesManagementSection
+      currentPathId={selectedPathId}
+      currentPathTitle={selectedPathTitle || 'Curriculum Modules'}
+      userRole={activeRole as any} // 👈 Change currentUser to userRole
+      accessToken={accessToken}
+      onBack={() => {
+        setSelectedPathId(null);
+        setSelectedPathTitle('');
+      }}
+    />
+  ) : (
+    <LearningPathsSection 
+      currentUser={{
+        id: currentUser?.id ?? 'trainee-99',
+        name: currentUser?.firstName ?? 'User',
+        role: activeRole as any
+      }}
+      accessToken={accessToken}
+      onNavigateToModules={(pathId: string, pathName: string) => {
+        setSelectedPathId(pathId);
+        setSelectedPathTitle(pathName);
+      }} 
+    />
+  )}
+</div>
   );
 }
 

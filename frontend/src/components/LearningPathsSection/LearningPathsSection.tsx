@@ -51,7 +51,7 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
     loadDatabasePaths();
   }, [accessToken]);
 
-  // 🔥 NEW INTERACTION: Assign Trainee Action Handler
+  // Assign Trainee Action Handler
   const handleAssignTrainee = async (pathId: string) => {
     const traineeId = prompt('Enter the UUID of the Trainee you want to assign to this path:');
     if (!traineeId || !traineeId.trim()) return;
@@ -59,13 +59,31 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
     try {
       const updatedPath = await learningPathService.assignTraineeToPath(pathId, traineeId.trim(), accessToken);
       
-      // Update local state smoothly so the UI updates counters in real-time
       setPaths((prevPaths) => 
         prevPaths.map((p) => (p.id === pathId ? { ...p, assignedToTraineeIds: updatedPath.assignedToTraineeIds } : p))
       );
       alert('Trainee successfully assigned to this track!');
     } catch (err: any) {
       alert(err.message ?? 'Failed to complete assignment registration.');
+    }
+  };
+
+  // 🗑️ NEW DELETE ACTION HANDLER
+  const handleDeletePath = async (pathId: string, pathTitle: string) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete "${pathTitle}"? This will also remove it from all assigned trainees!`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      await learningPathService.deletePath(pathId, accessToken);
+      alert('Learning Path deleted successfully!');
+      
+      // Update local state to immediately remove card from UI
+      setPaths((prevPaths) => prevPaths.filter((p) => p.id !== pathId));
+    } catch (err: any) {
+      alert(err.message ?? 'Failed to delete Learning Path.');
     }
   };
 
@@ -181,10 +199,26 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
             <div className="empty-paths-state-box">No learning tracks available.</div>
           ) : (
             filteredPaths.map((path) => {
-              const currentTitle = path.title || path.name || 'Untitled Track';
+             const currentTitle = path.title || path.name || 'Untitled Track';
               const currentDifficulty = path.difficulty || 'Intermediate';
               const currentStatus = path.status || 'Active';
-              
+
+              // 1. Extract creator ID safely from all possible locations
+              const creatorId = 
+                path.createdBy?.id || 
+                (typeof path.createdBy === 'string' ? path.createdBy : null) || 
+                (path as any).createdById;
+
+              // 2. Check if current user is Admin OR Trainer who created this path
+              const isAdmin = currentUser.role === 'Admin';
+              const isTrainerAndOwner = 
+                currentUser.role === 'Trainer' && 
+                Boolean(creatorId) && 
+                creatorId === currentUser.id;
+
+              // 3. Final Delete privilege flag
+              const canDelete = isAdmin || isTrainerAndOwner;
+
               let currentTags: string[] = [];
               if (Array.isArray(path.skillsTags)) {
                 currentTags = path.skillsTags;
@@ -247,6 +281,19 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
                         title="Assign Trainee to this Path"
                       >
                         👥 Assign
+                      </button>
+                    )}
+
+                    {/* 🗑️ DELETE BUTTON: Visible to Admin or Creator ONLY */}
+                    {canDelete && (
+                      <button 
+                        type="button" 
+                        className="btn-card-action-delete"
+                        style={{ padding: '0 12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: '6px', cursor: 'pointer' }}
+                        onClick={() => handleDeletePath(path.id, currentTitle)}
+                        title="Delete Learning Path"
+                      >
+                        🗑️ Delete
                       </button>
                     )}
                   </div>

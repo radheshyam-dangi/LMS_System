@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { LearningPathEntity } from '../entities/learningPath.entity';
@@ -37,58 +37,61 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       throw new InternalServerErrorException(`Database fetch operation failed: ${error.message}`);
     }
   }
-
-  /**
-   * DATABASE MUTATION: Handles creation and auto-reloads complete profile data mapping properties
-   */
-  async createPathWithUser(dto: any, creatorId: string): Promise<LearningPathEntity> {
-    if (!dto.name) {
-      throw new BadRequestException('Path title/name is highly required.');
+async createPathWithUser(dto: any, creatorId: string): Promise<LearningPathEntity> {
+    if (!dto.name && !dto.title) {
+      throw new BadRequestException('Path title/name is required.');
     }
 
-    const creator = new UserEntity();
-    creator.id = creatorId;
+    // 1. Verify that the user executing this action exists in the DB
+    const existingUser = await this.repository.findOne({ where: { id: creatorId } });
 
+    if (!existingUser) {
+      throw new BadRequestException(
+        `Session Invalid: User with ID "${creatorId}" does not exist in database. Please log out and log in again.`
+      );
+    }
+
+    // 2. Create the learning path with the verified user
     const newPath = this.repository.create({
-      title: dto.name, 
+      title: dto.name || dto.title,
       description: dto.description ?? null,
       difficulty: dto.difficulty ?? 'Intermediate',
       duration: dto.duration ?? '12 weeks',
       skillsTags: dto.skillsTags ?? ['General'],
       status: 'Active',
-      createdBy: creator, 
-      assignedToTraineeIds: [], 
+      createdBy: existingUser, // 👈 Assign real entity
+      assignedToTraineeIds: [],
     });
 
-    // 1. First save entity record safely inside table persistence
     const savedPath = await this.repository.save(newPath);
 
-    // 🔥 FIX: Return object reload with complete user details logic injected
-    // Isse bina page reload kiye instant frontend UI component lines active metadata draw kar lengi
     const fullPathDetails = await this.repository.findOne({
       where: { id: savedPath.id },
-      relations: ['modules', 'createdBy']
+      relations: ['modules', 'createdBy'],
     });
 
     if (!fullPathDetails) {
-      throw new InternalServerErrorException('Transaction pipeline synchronization failure.');
+      throw new InternalServerErrorException('Failed to retrieve created learning path details.');
     }
 
     return fullPathDetails;
   }
 
-  async findActivePathsWithModules(): Promise<LearningPathEntity[]> {
-    return await this.repository.find({
-      where: { status: 'Active' },
-      relations: ['modules', 'createdBy'], 
-      order: { createdAt: 'DESC' } as any // Always display recently modified blue-prints first
+  async findPathWithDetails(id: string): Promise<LearningPathEntity> {
+    const path = await this.repository.findOne({
+      where: { id },
+      relations: ['createdBy', 'modules'],
     });
+    if (!path) {
+      throw new NotFoundException(`Learning Path with ID "${id}" not found.`);
+    }
+    return path;
   }
 
   async assignPathToTrainee(pathId: string, traineeId: string): Promise<LearningPathEntity> {
     const path = await this.repository.findOne({ 
       where: { id: pathId },
-      relations: ['modules', 'createdBy'] // Pull completely to shield transactional entities leakage
+      relations: ['modules', 'createdBy']
     });
     
     if (!path) {
@@ -108,5 +111,28 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
 
     path.assignedToTraineeIds = currentTrainees;
     return await this.repository.save(path);
+  }
+  async deletePath(pathId: string, userId: string, role: string): Promise<{ message: string }> {
+    const path = await this.repository.findOne({
+      where: { id: pathId },
+      relations: ['createdBy'],
+    });
+
+    if (!path) {
+      throw new NotFoundException(`Learning Path with ID "${pathId}" not found.`);
+    }
+
+    // 🔒 Authorization Check: Must be Admin OR Creator of this Learning Path
+    const isOwner = path.createdBy?.id === userId;
+    const isAdmin = role.toLowerCase() === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      throw new ForbiddenException('Forbidden: Only the creator of this Learning Path or an Admin can delete it.');
+    }
+
+    // Deleting the Learning Path record automatically unassigns it from all trainees
+    await this.repository.remove(path);
+
+    return { message: 'Learning Path and all associated content successfully deleted.' };
   }
 }
