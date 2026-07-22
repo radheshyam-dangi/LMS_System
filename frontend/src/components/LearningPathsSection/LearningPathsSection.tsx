@@ -11,9 +11,10 @@ interface LearningPathsSectionProps {
   };
   accessToken: string; 
   onNavigateToModules: (pathId: string, pathName: string) => void;
+  onBackToAllPaths?: () => void; // Optional explicit callback if handled by parent router
 }
 
-export function LearningPathsSection({ currentUser, accessToken, onNavigateToModules }: LearningPathsSectionProps) {
+export function LearningPathsSection({ currentUser, accessToken, onNavigateToModules, onBackToAllPaths }: LearningPathsSectionProps) {
   const [paths, setPaths] = useState<LearningPath[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -23,6 +24,9 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
   
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Track currently active selected path ID (if viewing details view)
+  const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
 
   // Form input field elements
   const [formName, setFormName] = useState('');
@@ -51,6 +55,22 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
     loadDatabasePaths();
   }, [accessToken]);
 
+  // Handle navigating into modules / single track
+  const handleNavigateToTrack = (pathId: string, pathTitle: string) => {
+    setSelectedPathId(pathId);
+    onNavigateToModules(pathId, pathTitle);
+  };
+
+  // Handle returning back to main Learning Paths grid list
+  const handleResetToAllPaths = () => {
+    setSelectedPathId(null);
+    setSearchQuery('');
+    setActiveTabFilter('All');
+    if (onBackToAllPaths) {
+      onBackToAllPaths();
+    }
+  };
+
   // Assign Trainee Action Handler
   const handleAssignTrainee = async (pathId: string) => {
     const traineeId = prompt('Enter the UUID of the Trainee you want to assign to this path:');
@@ -68,7 +88,7 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
     }
   };
 
-  // 🗑️ NEW DELETE ACTION HANDLER
+  // 🗑️ DELETE ACTION HANDLER
   const handleDeletePath = async (pathId: string, pathTitle: string) => {
     const confirmDelete = window.confirm(
       `Are you sure you want to delete "${pathTitle}"? This will also remove it from all assigned trainees!`
@@ -149,6 +169,11 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
 
   return (
     <div className="learning-paths-management-container">
+      {/* ⬅️ BACKWARD NAVIGATION CONTROL STRIP */}
+      <div className="header-navigation-wrapper" style={{ marginBottom: '16px' }}>
+   
+      </div>
+
       <header className="learning-paths-header-row">
         <div>
           <h1 className="learning-paths-main-title">Learning Paths</h1>
@@ -199,7 +224,7 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
             <div className="empty-paths-state-box">No learning tracks available.</div>
           ) : (
             filteredPaths.map((path) => {
-             const currentTitle = path.title || path.name || 'Untitled Track';
+              const currentTitle = path.title || path.name || 'Untitled Track';
               const currentDifficulty = path.difficulty || 'Intermediate';
               const currentStatus = path.status || 'Active';
 
@@ -260,18 +285,18 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
                     </div>
                   </div>
 
-                  {/* 🔥 SYSTEM ACTIONS ROW CONTAINER */}
+                  {/* SYSTEM ACTIONS ROW CONTAINER */}
                   <div className="card-actions-row-cluster" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                     <button 
                       type="button" 
                       className="btn-card-action-continue" 
                       style={{ flex: 1 }}
-                      onClick={() => onNavigateToModules(path.id, currentTitle)}
+                      onClick={() => handleNavigateToTrack(path.id, currentTitle)}
                     >
                       {isTrainee ? 'Continue Learning →' : 'Manage Curriculums →'}
                     </button>
                     
-                    {/* Only Trainer or Admin can see the fast assignment feature actions */}
+                    {/* Only Trainer or Admin can see assignment feature */}
                     {canModifyOrCreate && (
                       <button 
                         type="button" 
@@ -284,7 +309,7 @@ export function LearningPathsSection({ currentUser, accessToken, onNavigateToMod
                       </button>
                     )}
 
-                    {/* 🗑️ DELETE BUTTON: Visible to Admin or Creator ONLY */}
+                    {/* DELETE BUTTON: Visible to Admin or Creator ONLY */}
                     {canDelete && (
                       <button 
                         type="button" 

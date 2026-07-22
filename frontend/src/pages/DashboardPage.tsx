@@ -2,8 +2,10 @@ import { useMemo, useState } from 'react';
 import { InviteUserModal } from '../components/users/InviteUserModal';
 import { UsersSection } from '../components/users/UserManagement';
 import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+import { TraineeCurriculumView } from '../components/TrainerEvaluationDashboard/TraineeCurriculumView';
+import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
 import type { RoleName, SessionUser } from '../types/auth';
-import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
 
 type DashboardPageProps = {
   accessToken: string;
@@ -50,8 +52,8 @@ export function DashboardPage({
 }: DashboardPageProps) {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
-  const [selectedPathTitle, setSelectedPathTitle] = useState<string>(''); // Track path name for UI headers
-  
+  const [selectedPathTitle, setSelectedPathTitle] = useState<string>('');
+
   const [users, setUsers] = useState<VisibleUser[]>([
     {
       email: currentUser.email,
@@ -64,21 +66,30 @@ export function DashboardPage({
   ]);
 
   const isAdmin = useMemo(() => activeRole.toLowerCase() === 'admin', [activeRole]);
+  const isTrainerOrAdmin = useMemo(
+    () => activeRole.toLowerCase() === 'admin' || activeRole.toLowerCase() === 'trainer',
+    [activeRole]
+  );
+  const isTrainee = useMemo(() => activeRole.toLowerCase() === 'trainee', [activeRole]);
 
   const addInvitedUser = (user: Omit<VisibleUser, 'status'>) => {
     setUsers((current) => [{ ...user, status: 'invited' }, ...current]);
+  };
+
+  const handleBackToAllPaths = () => {
+    setSelectedPathId(null);
+    setSelectedPathTitle('');
   };
 
   // ========================================================
   // ROUTING ENGINE VIEW CONDITIONALS 
   // ========================================================
 
-  // VIEW 1: USER MANAGEMENT SECTION
+  // VIEW 1: USER MANAGEMENT
   if (isAdmin && activeSection === 'Users') {
     return (
       <div className="dashboard-content">
         <UsersSection onOpenInviteModal={() => setShowInviteModal(true)} />
-        
         {showInviteModal && (
           <InviteUserModal
             accessToken={accessToken}
@@ -91,47 +102,66 @@ export function DashboardPage({
     );
   }
 
-  // VIEW 2: LEARNING PATHS & MODULES DRILL-DOWN SYSTEM
-if (activeSection === 'Learning Paths') {
-  return (
-// Inside DashboardPage.tsx
+  // VIEW 2: EVALUATIONS SECTION (FOR TRAINERS / ADMINS)
+  if (isTrainerOrAdmin && (activeSection === 'Evaluations' || activeSection === 'Submissions')) {
+    return (
+      <div className="dashboard-content">
+        <TrainerEvaluationDashboard accessToken={accessToken} />
+      </div>
+    );
+  }
 
-<div className="dashboard-content">
-  {selectedPathId ? (
-    <ModulesManagementSection
-      currentPathId={selectedPathId}
-      currentPathTitle={selectedPathTitle || 'Curriculum Modules'}
-      userRole={activeRole as any} // 👈 Change currentUser to userRole
-      accessToken={accessToken}
-      onBack={() => {
-        setSelectedPathId(null);
-        setSelectedPathTitle('');
-      }}
-    />
-  ) : (
-    <LearningPathsSection 
-      currentUser={{
-        id: currentUser?.id ?? 'trainee-99',
-        name: currentUser?.firstName ?? 'User',
-        role: activeRole as any
-      }}
-      accessToken={accessToken}
-      onNavigateToModules={(pathId: string, pathName: string) => {
-        setSelectedPathId(pathId);
-        setSelectedPathTitle(pathName);
-      }} 
-    />
-  )}
-</div>
-  );
-}
+  // VIEW 3: LEARNING PATHS & CURRICULUM DRILL-DOWN
+  if (activeSection === 'Learning Paths') {
+    return (
+      <div className="dashboard-content">
+        {selectedPathId ? (
+          /* 🌟 Active Track: Differentiates between Trainer (Manager) and Trainee (Learner) views */
+          isTrainee ? (
+            <TraineeCurriculumView
+              learningPathId={selectedPathId}
+              learningPathTitle={selectedPathTitle || 'Curriculum Modules'}
+              accessToken={accessToken}
+              onBack={handleBackToAllPaths}
+            />
+          ) : (
+            <CurriculumManager
+              learningPathId={selectedPathId}
+              learningPathTitle={selectedPathTitle || 'Curriculum Modules'}
+              currentUser={{
+                id: currentUser?.id ?? 'user-01',
+                role: activeRole as any,
+              }}
+              accessToken={accessToken}
+              onBack={handleBackToAllPaths}
+            />
+          )
+        ) : (
+          /* 🌟 Overview Grid: All Available Learning Paths */
+          <LearningPathsSection 
+            currentUser={{
+              id: currentUser?.id ?? 'trainee-99',
+              name: currentUser?.firstName ?? 'User',
+              role: activeRole as any
+            }}
+            accessToken={accessToken}
+            onNavigateToModules={(pathId: string, pathName: string) => {
+              setSelectedPathId(pathId);
+              setSelectedPathTitle(pathName);
+            }} 
+            onBackToAllPaths={handleBackToAllPaths}
+          />
+        )}
+      </div>
+    );
+  }
 
-  // VIEW 3: FALLBACK COMPONENT DEFAULT INSIGHT GRAPHS & METRIC CARDS
+  // VIEW 4: DEFAULT DASHBOARD HOME
   return (
     <div className="dashboard-content">
       <section className="workspace-heading">
         <div>
-          <h1>Good morning, {currentUser.firstName || 'Maya'} 👋</h1>
+          <h1>Good morning, {currentUser.firstName || 'User'} 👋</h1>
           <p>{isAdmin ? 'Manage training, users, and review flow.' : "Here's what's happening in your cohort today."}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>

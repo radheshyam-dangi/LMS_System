@@ -3,42 +3,45 @@ import { BaseEntity } from './base.entity';
 import { AssignmentEntity } from './assignment.entity';
 import { UserEntity } from './user.entity';
 
-@Entity('assignment_submissions')
+@Entity('AssignmentSubmission')
 export class AssignmentSubmissionEntity extends BaseEntity {
-  @Column({ type: 'text' })
+  // 🌟 1. Text content submitted by the trainee
+  @Column({ type: 'text', name: 'submission_text', nullable: true })
   submissionText: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  // 🌟 2. Optional uploaded attachment or link
+  @Column({ type: 'varchar', name: 'attachment_url', nullable: true })
   attachmentUrl: string;
 
-  // 'Submitted' | 'Evaluated'
+  // 🌟 3. Status tracking (Submitted, Evaluated, Pending, etc.)
   @Column({ type: 'varchar', default: 'Submitted' })
   status: string;
+
+  // 🌟 4. Evaluation feedback and grade score
+  @Column({ type: 'text', nullable: true })
+  feedback: string;
 
   @Column({ type: 'integer', nullable: true })
   score: number;
 
-  @Column({ type: 'text', nullable: true })
-  feedback: string;
-
-  @Column({ type: 'timestamp', name: 'submitted_at', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({ type: 'timestamp', name: 'submitted_at', nullable: true })
   submittedAt: Date;
 
   @Column({ type: 'timestamp', name: 'evaluated_at', nullable: true })
   evaluatedAt: Date;
 
-  // Target assignment
+  // 🌟 5. ManyToOne Relation pointing to AssignmentEntity
   @ManyToOne(() => AssignmentEntity, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'assignmentId' })
+  @JoinColumn({ name: 'assignment_id' })
   assignment: AssignmentEntity;
 
-  // Trainee who submitted
+  // 🌟 6. Trainee User reference
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'traineeId' })
+  @JoinColumn({ name: 'trainee_id' })
   trainee: UserEntity;
 
-  // Trainer who evaluated/graded
-  @ManyToOne(() => UserEntity, { nullable: true })
-  @JoinColumn({ name: 'evaluatedById' })
-  evaluatedBy?: UserEntity;
+  // 🌟 7. Evaluator/Trainer User reference
+  @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'evaluated_by_id' })
+  evaluatedBy: UserEntity;
 }

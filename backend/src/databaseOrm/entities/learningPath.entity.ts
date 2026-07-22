@@ -2,8 +2,9 @@ import { Entity, Column, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { ModuleEntity } from './module.entity';
 import { UserEntity } from './user.entity';
+import { Entities } from '../../constants/entity';
 
-@Entity('learning_paths')
+@Entity(Entities.LearningPath)
 export class LearningPathEntity extends BaseEntity {
   @Column({ type: 'varchar', nullable: false })
   title: string;

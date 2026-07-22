@@ -15,6 +15,7 @@ import { SubmissionModule } from './databaseOrm/modules/submission/submission.mo
 import { TagModule } from './databaseOrm/modules/tag/tag.module';
 import { EmailModule } from './databaseOrm/modules/email/email.module';
 import { AuthModule } from './databaseOrm/auth/auth.module';
+import { ResourceModule } from './databaseOrm/modules/resource/resource.module';
 
 @Module({
   imports: [
@@ -36,7 +37,8 @@ import { AuthModule } from './databaseOrm/auth/auth.module';
     SubmissionModule,
     TagModule,
     EmailModule,
-    AuthModule
+    AuthModule,
+    ResourceModule
   ],
 })
 export class AppModule {}

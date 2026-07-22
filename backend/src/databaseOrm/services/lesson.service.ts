@@ -67,70 +67,85 @@ export class LessonEntityService extends BaseService<LessonEntity> {
   /**
    * CREATE LESSON (Supports both Module and LearningPath)
    */
-  async createLesson(dto: any, creatorId: string): Promise<LessonEntity> {
-    const { moduleId, learningPathId, title, description, videoUrl, articleUrl, durationMinutes } = dto;
+async createLesson(dto: any, creatorId: string): Promise<LessonEntity> {
+  const { moduleId, learningPathId, title, description, videoUrl, articleUrl, durationMinutes } = dto;
 
-    if (!moduleId && !learningPathId) {
-      throw new BadRequestException('Either moduleId or learningPathId must be provided.');
-    }
-
-    let targetModule: ModuleEntity | undefined;
-    let targetLearningPath: LearningPathEntity | undefined;
-    let ownerId: string | undefined;
-
-    // 1. Resolve Module parent
-    if (moduleId) {
-      if (!UUID_REGEX.test(moduleId)) {
-        throw new BadRequestException(`"${moduleId}" is not a valid UUID format for moduleId.`);
-      }
-
-      targetModule = (await this.moduleRepository.findOne({
-        where: { id: moduleId },
-        relations: ['learningPath', 'learningPath.createdBy', 'createdBy'],
-      })) ?? undefined;
-
-      if (!targetModule) {
-        throw new NotFoundException(`Module with ID "${moduleId}" not found.`);
-      }
-
-      ownerId = targetModule.learningPath?.createdBy?.id || targetModule.createdBy?.id;
-    } 
-    // 2. Resolve LearningPath parent
-    else if (learningPathId) {
-      if (!UUID_REGEX.test(learningPathId)) {
-        throw new BadRequestException(`"${learningPathId}" is not a valid UUID format for learningPathId.`);
-      }
-
-      targetLearningPath = (await this.learningPathRepository.findOne({
-        where: { id: learningPathId },
-        relations: ['createdBy'],
-      })) ?? undefined;
-
-      if (!targetLearningPath) {
-        throw new NotFoundException(`Learning Path with ID "${learningPathId}" not found.`);
-      }
-
-      ownerId = targetLearningPath.createdBy?.id;
-    }
-
-    // 🔒 Ownership Check
-    if (ownerId && ownerId !== creatorId) {
-      throw new ForbiddenException('Only the owner of this Learning Path can create lessons.');
-    }
-
-    // 3. Create and Save Lesson
-    const newLesson = this.repository.create({
-      title,
-      description: description ?? undefined,
-      videoUrl: videoUrl ?? undefined,
-      articleUrl: articleUrl ?? dto.articleContent ?? undefined,
-      durationMinutes: durationMinutes ?? 15,
-      ...(targetModule ? { module: targetModule } : {}),
-      ...(targetLearningPath ? { learningPath: targetLearningPath } : {}),
-    });
-
-    return await this.repository.save(newLesson);
+  if (!moduleId && !learningPathId) {
+    throw new BadRequestException('Either moduleId or learningPathId must be provided.');
   }
+
+  let targetModule: ModuleEntity | undefined;
+  let targetLearningPath: LearningPathEntity | undefined;
+  let ownerId: string | undefined;
+
+  // 1. Resolve Module parent
+  if (moduleId) {
+    if (!UUID_REGEX.test(moduleId)) {
+      throw new BadRequestException(`"${moduleId}" is not a valid UUID format for moduleId.`);
+    }
+
+    targetModule = (await this.moduleRepository.findOne({
+      where: { id: moduleId },
+      relations: ['learningPath', 'learningPath.createdBy', 'createdBy'],
+    })) ?? undefined;
+
+    if (!targetModule) {
+      throw new NotFoundException(`Module with ID "${moduleId}" not found.`);
+    }
+
+    ownerId = targetModule.learningPath?.createdBy?.id || targetModule.createdBy?.id;
+  } 
+  // 2. Resolve LearningPath parent
+  else if (learningPathId) {
+    if (!UUID_REGEX.test(learningPathId)) {
+      throw new BadRequestException(`"${learningPathId}" is not a valid UUID format for learningPathId.`);
+    }
+
+    targetLearningPath = (await this.learningPathRepository.findOne({
+      where: { id: learningPathId },
+      relations: ['createdBy'],
+    })) ?? undefined;
+
+    if (!targetLearningPath) {
+      throw new NotFoundException(`Learning Path with ID "${learningPathId}" not found.`);
+    }
+
+    ownerId = targetLearningPath.createdBy?.id;
+  }
+
+  // 🔒 Ownership Check
+  if (ownerId && ownerId !== creatorId) {
+    throw new ForbiddenException('Only the owner of this Learning Path can create lessons.');
+  }
+
+  // 🌟 3. Calculate Auto-Increment Sequence Number (displayOrder)
+  let existingCount = 0;
+  if (targetModule) {
+    existingCount = await this.repository.count({
+      where: { module: { id: targetModule.id } },
+    });
+  } else if (targetLearningPath) {
+    existingCount = await this.repository.count({
+      where: { learningPath: { id: targetLearningPath.id } },
+    });
+  }
+
+  const nextDisplayOrder = dto.displayOrder ?? (existingCount + 1);
+
+  // 4. Create and Save Lesson
+  const newLesson = this.repository.create({
+    title,
+    description: description ?? undefined,
+    videoUrl: videoUrl ?? undefined,
+    articleUrl: articleUrl ?? dto.articleContent ?? undefined,
+    durationMinutes: durationMinutes ?? 15,
+    displayOrder: nextDisplayOrder, // 👈 Auto-incremented sequence (1, 2, 3...)
+    ...(targetModule ? { module: targetModule } : {}),
+    ...(targetLearningPath ? { learningPath: targetLearningPath } : {}),
+  });
+
+  return await this.repository.save(newLesson);
+}
 
   /**
    * ✅ ADDED: Backward-compatible alias for controllers calling createLessonWithModule

@@ -7,43 +7,48 @@ import { UserEntity } from '../entities/user.entity';
 @Injectable()
 export class LearningPathEntityService extends BaseService<LearningPathEntity> {
   protected repository: Repository<LearningPathEntity>;
+  private userRepository: Repository<UserEntity>; // 👈 1. Declare User Repository
 
   constructor(private readonly datasource: DataSource) {
     super();
     this.repository = this.datasource.getRepository<LearningPathEntity>(LearningPathEntity);
+    this.userRepository = this.datasource.getRepository<UserEntity>(UserEntity); // 👈 2. Fetch User Repository via DataSource
   }
 
-  async findAllPathsForUser(role: string, userId: string): Promise<LearningPathEntity[]> {
-    try {
-      const queryBuilder = this.repository.createQueryBuilder('learningPath')
-        .leftJoinAndSelect('learningPath.modules', 'modules')
-        .leftJoinAndSelect('learningPath.createdBy', 'createdBy')
-        .orderBy('learningPath.created_at', 'DESC'); 
+async findAllPathsForUser(role: string, userId: string): Promise<LearningPathEntity[]> {
+  try {
+    const queryBuilder = this.repository.createQueryBuilder('learningPath')
+      .leftJoinAndSelect('learningPath.modules', 'modules')
+      .leftJoinAndSelect('learningPath.createdBy', 'createdBy')
+      .orderBy('learningPath.created_at', 'DESC'); 
 
-      if (role === 'Trainee') {
-        queryBuilder.where(
-          '(learningPath.assignedToTraineeIds = :rawId OR learningPath.assignedToTraineeIds LIKE :leadingId OR learningPath.assignedToTraineeIds LIKE :trailingId OR learningPath.assignedToTraineeIds LIKE :innerId)',
-          {
-            rawId: userId,
-            leadingId: `${userId},%`,
-            trailingId: `%,${userId}`,
-            innerId: `%,${userId},%`,
-          }
-        );
-      }
-
+    // 🌟 If Trainer or Admin -> Show ALL paths
+    if (role.toLowerCase() === 'admin' || role.toLowerCase() === 'trainer') {
       return await queryBuilder.getMany();
-    } catch (error: any) {
-      throw new InternalServerErrorException(`Database fetch operation failed: ${error.message}`);
     }
+
+    // 🌟 If Trainee -> Show paths assigned to them OR paths marked as 'Active'
+    queryBuilder.where(
+      '(learningPath.assignedToTraineeIds ::jsonb @> :userIdJson OR learningPath.status = :activeStatus)',
+      { 
+        userIdJson: JSON.stringify([userId]),
+        activeStatus: 'Active' 
+      }
+    );
+
+    return await queryBuilder.getMany();
+  } catch (error: any) {
+    throw new InternalServerErrorException(`Database fetch operation failed: ${error.message}`);
   }
-async createPathWithUser(dto: any, creatorId: string): Promise<LearningPathEntity> {
+}
+
+  async createPathWithUser(dto: any, creatorId: string): Promise<LearningPathEntity> {
     if (!dto.name && !dto.title) {
       throw new BadRequestException('Path title/name is required.');
     }
 
-    // 1. Verify that the user executing this action exists in the DB
-    const existingUser = await this.repository.findOne({ where: { id: creatorId } });
+    // 👈 3. Updated: Query `userRepository` instead of `this.repository`
+    const existingUser = await this.userRepository.findOne({ where: { id: creatorId } });
 
     if (!existingUser) {
       throw new BadRequestException(
@@ -51,7 +56,7 @@ async createPathWithUser(dto: any, creatorId: string): Promise<LearningPathEntit
       );
     }
 
-    // 2. Create the learning path with the verified user
+    // 4. Create the learning path with the verified user
     const newPath = this.repository.create({
       title: dto.name || dto.title,
       description: dto.description ?? null,
@@ -59,7 +64,7 @@ async createPathWithUser(dto: any, creatorId: string): Promise<LearningPathEntit
       duration: dto.duration ?? '12 weeks',
       skillsTags: dto.skillsTags ?? ['General'],
       status: 'Active',
-      createdBy: existingUser, // 👈 Assign real entity
+      createdBy: existingUser, // 👈 Correct user entity assigned!
       assignedToTraineeIds: [],
     });
 
@@ -112,6 +117,7 @@ async createPathWithUser(dto: any, creatorId: string): Promise<LearningPathEntit
     path.assignedToTraineeIds = currentTrainees;
     return await this.repository.save(path);
   }
+
   async deletePath(pathId: string, userId: string, role: string): Promise<{ message: string }> {
     const path = await this.repository.findOne({
       where: { id: pathId },

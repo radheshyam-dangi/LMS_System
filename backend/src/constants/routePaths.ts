@@ -16,4 +16,5 @@ export const RoutePaths = {
   Tags: 'tags',
   Users: 'users',
   UserLessonProgress: 'userLessonProgress',
+  Resources:'resources'
 } as const;

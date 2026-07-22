@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, BadRequestException } from '@nestjs/common';
 import { ModuleEntityService } from './module.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import { GetUser } from '../../../common/decorator/GetUser.decorator';

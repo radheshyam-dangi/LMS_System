@@ -2,114 +2,102 @@ import { Injectable, BadRequestException, NotFoundException, InternalServerError
 import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { ModuleEntity } from '../entities/module.entity';
-import { LearningPathModuleEntity } from '../entities/learningPathModule.entity';
 import { LearningPathEntity } from '../entities/learningPath.entity';
+import { UserEntity } from '../entities/user.entity';
 
 @Injectable()
 export class ModuleEntityService extends BaseService<ModuleEntity> {
   protected repository: Repository<ModuleEntity>;
-  private lpmRepository: Repository<LearningPathModuleEntity>;
   private lpRepository: Repository<LearningPathEntity>;
+  private userRepository: Repository<UserEntity>;
 
   constructor(private readonly datasource: DataSource) {
     super();
     this.repository = this.datasource.getRepository<ModuleEntity>(ModuleEntity);
-    this.lpmRepository = this.datasource.getRepository<LearningPathModuleEntity>(LearningPathModuleEntity);
     this.lpRepository = this.datasource.getRepository<LearningPathEntity>(LearningPathEntity);
+    this.userRepository = this.datasource.getRepository<UserEntity>(UserEntity);
   }
 
   /**
-   * Creates a Module connected to a LearningPath & optionally a Parent Module
+   * Creates a Module connected directly to a LearningPath
    */
   async createModuleForPath(dto: any, creatorId: string): Promise<ModuleEntity> {
-    const { learningPathId, parentId, title, description, difficultyLevel, displayOrder } = dto;
+    const { learningPathId, title, description } = dto;
 
     if (!learningPathId) {
       throw new BadRequestException('learningPathId is required to associate a module with a path.');
     }
 
-    const queryRunner = this.datasource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    if (!title) {
+      throw new BadRequestException('Module title is required.');
+    }
 
     try {
-      // 1. Resolve Learning Path
-      const learningPath = await queryRunner.manager.findOne(LearningPathEntity, { where: { id: learningPathId } });
+      // 1. Verify Learning Path
+      const learningPath = await this.lpRepository.findOne({ where: { id: learningPathId } });
       if (!learningPath) {
         throw new NotFoundException(`Learning Path with ID "${learningPathId}" does not exist.`);
       }
 
-      // 2. Resolve Parent Module if provided
-      let parentModule: ModuleEntity | undefined = undefined;
-      if (parentId) {
-        const foundParent = await queryRunner.manager.findOne(ModuleEntity, { where: { id: parentId } });
-        if (!foundParent) {
-          throw new NotFoundException(`Parent Module with ID "${parentId}" does not exist.`);
-        }
-        parentModule = foundParent;
+      // 2. Verify User
+      const creator = await this.userRepository.findOne({ where: { id: creatorId } });
+      if (!creator) {
+        throw new BadRequestException(`User session invalid. User ID "${creatorId}" not found.`);
       }
 
-      // 3. Create & Save Module Record (Populating learningPath & parent)
-      const newModule = queryRunner.manager.create(ModuleEntity, {
+      // 3. Create Module Record
+      const newModule = this.repository.create({
         title,
-        description: description ?? undefined,
-        difficultyLevel: difficultyLevel ?? 'Intermediate',
-        status: 'Active',
+        description: description ?? null,
         learningPath,
-        ...(parentModule ? { parent: parentModule } : {}),
-        createdBy: { id: creatorId } as any,
+        createdBy: creator,
       });
 
-      const savedModule = await queryRunner.manager.save(newModule);
-
-      // 4. Calculate displayOrder for Junction Table
-      let order = displayOrder;
-      if (order === undefined || order === null) {
-        const existingCount = await queryRunner.manager.count(LearningPathModuleEntity, {
-          where: { learningPath: { id: learningPathId } },
-        });
-        order = existingCount + 1;
-      }
-
-      // 5. Save Junction Record in LearningPathModule
-      const lpm = queryRunner.manager.create(LearningPathModuleEntity, {
-        learningPath,
-        module: savedModule,
-        displayOrder: order,
-      });
-
-      await queryRunner.manager.save(lpm);
-
-      await queryRunner.commitTransaction();
-
+      const savedModule = await this.repository.save(newModule);
       return await this.findModuleWithDetails(savedModule.id);
     } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new InternalServerErrorException(`Failed to create module: ${errorMessage}`);
-    } finally {
-      await queryRunner.release();
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(`Failed to create module: ${error.message}`);
     }
   }
 
   /**
-   * Fetches modules specifically attached to a LearningPath ID
+   * Fetches modules specifically attached to a LearningPath ID with full hierarchy
    */
-  async findModulesByPathId(learningPathId: string): Promise<ModuleEntity[]> {
+async findModulesByPathId(learningPathId: string): Promise<ModuleEntity[]> {
+  try {
     return await this.repository.find({
-      where: { learningPath: { id: learningPathId } },
-      relations: ['subModules', 'lessons', 'parent', 'createdBy'],
+      where: {
+        learningPath: { id: learningPathId }
+      },
+      relations: [
+        'resources',           // Module-level resources
+        'lessons',             // Lessons in module
+        'lessons.assignments', // Tasks in lesson
+        'lessons.resources',   // 👈 🌟 ADD THIS: Loads resources attached to each lesson!
+        'createdBy'
+      ],
       order: { createdAt: 'ASC' },
     });
+  } catch (error: any) {
+    throw new InternalServerErrorException(`Failed to fetch modules: ${error.message}`);
   }
+}
 
   /**
-   * Fetches single module with submodules, lessons, and parent details
+   * Fetches single module with lessons and details
    */
   async findModuleWithDetails(id: string): Promise<ModuleEntity> {
     const result = await this.repository.findOne({
       where: { id },
-      relations: ['subModules', 'lessons', 'parent', 'createdBy', 'learningPath'],
+      relations: [
+        'lessons',
+        'lessons.assignments', // 👈 FIXED: Changed 'lessons.tasks' -> 'lessons.assignments'
+        'createdBy',
+        'learningPath'
+      ],
     });
     if (!result) throw new NotFoundException(`Module with ID "${id}" not found.`);
     return result;

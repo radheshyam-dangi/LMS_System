@@ -3,9 +3,8 @@ import {
   NotFoundException,
   InternalServerErrorException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
-import { DataSource, Repository, In } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BaseService } from './base.service';
 import { AssignmentEntity } from '../entities/assignment.entity';
 import { AssignmentSubmissionEntity } from '../entities/assignmentSubmission.entity';
@@ -36,7 +35,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   }
 
   /**
-   * 🌟 CREATE ASSIGNMENT: Supports Lesson, Module, OR direct LearningPath hierarchy attachment
+   * 🌟 CREATE ASSIGNMENT
    */
   async createAssignment(dto: any, creatorId: string): Promise<AssignmentEntity> {
     const { lessonId, moduleId, learningPathId, title, instructions, assignmentType, mcqConfig, maxScore, dueDate } = dto;
@@ -144,13 +143,14 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   }
 
   /**
-   * 🌟 TRAINER / ADMIN: Evaluate & Grade Trainee Submission
+   * 🌟 TRAINER / ADMIN: Evaluate Trainee Submission & UPDATE TRAINEE PROGRESS
    */
   async evaluateSubmission(
     submissionId: string,
     evaluatorId: string,
     score: number,
     feedback: string,
+    status: 'Accepted' | 'Rejected' | 'Evaluated' = 'Accepted',
   ): Promise<AssignmentSubmissionEntity> {
     if (!UUID_REGEX.test(submissionId)) {
       throw new BadRequestException(`"${submissionId}" is not a valid UUID format.`);
@@ -158,7 +158,16 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
     const submission = await this.submissionRepository.findOne({
       where: { id: submissionId } as any,
-      relations: ['assignment', 'assignment.lesson', 'assignment.lesson.learningPath', 'trainee'],
+      relations: [
+        'trainee',
+        'assignment',
+        'assignment.lesson',
+        'assignment.lesson.module',
+        'assignment.lesson.module.learningPath',
+        'assignment.module',
+        'assignment.module.learningPath',
+        'assignment.learningPath',
+      ],
     });
 
     if (!submission) {
@@ -167,56 +176,97 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
     submission.score = score;
     submission.feedback = feedback;
-    submission.status = 'Evaluated';
+    submission.status = status;
     submission.evaluatedAt = new Date();
     submission.evaluatedBy = { id: evaluatorId } as any;
 
-    const savedSubmission = await this.submissionRepository.save(submission);
+    const updatedSubmission = await this.submissionRepository.save(submission);
 
-    // Auto-update overall LearningPath progress for Trainee
-    const pathId = submission.assignment?.lesson?.learningPath?.id;
-    if (pathId && submission.trainee?.id) {
-      await this.recalculateTraineeProgress(submission.trainee.id, pathId);
+    // 📊 Recalculate Trainee Learning Path Progress on Acceptance
+    if (status === 'Accepted' || status === 'Evaluated') {
+      const learningPathId =
+        submission.assignment?.lesson?.module?.learningPath?.id ||
+        submission.assignment?.module?.learningPath?.id ||
+        submission.assignment?.learningPath?.id;
+
+      if (learningPathId && submission.trainee?.id) {
+        await this.updateTraineePathProgress(submission.trainee.id, learningPathId);
+      }
     }
 
-    return savedSubmission;
+    return updatedSubmission;
   }
 
   /**
-   * Helper: Calculates completion percentage for Trainee under a Learning Path
+   * 🌟 TRAINER DASHBOARD: Fetch all pending submissions assigned to a trainer's paths
    */
-  private async recalculateTraineeProgress(traineeId: string, pathId: string): Promise<void> {
+  async findPendingSubmissionsForTrainer(trainerId: string): Promise<AssignmentSubmissionEntity[]> {
+    return await this.submissionRepository.find({
+      where: [
+        { status: 'Submitted', assignment: { createdBy: { id: trainerId } } },
+        { status: 'Submitted', assignment: { lesson: { module: { learningPath: { createdBy: { id: trainerId } } } } } },
+      ] as any,
+      relations: ['trainee', 'assignment'],
+      order: { createdAt: 'DESC' } as any,
+    });
+  }
+
+  /**
+   * Helper: Calculates and updates overall progress percentage for a Trainee
+   */
+  private async updateTraineePathProgress(traineeId: string, learningPathId: string): Promise<void> {
     try {
-      const path = await this.learningPathRepository.findOne({
-        where: { id: pathId },
-        relations: ['modules', 'modules.lessons'],
+      // 1. Get total assignments under this Learning Path
+      const totalAssignments = await this.repository.count({
+        where: [
+          { lesson: { module: { learningPath: { id: learningPathId } } } },
+          { module: { learningPath: { id: learningPathId } } },
+          { learningPath: { id: learningPathId } },
+        ] as any,
       });
 
-      if (!path) return;
+      if (totalAssignments === 0) return;
 
-      const lessonIds: string[] = [];
-      path.modules?.forEach((mod) => {
-        mod.lessons?.forEach((les) => lessonIds.push(les.id));
+      // 2. Count accepted/evaluated submissions by trainee for this path
+      const completedSubmissions = await this.submissionRepository.count({
+        where: [
+          {
+            trainee: { id: traineeId },
+            status: 'Accepted',
+            assignment: { lesson: { module: { learningPath: { id: learningPathId } } } },
+          },
+          {
+            trainee: { id: traineeId },
+            status: 'Accepted',
+            assignment: { module: { learningPath: { id: learningPathId } } },
+          },
+          {
+            trainee: { id: traineeId },
+            status: 'Accepted',
+            assignment: { learningPath: { id: learningPathId } },
+          },
+          {
+            trainee: { id: traineeId },
+            status: 'Evaluated',
+            assignment: { lesson: { module: { learningPath: { id: learningPathId } } } },
+          },
+        ] as any,
       });
 
-      if (lessonIds.length === 0) return;
+      const progressPercentage = Math.min(100, Math.round((completedSubmissions / totalAssignments) * 100));
 
-      const completedCount = await this.progressRepository.count({
-        where: {
-          user: { id: traineeId },
-          lesson: { id: In(lessonIds) },
-          isCompleted: true,
-        } as any,
+      // 3. Update overallProgress column in LearningPath
+      await this.learningPathRepository.update(learningPathId, {
+        overallProgress: progressPercentage,
       });
-
-      const percentage = Math.round((completedCount / lessonIds.length) * 100);
-      await this.learningPathRepository.update(pathId, { overallProgress: percentage });
-    } catch (err: any) {
-      // Non-blocking progress sync warning
-      console.warn('Progress recalculation warning:', err.message);
+    } catch (err) {
+      console.warn('Failed to update trainee learning path progress:', err);
     }
   }
 
+  /**
+   * Fetch all assignments attached to a specific Lesson
+   */
   async findByLessonId(lessonId: string): Promise<AssignmentEntity[]> {
     if (!UUID_REGEX.test(lessonId)) {
       throw new BadRequestException(`"${lessonId}" is not a valid UUID format.`);
@@ -227,6 +277,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
   }
 
+  /**
+   * Fetch all submissions for a given Assignment
+   */
   async findSubmissionsByAssignment(assignmentId: string): Promise<AssignmentSubmissionEntity[]> {
     if (!UUID_REGEX.test(assignmentId)) {
       throw new BadRequestException(`"${assignmentId}" is not a valid UUID format.`);
@@ -239,6 +292,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
   }
 
+  /**
+   * Fetch single trainee's submission for an assignment
+   */
   async findTraineeSubmission(assignmentId: string, traineeId: string): Promise<AssignmentSubmissionEntity | null> {
     if (!UUID_REGEX.test(assignmentId)) {
       throw new BadRequestException(`"${assignmentId}" is not a valid UUID format.`);

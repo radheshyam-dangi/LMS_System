@@ -6,6 +6,7 @@ export const Entities = {
   Evaluation: 'Evaluation',
   LearningPath: 'LearningPath',
   LearningPathModule: 'LearningPathModule',
+  Resource:'Resource',
   Lesson: 'Lesson',
   Module: 'Module',
   ModuleKeyPoint: 'ModuleKeyPoint',
