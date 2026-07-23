@@ -42,8 +42,8 @@ export function TraineeCurriculumView({
 
   const handleOpenSubmissionModal = (task: any) => {
     setActiveTask(task);
-    setSubmissionText('');
-    setAttachmentUrl('');
+    setSubmissionText(task.userSubmission?.submissionText || '');
+    setAttachmentUrl(task.userSubmission?.attachmentUrl || '');
     setSelectedMcqAnswers({});
   };
 
@@ -112,20 +112,6 @@ export function TraineeCurriculumView({
             <h3>Module {mIdx + 1}: {module.title}</h3>
             {module.description && <p style={{ color: '#475569', fontSize: '14px' }}>{module.description}</p>}
 
-            {/* Module Resources */}
-            {module.resources && module.resources.length > 0 && (
-              <div style={{ marginTop: '12px', padding: '12px', background: '#fffbeb', borderRadius: '6px', border: '1px solid #fde68a' }}>
-                <strong style={{ fontSize: '13px', color: '#92400e' }}>📚 Reference Resources:</strong>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '6px' }}>
-                  {module.resources.map((res: any) => (
-                    <a key={res.id} href={res.url} target="_blank" rel="noreferrer" style={{ fontSize: '13px', color: '#2563eb', textDecoration: 'underline' }}>
-                      🔗 {res.title}
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Lessons List */}
             <div style={{ marginLeft: '16px', marginTop: '16px' }}>
               {module.lessons?.map((lesson: any, lIdx: number) => (
@@ -133,71 +119,68 @@ export function TraineeCurriculumView({
                   <h4>📖 Lesson {lesson.displayOrder || lIdx + 1}: {lesson.title}</h4>
                   {lesson.description && <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{lesson.description}</p>}
 
-                  {/* 🌟 VIDEO & ARTICLE LINKS VISIBLE TO TRAINEE */}
+                  {/* Video & Article Resources */}
                   <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
                     {lesson.videoUrl && (
-                      <a
-                        href={lesson.videoUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ padding: '6px 12px', background: '#fee2e2', color: '#dc2626', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 600 }}
-                      >
+                      <a href={lesson.videoUrl} target="_blank" rel="noreferrer" style={{ padding: '6px 12px', background: '#fee2e2', color: '#dc2626', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 600 }}>
                         ▶️ Watch Video Tutorial
                       </a>
                     )}
                     {lesson.articleUrl && (
-                      <a
-                        href={lesson.articleUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ padding: '6px 12px', background: '#dbeafe', color: '#2563eb', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 600 }}
-                      >
+                      <a href={lesson.articleUrl} target="_blank" rel="noreferrer" style={{ padding: '6px 12px', background: '#dbeafe', color: '#2563eb', borderRadius: '4px', textDecoration: 'none', fontSize: '12px', fontWeight: 600 }}>
                         📄 Read Reference Article
                       </a>
                     )}
                   </div>
 
-                  {/* Lesson Resources */}
-                  {lesson.resources && lesson.resources.length > 0 && (
-                    <div style={{ marginTop: '10px', padding: '8px 12px', background: '#f0f9ff', borderRadius: '4px', border: '1px solid #bae6fd' }}>
-                      <strong style={{ fontSize: '12px', color: '#0369a1' }}>📎 Attached Materials:</strong>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-                        {lesson.resources.map((res: any) => (
-                          <a key={res.id} href={res.url} target="_blank" rel="noreferrer" style={{ fontSize: '12px', color: '#0284c7' }}>
-                            🔗 {res.title}
-                          </a>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Assignments & Tasks */}
+                  {/* 🌟 ASSIGNMENTS & TASK EVALUATION STATUS */}
                   {lesson.assignments && lesson.assignments.length > 0 && (
-                    <div style={{ marginTop: '12px' }}>
-                      <strong style={{ fontSize: '12px', color: '#334155' }}>Tasks & Assignments:</strong>
+                    <div style={{ marginTop: '14px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1' }}>
+                      <strong style={{ fontSize: '12px', color: '#334155' }}>Tasks & Evaluations:</strong>
                       {lesson.assignments.map((task: any) => {
                         const submission = task.userSubmission;
+                        const maxScore = task.maxScore ?? task.max_score ?? 100;
+                        const score = submission?.score;
+                        const percentage = score !== null && score !== undefined ? Math.round((score / maxScore) * 100) : null;
+                        
+                        // 🌟 CHECK IF PASSED (>= 50%)
+                        const hasPassed = percentage !== null && percentage >= 50;
+
                         return (
-                          <div key={task.id} style={{ marginTop: '8px', padding: '10px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div key={task.id} style={{ marginTop: '8px', padding: '12px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div>
                               <strong>📝 {task.title}</strong>
-                              <span style={{ marginLeft: '8px', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', background: '#f1f5f9' }}>
-                                {task.assignmentType || 'Subjective'}
-                              </span>
-                              {submission && (
-                                <span style={{ marginLeft: '8px', padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: 600, background: submission.status === 'Accepted' ? '#dcfce7' : submission.status === 'Rejected' ? '#fee2e2' : '#fef3c7', color: submission.status === 'Accepted' ? '#166534' : submission.status === 'Rejected' ? '#991b1b' : '#92400e' }}>
-                                  Status: {submission.status}
+                              
+                              {/* 🌟 GREEN TICK BADGE FOR COMPLETED / PASSED TASKS */}
+                              {hasPassed ? (
+                                <span style={{ marginLeft: '10px', padding: '3px 10px', borderRadius: '16px', fontSize: '12px', fontWeight: 700, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
+                                  ✅ Submitted & Passed ({percentage}%)
                                 </span>
-                              )}
+                              ) : submission ? (
+                                <span style={{ marginLeft: '10px', padding: '3px 10px', borderRadius: '16px', fontSize: '12px', fontWeight: 600, background: percentage !== null && percentage < 50 ? '#fee2e2' : '#fef3c7', color: percentage !== null && percentage < 50 ? '#b91c1c' : '#b45309', border: percentage !== null && percentage < 50 ? '1px solid #fca5a5' : '1px solid #fde68a' }}>
+                                  {percentage !== null ? `Score: ${percentage}% (Below 50%)` : '🕒 Submitted (Pending Review)'}
+                                </span>
+                              ) : null}
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={() => handleOpenSubmissionModal(task)}
-                              style={{ padding: '6px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
-                            >
-                              {submission ? 'View / Resubmit' : 'Solve & Submit'}
-                            </button>
+                            {/* 🌟 ACTION BUTTON LOGIC */}
+                            {hasPassed ? (
+                              <button
+                                type="button"
+                                disabled
+                                style={{ padding: '6px 14px', background: '#e2e8f0', color: '#64748b', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'not-allowed', fontSize: '12px', fontWeight: 600 }}
+                              >
+                                ✓ Task Completed
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenSubmissionModal(task)}
+                                style={{ padding: '6px 12px', background: submission ? '#dc2626' : '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                              >
+                                {submission ? '🔄 Resubmit Task' : 'Solve & Submit'}
+                              </button>
+                            )}
                           </div>
                         );
                       })}
@@ -210,7 +193,7 @@ export function TraineeCurriculumView({
         ))
       )}
 
-      {/* 🌟 SUBMISSION MODAL */}
+      {/* SUBMISSION MODAL */}
       {activeTask && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: '#fff', width: '550px', padding: '24px', borderRadius: '8px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -268,7 +251,7 @@ export function TraineeCurriculumView({
                   Cancel
                 </button>
                 <button type="submit" disabled={isSubmitting} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px' }}>
-                  {isSubmitting ? 'Submitting...' : 'Submit to Trainer'}
+                  {isSubmitting ? 'Submitting...' : 'Submit Task'}
                 </button>
               </div>
             </form>

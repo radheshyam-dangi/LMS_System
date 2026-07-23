@@ -292,6 +292,34 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
   }
 
+  async findAllSubmissionsByTrainee(traineeId: string): Promise<AssignmentSubmissionEntity[]> {
+    if (!traineeId) {
+      throw new BadRequestException('Trainee user ID is required.');
+    }
+
+    try {
+      return await this.submissionRepository.find({
+        where: {
+          trainee: { id: traineeId },
+        } as any,
+        relations: [
+          'assignment',
+          'assignment.lesson',
+          'assignment.module',
+          'assignment.learningPath',
+        ],
+        order: {
+          submittedAt: 'DESC',
+          createdAt: 'DESC',
+        } as any,
+      });
+    } catch (error: any) {
+      throw new InternalServerErrorException(
+        `Failed to fetch trainee submission history: ${error.message}`,
+      );
+    }
+  }
+
   /**
    * Fetch single trainee's submission for an assignment
    */

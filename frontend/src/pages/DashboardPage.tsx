@@ -3,8 +3,9 @@ import { InviteUserModal } from '../components/users/InviteUserModal';
 import { UsersSection } from '../components/users/UserManagement';
 import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
 import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
-import { TraineeCurriculumView } from '../components/TrainerEvaluationDashboard/TraineeCurriculumView';
+import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
 import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
 import type { RoleName, SessionUser } from '../types/auth';
 
 type DashboardPageProps = {
@@ -85,7 +86,7 @@ export function DashboardPage({
   // ROUTING ENGINE VIEW CONDITIONALS 
   // ========================================================
 
-  // VIEW 1: USER MANAGEMENT
+  // VIEW 1: USER MANAGEMENT (ADMIN ONLY)
   if (isAdmin && activeSection === 'Users') {
     return (
       <div className="dashboard-content">
@@ -102,11 +103,22 @@ export function DashboardPage({
     );
   }
 
-  // VIEW 2: EVALUATIONS SECTION (FOR TRAINERS / ADMINS)
-  if (isTrainerOrAdmin && (activeSection === 'Evaluations' || activeSection === 'Submissions')) {
+  // 🌟 VIEW 2: EVALUATIONS & SUBMISSIONS WORKSPACE (ROLE-AWARE)
+  if (
+    activeSection === 'Evaluations' || 
+    activeSection === 'Submissions' || 
+    activeSection === 'Reviews' || 
+    activeSection === 'Assignments'
+  ) {
     return (
       <div className="dashboard-content">
-        <TrainerEvaluationDashboard accessToken={accessToken} />
+        {isTrainee ? (
+          /* 🟢 TRAINEE VIEW: Submission History, Color-Coded Grades & Resubmissions (<50%) */
+          <TraineeSubmissionsView accessToken={accessToken} />
+        ) : (
+          /* 🔵 TRAINER / ADMIN VIEW: Review Pending Submissions & Accept/Reject Tasks */
+          <TrainerEvaluationDashboard accessToken={accessToken} />
+        )}
       </div>
     );
   }
@@ -116,7 +128,7 @@ export function DashboardPage({
     return (
       <div className="dashboard-content">
         {selectedPathId ? (
-          /* 🌟 Active Track: Differentiates between Trainer (Manager) and Trainee (Learner) views */
+          /* Active Track: Differentiates between Trainer (Manager) and Trainee (Learner) views */
           isTrainee ? (
             <TraineeCurriculumView
               learningPathId={selectedPathId}
@@ -137,7 +149,7 @@ export function DashboardPage({
             />
           )
         ) : (
-          /* 🌟 Overview Grid: All Available Learning Paths */
+          /* Overview Grid: All Available Learning Paths */
           <LearningPathsSection 
             currentUser={{
               id: currentUser?.id ?? 'trainee-99',

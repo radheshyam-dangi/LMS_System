@@ -9,6 +9,13 @@ const getAuthHeaders = (token: string) => ({
 });
 
 export const curriculumService = {
+  fetchMySubmissions: async (token: string) => {
+    const response = await axios.get(
+      `${API_BASE_URL}/assignments/my-submissions`,
+      getAuthHeaders(token)
+    );
+    return response.data;
+  },
   // ==========================================
   // 1. MODULE ENDPOINTS
   // ==========================================
