@@ -1,0 +1,21 @@
+export const RoutePaths = {
+  Assignments: 'assignments',
+  Documents: 'documents',
+  DocumentAssociations: 'documentAssociations',
+  Enrollments: 'enrollments',
+  Evaluations: 'evaluations',
+  LearningPaths: 'learningPaths',
+  LearningPathModules: 'learningPathModules',
+  Lessons: 'lessons',
+  Modules: 'modules',
+  ModuleKeyPoints: 'moduleKeyPoints',
+  ModulePrerequisites: 'modulePrerequisites',
+  ModuleTags: 'moduleTags',
+  Notifications: 'notifications',
+  Roles: 'roles',
+  Submissions: 'submissions',
+  Tags: 'tags',
+  Users: 'users',
+  UserLessonProgress: 'userLessonProgress',
+  Resources:'resources'
+} as const;

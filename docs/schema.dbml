@@ -1,0 +1,190 @@
+﻿Table users {
+  id uuid [primary key]
+  first_name varchar
+  last_name varchar
+  email varchar [unique]
+  password_hash varchar
+  avatar_url varchar
+  is_active boolean
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table roles {
+  id uuid [primary key]
+  name varchar [unique]
+  created_at timestamp
+}
+
+Table user_roles {
+  id uuid [primary key]
+  user_id uuid [ref: > users.id]
+  role_id uuid [ref: > roles.id]
+}
+
+Table learning_paths {
+  id uuid [primary key]
+  title varchar
+  description text
+  status enum
+  created_by uuid [ref: > users.id]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table learning_path_modules {
+  id uuid [primary key]
+  learning_path_id uuid [ref: > learning_paths.id]
+  module_id uuid [ref: > modules.id]
+  display_order integer
+}
+
+Table modules {
+  id uuid [primary key]
+  parent_id uuid [ref: > modules.id]
+  title varchar
+  description text
+  difficulty_level enum
+  status enum
+  created_by uuid [ref: > users.id]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table module_key_points {
+  id uuid [primary key]
+  module_id uuid [ref: > modules.id]
+  title varchar
+  description text
+}
+
+Table module_prerequisites {
+  id uuid [primary key]
+  module_id uuid [ref: > modules.id]
+  prerequisite_module_id uuid [ref: > modules.id]
+}
+
+Table lessons {
+  id uuid [primary key]
+  module_id uuid [ref: > modules.id]
+  title varchar
+  description text
+  duration_minutes integer
+  display_order integer
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table assignments {
+  id uuid [primary key]
+  lesson_id uuid [ref: > lessons.id]
+  title varchar
+  description text
+  instructions text
+  difficulty_level enum
+  assignment_type enum
+  max_score integer
+  due_date timestamp
+  created_by uuid [ref: > users.id]
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table enrollments {
+  id uuid [primary key]
+  user_id uuid [ref: > users.id]
+  learning_path_id uuid [ref: > learning_paths.id]
+  enrolled_at timestamp
+  status enum
+}
+
+Table user_lesson_progress {
+  id uuid [primary key]
+  user_id uuid [ref: > users.id]
+  lesson_id uuid [ref: > lessons.id]
+  completed_at timestamp
+}
+
+Table submissions {
+  id uuid [primary key]
+  assignment_id uuid [ref: > assignments.id]
+  user_id uuid [ref: > users.id]
+  submission_type enum
+  github_url text
+  live_url text
+  notes text
+  status enum
+  submitted_at timestamp
+  updated_at timestamp
+}
+
+Table evaluations {
+  id uuid [primary key]
+  submission_id uuid [ref: > submissions.id]
+  evaluator_id uuid [ref: > users.id]
+  technical_score integer
+  architecture_score integer
+  problem_solving_score integer
+  documentation_score integer
+  overall_score integer
+  feedback text
+  created_at timestamp
+}
+
+Table documents {
+  id uuid [primary key]
+  identifier varchar
+  mime_type varchar
+  document_name varchar
+  original_document_name varchar
+  document_url text
+  extension varchar
+  encoding varchar
+  size_bytes bigint
+  upload_count integer
+  created_at timestamp
+}
+
+Table document_associations {
+  id uuid [primary key]
+  document_id uuid [ref: > documents.id]
+  association_type enum
+  association_id uuid
+  description text
+  ref_count integer
+}
+
+Table tags {
+  id uuid [primary key]
+  name varchar [unique]
+}
+
+Table module_tags {
+  id uuid [primary key]
+  module_id uuid [ref: > modules.id]
+  tag_id uuid [ref: > tags.id]
+}
+
+Table ai_feedback {
+  id uuid [primary key]
+  submission_id uuid [ref: > submissions.id]
+  generated_feedback text
+  architecture_review text
+  improvement_suggestions text
+  created_at timestamp
+}
+
+Table ai_conversations {
+  id uuid [primary key]
+  user_id uuid [ref: > users.id]
+  title varchar
+  created_at timestamp
+}
+
+Table ai_messages {
+  id uuid [primary key]
+  conversation_id uuid [ref: > ai_conversations.id]
+  role enum
+  content text
+  created_at timestamp
+}

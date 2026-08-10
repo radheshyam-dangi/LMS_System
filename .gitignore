@@ -1,0 +1,81 @@
+# ==========================================
+# 1. Global / System Files
+# ==========================================
+.DS_Store
+Thumbs.db
+.desktop
+*.log
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# ==========================================
+# 2. Frontend Specific (React, Vue, Next.js, Vite, etc.)
+# ==========================================
+# Dependencies
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.js
+
+# Production builds
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/out/
+
+# Local environment files (contains secrets)
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Testing and coverage
+frontend/coverage/
+frontend/.nyc_output
+
+# IDE / Editors
+frontend/.vscode/
+frontend/.idea/
+
+# ==========================================
+# 3. Backend Specific (Node.js, Express, Python, Go, etc.)
+# ==========================================
+# Dependencies
+backend/node_modules/
+backend/vendor/
+backend/venv/
+backend/.venv/
+backend/env/
+
+# Local environment files (CRITICAL: Never commit backend database keys/API secrets)
+backend/.env
+backend/.env.local
+backend/.env.dev
+backend/.env.prod
+backend/.env.*.local
+
+# Logs and runtime data
+backend/logs/
+backend/*.log
+backend/npm-debug.log*
+backend/yarn-debug.log*
+backend/yarn-error.log*
+backend/pnpm-debug.log*
+
+# Build/Compiled outputs (e.g., TypeScript build, Java target, Go binaries)
+backend/dist/
+backend/build/
+backend/out/
+backend/target/
+backend/*.exe
+backend/*.dll
+backend/*.dylib
+
+# Database / Storage (SQLite, uploads, etc.)
+backend/*.db
+backend/*.sqlite
+backend/uploads/
+backend/storage/
