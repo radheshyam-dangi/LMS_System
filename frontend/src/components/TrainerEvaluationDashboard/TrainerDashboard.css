@@ -1,0 +1,96 @@
+/* ==========================================
+   TRAINER EVALUATION DASHBOARD UI UPGRADES
+   ========================================== */
+
+/* --- Metric Cards --- */
+.trainer-metric-card {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 16px 20px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
+}
+
+.trainer-metric-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.06);
+  border-color: #cbd5e1;
+}
+
+.trainer-metric-card.metric-card-active {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  box-shadow: 0 4px 12px rgba(56, 189, 248, 0.15);
+}
+
+.trainer-metric-card.metric-card-active:hover {
+  box-shadow: 0 10px 24px rgba(56, 189, 248, 0.2);
+}
+
+/* --- List Cards (Assignments / Submissions) --- */
+.trainer-list-card {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #f1f5f9;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  backdrop-filter: blur(8px);
+}
+
+.trainer-list-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.08);
+  border-color: #e2e8f0;
+}
+
+/* --- Action Buttons --- */
+.btn-trainer-action-primary,
+.btn-trainer-action-secondary {
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+}
+
+.btn-trainer-action-primary {
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.2);
+}
+
+.btn-trainer-action-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(79, 70, 229, 0.4);
+}
+
+.btn-trainer-action-primary:active {
+  transform: translateY(1px);
+}
+
+.btn-trainer-action-secondary {
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+}
+
+.btn-trainer-action-secondary:hover {
+  background: #e2e8f0;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(100, 116, 139, 0.15);
+}
+
+.btn-trainer-action-secondary:active {
+  transform: translateY(1px);
+}

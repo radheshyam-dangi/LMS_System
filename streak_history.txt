@@ -1,0 +1,1888 @@
+Created At: 2026-08-06T10:47:26Z
+Completed At: 2026-08-06T10:47:26Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 944
+Total Bytes: 45818
+Showing lines 1 to 800
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { useMemo, useState, useEffect, useRef } from 'react';
+2: import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+3: import { InviteUserModal } from '../components/users/InviteUserModal';
+4: import { UsersSection } from '../components/users/UserManagement';
+5: import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+6: import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+7: import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
+8: import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+9: import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
+10: import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
+11: import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
+12: import { SettingsSection } from '../components/SettingsSection/SettingsSection';
+13: import { userService } from '../services/userService';
+14: import { learningPathService } from '../services/learningPathService';
+15: import { assignmentService } from '../services/assignmentService';
+16: import { curriculumService } from '../services/curriculumService';
+17: import { ResponsiveContainer, LineChart, Line } from 'recharts';
+18: import { analyticsService, progressService, type ChartBundle } from '../services/lmsApi';
+19: import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
+20: import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
+21: import { useNotifications } from '../context/NotificationContext';
+22: import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+23: import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts';
+24: import type { RoleName, SessionUser } from '../types/auth';
+25: 
+26: const calculateStreak = (submissions: any[]) => {
+27:   if (!submissions || submissions.length === 0) return 0;
+28: 
+29:   const today = new Date();
+30:   today.setHours(0, 0, 0, 0);
+31: 
+32:   const dates = new Set<string>();
+33:   submissions.forEach(s => {
+34:     const d = new Date(s.submittedAt || s.createdAt);
+35:     if (!isNaN(d.getTime())) {
+36:       d.setHours(0, 0, 0, 0);
+37:       dates.add(d.toISOString().split("T")[0]);
+38:     }
+39:   });
+40: 
+41:   let streak = 0;
+42:   let current = new Date(today);
+43: 
+44:   // Check if they submitted today
+45:   const todayStr = current.toISOString().split("T")[0];
+46:   if (!dates.has(todayStr)) {
+47:     // If not today, check yesterday. If yesterday has no submissions, streak is 0.
+48:     current.setDate(current.getDate() - 1);
+49:     if (!dates.has(current.toISOString().split("T")[0])) {
+50:       return 0;
+51:     }
+52:   }
+53: 
+54:   // Count backwards from current day
+55:   while (true) {
+56:     const key = current.toISOString().split("T")[0];
+57:     if (dates.has(key)) {
+58:       streak++;
+59:       current.setDate(current.getDate() - 1);
+60:     } else {
+61:       break;
+62:     }
+63:   }
+64:   return streak;
+65: };
+66: 
+67: type DashboardPageProps = {
+68:   accessToken: string;
+69:   activeRole: RoleName;
+70:   activeSection: string;
+71:   currentUser: SessionUser;
+72: };
+73: 
+74: type VisibleUser = {
+75:   email: string;
+76:   firstName: string;
+77:   lastName: string;
+78:   roles: RoleName[];
+79:   primaryRole: RoleName;
+80:   status: 'invited' | 'activated';
+81: };
+82: 
+83: const getRangeLabel = (days: number) => {
+84:   const end = new Date();
+85:   const start = new Date();
+86:   start.setDate(end.getDate() - days);
+87: 
+88:   const startMonth = start.toLocaleString('default', { month: 'short' });
+89:   const endMonth = end.toLocaleString('default', { month: 'short' });
+90: 
+91:   if (startMonth === endMonth) {
+92:     return startMonth;
+93:   }
+94:   return `${startMonth}-${endMonth}`;
+95: };
+96: 
+97: export function DashboardPage({
+98:   accessToken,
+99:   activeRole,
+100:   activeSection,
+101:   currentUser,
+102: }: DashboardPageProps) {
+103:   const navigate = useNavigate();
+104:   const { refresh: refreshNotifications } = useNotifications();
+105:   // Chart tooltip state
+106:   const [chartTooltip, setChartTooltip] = useState<{ visible: boolean; x: number; y: number; label: string; value: string }>({ visible: false, x: 0, y: 0, label: '', value: '' });
+107:   const [showInviteModal, setShowInviteModal] = useState(false);
+108:   const location = useLocation();
+109:   const [selectedPathId, setSelectedPathId] = useState<string | null>(location.state?.pathId || null);
+110:   const [selectedPathTitle, setSelectedPathTitle] = useState<string>(location.state?.pathName || '');
+111: 
+112:   useEffect(() => {
+113:     if (location.state?.pathId) {
+114:       setSelectedPathId(location.state.pathId);
+115:       setSelectedPathTitle(location.state.pathName || '');
+116:     }
+117:   }, [location.state]);
+118: 
+119:   const [, setUsers] = useState<VisibleUser[]>([
+120:     {
+121:       email: currentUser.email,
+122:       firstName: currentUser.firstName ?? 'Admin',
+123:       lastName: currentUser.lastName ?? 'User',
+124:       roles: currentUser.roles,
+125:       primaryRole: currentUser.primaryRole,
+126:       status: 'activated',
+127:     },
+128:   ]);
+129: 
+130:   // LIVE DATABASE METRICS STATE
+131:   const [dbData, setDbData] = useState({
+132:     totalUsers: 0,
+133:     totalTrainers: 0,
+134:     totalTrainees: 0,
+135:     totalPaths: 0,
+136:     totalModules: 0,
+137:     totalTasks: 0,
+138:     pendingReviews: 0,
+139:     acceptedCount: 0,
+140:     completionRate: 0,
+141:     averageScore: 0,
+142:     totalLessons: 0,
+143:     currentStreak: 0,
+144:     activityTimestamps: [] as any[],
+145:   });
+146: 
+147:   const [traineePath, setTraineePath] = useState<any | null>(null);
+148:   const [upcomingTasks, setUpcomingTasks] = useState<any[]>([]);
+149:   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
+150:   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+151:   const [detailedTraineeModules, setDetailedTraineeModules] = useState<any[]>([]);
+152:   const [heatmapDays, setHeatmapDays] = useState(140);
+153:   const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
+154:   const [progressStats, setProgressStats] = useState({
+155:     completedLessons: 0,
+156:     totalLessons: 0,
+157:     completionPercent: 0,
+158:     averageScore: 0,
+159:   });
+160:   const [charts, setCharts] = useState<ChartBundle>({
+161:     progressTrends: [],
+162:     weeklyScores: [],
+163:     dailyScores: [],
+164:     skillDistribution: [],
+165:     moduleCompletion: [],
+166:     pathPerformance: [],
+167:   });
+168:   const [completionGrowth, setCompletionGrowth] = useState(0);
+169: 
+170:   const isAdmin = useMemo(() => activeRole.toLowerCase() === 'admin', [activeRole]);
+171:   const isTrainee = useMemo(() => activeRole.toLowerCase() === 'trainee', [activeRole]);
+172: 
+173:   const addInvitedUser = (user: Omit<VisibleUser, 'status'>) => {
+174:     setUsers((current) => [{ ...user, status: 'invited' }, ...current]);
+175:   };
+176: 
+177:   const handleBackToAllPaths = () => {
+178:     setSelectedPathId(null);
+179:     setSelectedPathTitle('');
+180:     navigate('/learning-paths');
+181:   };
+182: 
+183:   // 🌟 FETCH REAL DATABASE METRICS ON MOUNT OR ROLE/TOKEN CHANGE
+184:   useEffect(() => {
+185:     let isMounted = true;
+186: 
+187:     const fetchDatabaseMetrics = async () => {
+188:       setIsLoadingMetrics(true);
+189:       try {
+190:         const [analytics, usersList, pathsList, pendingSubs, mySubs, myProgress] = await Promise.all([
+191:           analyticsService.fetchDashboard(accessToken, activeRole).catch(() => null),
+192:           userService.fetchAllUsers(accessToken).catch(() => []),
+193:           learningPathService.fetchAllPaths(accessToken).catch(() => []),
+194:           assignmentService.fetchPendingSubmissions(accessToken).catch(() => []),
+195:           isTrainee ? assignmentService.fetchMySubmissions(accessToken).catch(() => []) : Promise.resolve([]),
+196:           progressService.fetchMyStats(accessToken).catch(() => ({
+197:             completedLessons: 0,
+198:             totalLessons: 0,
+199:             completionPercent: 0,
+200:             averageScore: 0,
+201:           })),
+202:         ]);
+203: 
+204:         if (!isMounted) return;
+205: 
+206:         if (isTrainee) {
+207:           let totalAssignedLessons = 0;
+208:           const assignedPaths = (pathsList || []).filter((p: any) =>
+209:             p.assignedToTraineeIds?.includes(currentUser.id) ||
+210:             p.enrollments?.some((e: any) => String(e.user?.id) === String(currentUser.id) && e.status === 'active')
+211:           );
+212: 
+213:           assignedPaths.forEach((p: any) => {
+214:             p.modules?.forEach((m: any) => {
+215:               totalAssignedLessons += (m.lessons?.length || 0);
+216:             });
+217:           });
+218: 
+219:           myProgress.totalLessons = totalAssignedLessons;
+220:           if (totalAssignedLessons > 0) {
+221:             myProgress.completionPercent = Math.min(100, Math.round((myProgress.completedLessons / totalAssignedLessons) * 100));
+222:           } else {
+223:             myProgress.completionPercent = 0;
+224:           }
+225: 
+226:           if (assignedPaths.length > 0) {
+227:             try {
+228:               const dMods = await curriculumService.fetchModulesByPath(assignedPaths[0].id, accessToken);
+229:               const mods = Array.isArray(dMods) ? dMods : [];
+230:               // Map user submissions to tasks for completion logic
+231:               mods.forEach((m: any) => {
+232:                 m.lessons?.forEach((l: any) => {
+233:                   l.assignments?.forEach((t: any) => {
+234:                     const sub = (mySubs || []).find((s: any) => s.assignment?.id === t.id);
+235:                     if (sub) {
+236:                       t.userSubmission = sub;
+237:                     }
+238:                   });
+239:                 });
+240:               });
+241:               setDetailedTraineeModules(mods);
+242:             } catch (err) {
+243:               setDetailedTraineeModules([]);
+244:             }
+245:           }
+246:         }
+247: 
+248:         setProgressStats(myProgress);
+249:         if (analytics?.charts) setCharts(analytics.charts);
+250:         setCompletionGrowth(analytics?.completionGrowth ?? 0);
+251: 
+252:         let trainersCount = 0;
+253:         let traineesCount = 0;
+254:         (usersList || []).forEach((u: any) => {
+255:           const roles = [
+256:             u.role,
+257:             u.primaryRole?.name,
+258:             ...(Array.isArray(u.roles) ? u.roles.map((r: any) => r.name || r) : []),
+259:           ].map((r) => String(r || '').toLowerCase());
+260:           if (roles.includes('trainer')) trainersCount++;
+261:           if (roles.includes('trainee')) traineesCount++;
+262:         });
+263: 
+264:         let moduleCount = 0;
+265:         let taskCount = 0;
+266:         const tasksTree: any[] = [];
+267: 
+268:         (pathsList || []).forEach((p: any) => {
+269:           // 1. Catch STANDALONE / EXTERNAL tasks attached directly to the learning path
+270:           if (p.assignments && p.assignments.length > 0) {
+271:             p.assignments.forEach((a: any) => {
+272:               if (!a.lessonId) {
+273:                 taskCount++;
+274:                 tasksTree.push({
+275:                   id: a.id,
+276:                   title: a.title,
+277:                   moduleTitle: 'Standalone Assignment',
+278:                   due: a.dueDate ? new Date(a.dueDate).toLocaleDateString() : 'Due Soon',
+279:                   priority: a.assignmentType === 'External' ? 'high' : 'medium',
+280:                   type: a.assignmentType,
+281:                   externalUrl: a.externalUrl,
+282:                 });
+283:               }
+284:             });
+285:           }
+286: 
+287:           // 2. Catch INTERNAL tasks attached to modules -> lessons
+288:           if (p.modules) {
+289:             moduleCount += p.modules.length;
+290:             p.modules.forEach((m: any) => {
+291:               m.lessons?.forEach((l: any) => {
+292:                 if (l.assignments) {
+293:                   taskCount += l.assignments.length;
+294:                   l.assignments.forEach((a: any) => {
+295:                     tasksTree.push({
+296:                       id: a.id,
+297:                       title: a.title,
+298:                       moduleTitle: m.title,
+299:                       due: a.dueDate ? new Date(a.dueDate).toLocaleDateString() : 'Due Soon',
+300:                       priority: a.assignmentType === 'MCQ' ? 'medium' : 'high',
+301:                       type: a.assignmentType,
+302:                       externalUrl: a.externalUrl,
+303:                     });
+304:                   });
+305:                 }
+306:               });
+307:             });
+308:           }
+309:         });
+310: 
+311:         const pendingCount = analytics?.pendingReviews ?? (pendingSubs?.length || 0);
+312:         const acceptedCount = (mySubs || []).filter((s: any) => s.status === 'Accepted').length;
+313:         const calcRate =
+314:           analytics?.completionRate ??
+315:           (taskCount > 0
+316:             ? Math.min(Math.round((acceptedCount / taskCount) * 100), 100)
+317:             : myProgress.completionPercent || 0);
+318: 
+319:         // Notification bell is driven by NotificationProvider (poll + mark-read on sections)
+320:         void refreshNotifications();
+321: 
+322:         setDbData({
+323:           totalUsers: analytics?.totalUsers ?? usersList?.length ?? 0,
+324:           totalTrainers: analytics?.totalTrainers ?? trainersCount,
+325:           totalTrainees: analytics?.totalTrainees ?? traineesCount,
+326:           totalPaths: analytics?.totalPaths ?? pathsList?.length ?? 0,
+327:           totalModules: analytics?.totalModules ?? moduleCount,
+328:           totalTasks: analytics?.totalAssignments ?? taskCount,
+329:           pendingReviews: pendingCount,
+330:           acceptedCount,
+331:           completionRate: calcRate,
+332:           averageScore: analytics?.averageScore ?? 0,
+333:           totalLessons: analytics?.totalLessons ?? myProgress.totalLessons ?? 0,
+334:           currentStreak: analytics?.currentStreak ?? 0,
+335:           activityTimestamps: analytics?.activityTimestamps || [],
+336:         });
+337: 
+338:         setPendingSubmissions(pendingSubs || analytics?.recentActivity || []);
+339:         setMySubmissions(mySubs || []);
+340: 
+341:         if (isTrainee && pathsList?.length > 0) {
+342:           let assigned = null;
+343:           if (mySubs && mySubs.length > 0) {
+344:             // Find most recent submission's learning path
+345:             for (const sub of mySubs) {
+346:               const pId = sub.assignment?.learningPath?.id || (sub.assignment as any)?.learningPathId;
+347:               if (pId) {
+348:                 assigned = pathsList.find((p: any) => p.id === pId);
+349:                 if (assigned) break;
+350:               }
+351:             }
+352:           }
+353:           if (!assigned) {
+354:             assigned = pathsList.find((p: any) => p.assignedToTraineeIds?.includes(currentUser.id)) || null;
+355:           }
+356:           setTraineePath(assigned);
+357:           setUpcomingTasks([]);
+358:         } else {
+359:           setTraineePath(null);
+360:           setUpcomingTasks([]);
+361:         }
+362:       } catch (err) {
+363:         console.error('Failed to load database metrics:', err);
+364:         if (isMounted) {
+365:           setDbData({
+366:             totalUsers: 0,
+367:             totalTrainers: 0,
+368:             totalTrainees: 0,
+369:             totalPaths: 0,
+370:             totalModules: 0,
+371:             totalTasks: 0,
+372:             pendingReviews: 0,
+373:             acceptedCount: 0,
+374:             completionRate: 0,
+375:             averageScore: 0,
+376:             totalLessons: 0,
+377:           });
+378:         }
+379:       } finally {
+380:         if (isMounted) setIsLoadingMetrics(false);
+381:       }
+382:     };
+383: 
+384:     fetchDatabaseMetrics();
+385:     return () => {
+386:       isMounted = false;
+387:     };
+388:   }, [accessToken, activeRole, currentUser.id, isTrainee, activeSection]);
+389: 
+390:   // ========================================================
+391:   // ROUTING ENGINE VIEW CONDITIONALS 
+392:   // ========================================================
+393: 
+394:   if (isAdmin && activeSection === 'Users') {
+395:     return (
+396:       <div className="dashboard-content">
+397:         <UsersSection onOpenInviteModal={() => setShowInviteModal(true)} accessToken={accessToken} />
+398:         {showInviteModal && (
+399:           <InviteUserModal
+400:             accessToken={accessToken}
+401:             currentUser={currentUser}
+402:             onClose={() => setShowInviteModal(false)}
+403:             onInvited={addInvitedUser}
+404:           />
+405:         )}
+406:       </div>
+407:     );
+408:   }
+409: 
+410:   if (
+411:     activeSection === 'Evaluations' ||
+412:     activeSection === 'Submissions' ||
+413:     activeSection === 'Reviews' ||
+414:     activeSection === 'Assignments'
+415:   ) {
+416:     return (
+417:       <div className="dashboard-content">
+418:         {isTrainee ? (
+419:           activeSection === 'Assignments' ? (
+420:             <TraineeAssignmentsView accessToken={accessToken} />
+421:           ) : (
+422:             <TraineeSubmissionsView accessToken={accessToken} />
+423:           )
+424:         ) : (
+425:           <TrainerEvaluationDashboard accessToken={accessToken} currentUser={currentUser} activeSection={activeSection} activeRole={activeRole} />
+426:         )}
+427:       </div>
+428:     );
+429:   }
+430: 
+431:   if (activeSection === 'Learning Paths') {
+432:     return (
+433:       <div className="dashboard-content">
+434:         {selectedPathId && !isTrainee ? (
+435:           <CurriculumManager
+436:             learningPathId={selectedPathId}
+437:             learningPathTitle={selectedPathTitle || 'Curriculum Modules'}
+438:             currentUser={{
+439:               id: currentUser?.id ?? 'user-01',
+440:               role: activeRole as any,
+441:             }}
+442:             accessToken={accessToken}
+443:             onBack={handleBackToAllPaths}
+444:           />
+445:         ) : (
+446:           <LearningPathsSection
+447:             currentUser={{
+448:               id: currentUser?.id ?? 'trainee-99',
+449:               name: currentUser?.firstName ?? 'User',
+450:               role: activeRole as any
+451:             }}
+452:             accessToken={accessToken}
+453:             onNavigateToModules={(pathId: string, pathName: string) => {
+454:               if (isTrainee) {
+455:                 navigate('/modules', { state: { pathId, pathName } });
+456:               } else {
+457:                 setSelectedPathId(pathId);
+458:                 setSelectedPathTitle(pathName);
+459:               }
+460:             }}
+461:             onBackToAllPaths={handleBackToAllPaths}
+462:           />
+463:         )}
+464:       </div>
+465:     );
+466:   }
+467:   if (activeSection === 'Modules' || activeSection === 'Module Details') {
+468:     const pathId = location.state?.pathId || selectedPathId || traineePath?.id || '';
+469:     const pathTitle = location.state?.pathName || selectedPathTitle || traineePath?.title || 'All Modules';
+470: 
+471:     if (!pathId) {
+472:       return <Navigate to="/learning-paths" replace />;
+473:     }
+474: 
+475:     return (
+476:       <div className="dashboard-content">
+477:         <ModulesManagementSection
+478:           currentPathId={pathId}
+479:           currentPathTitle={pathTitle}
+480:           userRole={activeRole as 'Admin' | 'Trainer' | 'Trainee'}
+481:           accessToken={accessToken}
+482:           onBack={handleBackToAllPaths}
+483:         />
+484:       </div>
+485:     );
+486:   }
+487: 
+488:   if (activeSection === 'Progress' || activeSection === 'Analytics') {
+489:     return (
+490:       <div className="dashboard-content">
+491:         <ProgressAnalyticsSection
+492:           accessToken={accessToken}
+493:           activeRole={activeRole}
+494:           currentUser={currentUser}
+495:         />
+496:       </div>
+497:     );
+498:   }
+499: 
+500:   if (activeSection === 'Settings') {
+501:     return (
+502:       <div className="dashboard-content">
+503:         <SettingsSection accessToken={accessToken} activeRole={activeRole} currentUser={currentUser} />
+504:       </div>
+505:     );
+506:   }
+507: 
+508:   // ========================================================
+509:   // DEFAULT DASHBOARD HOME (ROLE-ADAPTIVE DB VIEWS)
+510:   // ========================================================
+511:   const firstName = currentUser.firstName || currentUser.name?.split(' ')[0] || 'User';
+512: 
+513:   if (isTrainee) {
+514:     const currentPathTitle = traineePath?.title || traineePath?.name || 'No path assigned';
+515:     const totalModules = traineePath?.modules?.length || 0;
+516:     const progressPercent = traineePath ? (progressStats.completionPercent || dbData.completionRate || 0) : 0;
+517:     
+518:     // Evaluate actual module completion from detailedTraineeModules
+519:     let completedModules = 0;
+520:     if (detailedTraineeModules && detailedTraineeModules.length > 0) {
+521:       completedModules = detailedTraineeModules.filter((m: any) => {
+522:         const allTasks = (m.lessons || []).flatMap((l: any) => l.assignments || []);
+523:         if (allTasks.length === 0) {
+524:           // If no tasks, check if lessons are marked complete
+525:           const lessons = m.lessons || [];
+526:           return lessons.length > 0 && lessons.every((l: any) => l.isCompleted);
+527:         }
+528:         const doneTasks = allTasks.filter((t: any) => 
+529:           t.userSubmission?.evaluationStatus === 'accepted_high' || 
+530:           (t.userSubmission && t.userSubmission.score >= (t.minPassScore || 0)) ||
+531:           t.userSubmission?.status === 'Accepted' ||
+532:           t.userSubmission?.status === 'Evaluated'
+533:         ).length;
+534:         return doneTasks === allTasks.length;
+535:       }).length;
+536:     } else {
+537:       completedModules = Math.min(
+538:         totalModules,
+539:         progressPercent > 0 && totalModules > 0
+540:           ? Math.max(1, Math.round((progressPercent / 100) * totalModules))
+541:           : 0
+542:       );
+543:     }
+544: 
+545:     const currentStreak = dbData.currentStreak || calculateStreak(mySubmissions);
+546:     const traineeAvgScore = progressStats.averageScore || 0;
+547: 
+548:     return (
+549:       <div className="dashboard-content" style={{ padding: '24px 32px', width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+550:         <header style={{ marginBottom: '24px' }}>
+551:           <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Good morning, {firstName}</h1>
+552:           <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px', margin: 0 }}>
+553:             {traineePath
+554:               ? `You're ${progressPercent}% through ${currentPathTitle}. Keep the momentum!`
+555:               : `Welcome, ${firstName}! No learning path assigned yet — check back soon or explore available paths.`}
+556:           </p>
+557:         </header>
+558: 
+559:         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+560:           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+561:             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>📖</div>
+562:             <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>{currentPathTitle}</div>
+563:             <div style={{ fontSize: '12px', color: '#64748b' }}>Current Path</div>
+564:             <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 600, marginTop: '4px' }}>
+565:               {traineePath ? `Module ${completedModules} of ${totalModules}` : '0 Modules'}
+566:             </div>
+567:           </div>
+568: 
+569:           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+570:             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7c3aed' }}>🎯</div>
+571:             <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>{dbData.totalTasks}</div>
+572:             <div style={{ fontSize: '12px', color: '#64748b' }}>Tasks Assigned</div>
+573:             <div style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 600, marginTop: '4px' }}>
+574:               {upcomingTasks.length} upcoming
+575:             </div>
+576:           </div>
+577: 
+578:           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+579:             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ea580c' }}>⭐</div>
+580:             <div style={{ fontSize: '28px', fontWeight: '800', marginTop: '12px', color: '#0f172a' }}>{progressPercent}%</div>
+581:             <div style={{ fontSize: '12px', color: '#64748b' }}>Overall Progress</div>
+582:             <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
+583:               {traineePath ? progressStats.completedLessons : 0}/{traineePath ? progressStats.totalLessons : 0} lessons
+584:             </div>
+585:           </div>
+586: 
+587:           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+588:             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>🔥</div>
+589:             <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+590:               {currentStreak} days
+591:             </div>
+592:             <div style={{ fontSize: '12px', color: '#64748b' }}>Current Streak</div>
+593:             <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
+594:               {currentStreak === 0 ? 'Submit a task to start!' : 'Keep it up!'}
+595:             </div>
+596:           </div>
+597:         </section>
+598: 
+599:         <section style={{ display: 'grid', gridTemplateColumns: '1.2fr 2.5fr', gap: '20px' }}>
+600: 
+601:           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+602:             <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', position: 'relative' }}>
+603:               <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Learning Path Progress</h3>
+604:               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
+605:                 <div
+606:                   style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer' }}
+607:                   onMouseEnter={(e) => {
+608:                     const rect = e.currentTarget.getBoundingClientRect();
+609:                     setChartTooltip({
+610:                       visible: true,
+611:                       x: rect.width / 2,
+612:                       y: -10,
+613:                       label: currentPathTitle,
+614:                       value: `${progressPercent}% Complete · ${progressStats.completedLessons}/${progressStats.totalLessons || 1} lessons`,
+615:                     });
+616:                   }}
+617:                   onMouseLeave={() => setChartTooltip((t) => ({ ...t, visible: false }))}
+618:                 >
+619:                   <svg width="130" height="130" viewBox="0 0 100 100">
+620:                     <circle cx="50" cy="50" r="40" fill="none" stroke="#f1f5f9" strokeWidth="10" />
+621:                     <circle
+622:                       cx="50"
+623:                       cy="50"
+624:                       r="40"
+625:                       fill="none"
+626:                       stroke="#4f46e5"
+627:                       strokeWidth="10"
+628:                       strokeDasharray="251"
+629:                       strokeDashoffset={251 - (251 * progressPercent) / 100}
+630:                       strokeLinecap="round"
+631:                       transform="rotate(-90 50 50)"
+632:                       style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+633:                     />
+634:                   </svg>
+635:                   <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+636:                     <span style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{progressPercent}%</span>
+637:                     <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Complete</span>
+638:                   </div>
+639:                 </div>
+640:               </div>
+641: 
+642:               <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+643:                 {(traineePath?.modules || []).slice(0, 5).map((m: any, idx: number) => {
+644:                   let isCompleted = false;
+645:                   if (detailedTraineeModules && detailedTraineeModules.length > 0) {
+646:                     const detailedMod = detailedTraineeModules.find((dm: any) => dm.id === m.id);
+647:                     if (detailedMod) {
+648:                       const allTasks = (detailedMod.lessons || []).flatMap((l: any) => l.assignments || []);
+649:                       if (allTasks.length === 0) {
+650:                         const lessons = detailedMod.lessons || [];
+651:                         isCompleted = lessons.length > 0 && lessons.every((l: any) => l.isCompleted);
+652:                       } else {
+653:                         const doneTasks = allTasks.filter((t: any) => 
+654:                           t.userSubmission?.evaluationStatus === 'accepted_high' || 
+655:                           (t.userSubmission && t.userSubmission.score >= (t.minPassScore || 0)) ||
+656:                           t.userSubmission?.status === 'Accepted' ||
+657:                           t.userSubmission?.status === 'Evaluated'
+658:                         ).length;
+659:                         isCompleted = doneTasks === allTasks.length;
+660:                       }
+661:                     }
+662:                   } else {
+663:                     isCompleted = idx < completedModules;
+664:                   }
+665: 
+666:                   return (
+667:                     <div key={m.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 6, background: '#fafafa' }}>
+668:                       <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
+669:                         <span style={{ color: isCompleted ? '#16a34a' : '#94a3b8', fontWeight: 700, marginRight: 6 }}>
+670:                           {isCompleted ? '✓' : '○'}
+671:                         </span>
+672:                         {m.title || `Module ${idx + 1}`}
+673:                       </span>
+674:                       <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: isCompleted ? '#dcfce7' : '#f1f5f9', color: isCompleted ? '#166534' : '#64748b' }}>
+675:                         {isCompleted ? 'Completed' : 'Pending'}
+676:                       </span>
+677:                     </div>
+678:                   );
+679:                 })}
+680:                 {(!traineePath?.modules || traineePath.modules.length === 0) && (
+681:                   <div style={{ color: '#94a3b8', fontSize: 12 }}>No modules assigned yet.</div>
+682:                 )}
+683:               </div>
+684:             </div>
+685: 
+686:             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+687:               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+688:                 <strong style={{ fontSize: '12px', color: '#64748b' }}>Latest Feedback</strong>
+689:                 <span style={{ fontSize: 10, fontWeight: 700, color: traineeAvgScore >= 75 ? '#16a34a' : '#ea580c', background: traineeAvgScore >= 75 ? '#dcfce7' : '#fff7ed', padding: '2px 6px', borderRadius: 4 }}>
+690:                   {traineeAvgScore >= 75 ? 'Excellent' : 'Needs Focus'}
+691:                 </span>
+692:               </div>
+693:               <p style={{ fontSize: '13px', color: '#334155', margin: '6px 0 0 0', fontStyle: 'italic' }}>
+694:                 {traineeAvgScore > 0
+695:                   ? `Overall average evaluation score: ${traineeAvgScore}%`
+696:                   : 'No evaluation feedback in database yet.'}
+697:               </p>
+698:             </div>
+699:           </div>
+700: 
+701:           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+702:             <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, display: 'flex', flexDirection: 'column' }}>
+703:               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+704:                 <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Daily Activity</h3>
+705:                 <select
+706:                   value={heatmapDays}
+707:                   onChange={(e) => setHeatmapDays(Number(e.target.value))}
+708:                   style={{ fontSize: 12, fontWeight: 600, background: '#f8fafc', color: '#334155', padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer' }}
+709:                 >
+710:                   <option value={30}>Last 30 Days ({getRangeLabel(30)})</option>
+711:                   <option value={90}>Last 90 Days ({getRangeLabel(90)})</option>
+712:                   <option value={140}>Last 140 Days ({getRangeLabel(140)})</option>
+713:                   <option value={180}>Last 180 Days ({getRangeLabel(180)})</option>
+714:                   <option value={365}>Last 1 Year ({getRangeLabel(365)})</option>
+715:                 </select>
+716:               </div>
+717:               <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 12px 0' }}>
+718:                 {dbData.activityTimestamps?.length || mySubmissions.length} items completed total
+719:               </p>
+720:               <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+721:                 <DailyActivityHeatmap submissions={dbData.activityTimestamps?.length ? dbData.activityTimestamps : mySubmissions} daysToDispay={heatmapDays} />
+722:               </div>
+723:             </div>
+724:           </div>
+725: 
+726:         </section>
+727:       </div>
+728:     );
+729:   }
+730: 
+731:   // 🔵 B. TRAINER / ADMIN DASHBOARD VIEW
+732:   return (
+733:     <div className="dashboard-content" style={{ padding: '24px 32px', width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+734: 
+735:       <section className="workspace-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+736:         <div>
+737:           <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Good morning, {firstName}</h1>
+738:           <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px', margin: 0 }}>
+739:             {isAdmin ? 'System overview: Total active learning paths, user roles & review pipelines.' : "Here's what's happening in your cohort today."}
+740:           </p>
+741:         </div>
+742:         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+743: 
+744:           {isAdmin ? (
+745:             <button
+746:               className="primary-button"
+747:               type="button"
+748:               style={{ fontSize: '0.8125rem', padding: '0.5rem 1rem', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+749:               onClick={() => setShowInviteModal(true)}
+750:             >
+751:               + Add User
+752:             </button>
+753:           ) : (
+754:             <button></button>
+755:           )}
+756:         </div>
+757:       </section>
+758: 
+759:       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+760: 
+761:         {(() => {
+762:           const subsData = charts?.progressTrends?.slice(-7).map((p: any) => p.submissions) || [0,0,0,0,0,0,0];
+763:           const compsData = charts?.progressTrends?.slice(-7).map((p: any) => p.completions) || [0,0,0,0,0,0,0];
+764:           
+765:           const TinySparkline = ({ data, color }: { data: number[], color: string }) => {
+766:             const chartData = data.map((v, i) => ({ val: v, index: i }));
+767:             return (
+768:               <div style={{ width: '60px', height: '24px', marginLeft: 'auto' }}>
+769:                 <ResponsiveContainer width="100%" height="100%">
+770:                   <LineChart data={chartData}>
+771:                     <Line type="monotone" dataKey="val" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
+772:                   </LineChart>
+773:                 </ResponsiveContainer>
+774:               </div>
+775:             );
+776:           };
+777: 
+778:           const calcDelta = (arr: number[]) => {
+779:             if (arr.length < 2) return 0;
+780:             const latest = arr[arr.length - 1];
+781:             const old = arr[0];
+782:             if (old === 0) return latest > 0 ? 100 : 0;
+783:             return Math.round(((latest - old) / old) * 100);
+784:           };
+785: 
+786:           const traineesDelta = calcDelta(subsData);
+787:           const tasksDelta = calcDelta(compsData);
+788:           const pendingDelta = calcDelta(subsData.map(s => s * 0.5)); // Mocked
+789: 
+790:           return (
+791:             <>
+792:               <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+793:                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+794:                   <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', fontSize: '18px' }}>👥</div>
+795:                   <TinySparkline data={subsData} color="#4f46e5" />
+796:                 </div>
+797:                 <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+798:                   {isLoadingMetrics ? '...' : dbData.totalTrainees}
+799:                 </div>
+800:                 <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
+Created At: 2026-08-06T11:38:30Z
+Completed At: 2026-08-06T11:38:30Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 1041
+Total Bytes: 51373
+Showing lines 1 to 150
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { useMemo, useState, useEffect, useRef } from 'react';
+2: import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+3: import { InviteUserModal } from '../components/users/InviteUserModal';
+4: import { UsersSection } from '../components/users/UserManagement';
+5: import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+6: import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+7: import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
+8: import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+9: import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
+10: import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
+11: import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
+12: import { SettingsSection } from '../components/SettingsSection/SettingsSection';
+13: import { userService } from '../services/userService';
+14: import { learningPathService } from '../services/learningPathService';
+15: import { assignmentService } from '../services/assignmentService';
+16: import { curriculumService } from '../services/curriculumService';
+17: import { analyticsService, progressService, type ChartBundle } from '../services/lmsApi';
+18: import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
+19: import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
+20: import { useNotifications } from '../context/NotificationContext';
+21: import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+22: import type { RoleName, SessionUser } from '../types/auth';
+23: 
+24: const calculateStreak = (submissions: any[]) => {
+25:   if (!submissions || submissions.length === 0) return 0;
+26: 
+27:   const today = new Date();
+28:   today.setHours(0, 0, 0, 0);
+29: 
+30:   const dates = new Set<string>();
+31:   submissions.forEach(s => {
+32:     const d = new Date(s.submittedAt || s.createdAt);
+33:     if (!isNaN(d.getTime())) {
+34:       d.setHours(0, 0, 0, 0);
+35:       dates.add(d.toISOString().split("T")[0]);
+36:     }
+37:   });
+38: 
+39:   let streak = 0;
+40:   let current = new Date(today);
+41: 
+42:   // Check if they submitted today
+43:   const todayStr = current.toISOString().split("T")[0];
+44:   if (!dates.has(todayStr)) {
+45:     // If not today, check yesterday. If yesterday has no submissions, streak is 0.
+46:     current.setDate(current.getDate() - 1);
+47:     if (!dates.has(current.toISOString().split("T")[0])) {
+48:       return 0;
+49:     }
+50:   }
+51: 
+52:   // Count backwards from current day
+53:   while (true) {
+54:     const key = current.toISOString().split("T")[0];
+55:     if (dates.has(key)) {
+56:       streak++;
+57:       current.setDate(current.getDate() - 1);
+58:     } else {
+59:       break;
+60:     }
+61:   }
+62:   return streak;
+63: };
+64: 
+65: type DashboardPageProps = {
+66:   accessToken: string;
+67:   activeRole: RoleName;
+68:   activeSection: string;
+69:   currentUser: SessionUser;
+70: };
+71: 
+72: type VisibleUser = {
+73:   email: string;
+74:   firstName: string;
+75:   lastName: string;
+76:   roles: RoleName[];
+77:   primaryRole: RoleName;
+78:   status: 'invited' | 'activated';
+79: };
+80: 
+81: const getRangeLabel = (days: number) => {
+82:   const end = new Date();
+83:   const start = new Date();
+84:   start.setDate(end.getDate() - days);
+85: 
+86:   const startMonth = start.toLocaleString('default', { month: 'short' });
+87:   const endMonth = end.toLocaleString('default', { month: 'short' });
+88: 
+89:   if (startMonth === endMonth) {
+90:     return startMonth;
+91:   }
+92:   return `${startMonth}-${endMonth}`;
+93: };
+94: 
+95: export function DashboardPage({
+96:   accessToken,
+97:   activeRole,
+98:   activeSection,
+99:   currentUser,
+100: }: DashboardPageProps) {
+101:   const navigate = useNavigate();
+102:   const { refresh: refreshNotifications } = useNotifications();
+103:   // Chart tooltip state
+104:   const [chartTooltip, setChartTooltip] = useState<{ visible: boolean; x: number; y: number; label: string; value: string }>({ visible: false, x: 0, y: 0, label: '', value: '' });
+105:   const [showInviteModal, setShowInviteModal] = useState(false);
+106:   const location = useLocation();
+107:   const [selectedPathId, setSelectedPathId] = useState<string | null>(location.state?.pathId || null);
+108:   const [selectedPathTitle, setSelectedPathTitle] = useState<string>(location.state?.pathName || '');
+109: 
+110:   useEffect(() => {
+111:     if (location.state?.pathId) {
+112:       setSelectedPathId(location.state.pathId);
+113:       setSelectedPathTitle(location.state.pathName || '');
+114:     }
+115:   }, [location.state]);
+116: 
+117:   const [, setUsers] = useState<VisibleUser[]>([
+118:     {
+119:       email: currentUser.email,
+120:       firstName: currentUser.firstName ?? 'Admin',
+121:       lastName: currentUser.lastName ?? 'User',
+122:       roles: currentUser.roles,
+123:       primaryRole: currentUser.primaryRole,
+124:       status: 'activated',
+125:     },
+126:   ]);
+127: 
+128:   // LIVE DATABASE METRICS STATE
+129:   const [dbData, setDbData] = useState({
+130:     totalUsers: 0,
+131:     totalTrainers: 0,
+132:     totalTrainees: 0,
+133:     totalPaths: 0,
+134:     totalModules: 0,
+135:     totalTasks: 0,
+136:     pendingReviews: 0,
+137:     acceptedCount: 0,
+138:     completionRate: 0,
+139:     averageScore: 0,
+140:     totalLessons: 0,
+141:     currentStreak: 0,
+142:     activityTimestamps: [] as any[],
+143:   });
+144: 
+145:   const [traineePath, setTraineePath] = useState<any | null>(null);
+146:   const [upcomingTasks, setUpcomingTasks] = useState<any[]>([]);
+147:   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
+148:   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+149:   const [detailedTraineeModules, setDetailedTraineeModules] = useState<any[]>([]);
+150:   const [heatmapDays, setHeatmapDays] = useState(140);
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
+Created At: 2026-08-06T11:38:51Z
+Completed At: 2026-08-06T11:38:51Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 1041
+Total Bytes: 51373
+Showing lines 1 to 25
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { useMemo, useState, useEffect, useRef } from 'react';
+2: import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+3: import { InviteUserModal } from '../components/users/InviteUserModal';
+4: import { UsersSection } from '../components/users/UserManagement';
+5: import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+6: import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+7: import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
+8: import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+9: import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
+10: import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
+11: import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
+12: import { SettingsSection } from '../components/SettingsSection/SettingsSection';
+13: import { userService } from '../services/userService';
+14: import { learningPathService } from '../services/learningPathService';
+15: import { assignmentService } from '../services/assignmentService';
+16: import { curriculumService } from '../services/curriculumService';
+17: import { analyticsService, progressService, type ChartBundle } from '../services/lmsApi';
+18: import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
+19: import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
+20: import { useNotifications } from '../context/NotificationContext';
+21: import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+22: import type { RoleName, SessionUser } from '../types/auth';
+23: 
+24: const calculateStreak = (submissions: any[]) => {
+25:   if (!submissions || submissions.length === 0) return 0;
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
+Created At: 2026-08-06T11:38:30Z
+Completed At: 2026-08-06T11:38:30Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 1041
+Total Bytes: 51373
+Showing lines 1 to 150
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { useMemo, useState, useEffect, useRef } from 'react';
+2: import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+3: import { InviteUserModal } from '../components/users/InviteUserModal';
+4: import { UsersSection } from '../components/users/UserManagement';
+5: import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+6: import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+7: import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
+8: import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+9: import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
+10: import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
+11: import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
+12: import { SettingsSection } from '../components/SettingsSection/SettingsSection';
+13: import { userService } from '../services/userService';
+14: import { learningPathService } from '../services/learningPathService';
+15: import { assignmentService } from '../services/assignmentService';
+16: import { curriculumService } from '../services/curriculumService';
+17: import { analyticsService, progressService, type ChartBundle } from '../services/lmsApi';
+18: import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
+19: import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
+20: import { useNotifications } from '../context/NotificationContext';
+21: import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+22: import type { RoleName, SessionUser } from '../types/auth';
+23: 
+24: const calculateStreak = (submissions: any[]) => {
+25:   if (!submissions || submissions.length === 0) return 0;
+26: 
+27:   const today = new Date();
+28:   today.setHours(0, 0, 0, 0);
+29: 
+30:   const dates = new Set<string>();
+31:   submissions.forEach(s => {
+32:     const d = new Date(s.submittedAt || s.createdAt);
+33:     if (!isNaN(d.getTime())) {
+34:       d.setHours(0, 0, 0, 0);
+35:       dates.add(d.toISOString().split("T")[0]);
+36:     }
+37:   });
+38: 
+39:   let streak = 0;
+40:   let current = new Date(today);
+41: 
+42:   // Check if they submitted today
+43:   const todayStr = current.toISOString().split("T")[0];
+44:   if (!dates.has(todayStr)) {
+45:     // If not today, check yesterday. If yesterday has no submissions, streak is 0.
+46:     current.setDate(current.getDate() - 1);
+47:     if (!dates.has(current.toISOString().split("T")[0])) {
+48:       return 0;
+49:     }
+50:   }
+51: 
+52:   // Count backwards from current day
+53:   while (true) {
+54:     const key = current.toISOString().split("T")[0];
+55:     if (dates.has(key)) {
+56:       streak++;
+57:       current.setDate(current.getDate() - 1);
+58:     } else {
+59:       break;
+60:     }
+61:   }
+62:   return streak;
+63: };
+64: 
+65: type DashboardPageProps = {
+66:   accessToken: string;
+67:   activeRole: RoleName;
+68:   activeSection: string;
+69:   currentUser: SessionUser;
+70: };
+71: 
+72: type VisibleUser = {
+73:   email: string;
+74:   firstName: string;
+75:   lastName: string;
+76:   roles: RoleName[];
+77:   primaryRole: RoleName;
+78:   status: 'invited' | 'activated';
+79: };
+80: 
+81: const getRangeLabel = (days: number) => {
+82:   const end = new Date();
+83:   const start = new Date();
+84:   start.setDate(end.getDate() - days);
+85: 
+86:   const startMonth = start.toLocaleString('default', { month: 'short' });
+87:   const endMonth = end.toLocaleString('default', { month: 'short' });
+88: 
+89:   if (startMonth === endMonth) {
+90:     return startMonth;
+91:   }
+92:   return `${startMonth}-${endMonth}`;
+93: };
+94: 
+95: export function DashboardPage({
+96:   accessToken,
+97:   activeRole,
+98:   activeSection,
+99:   currentUser,
+100: }: DashboardPageProps) {
+101:   const navigate = useNavigate();
+102:   const { refresh: refreshNotifications } = useNotifications();
+103:   // Chart tooltip state
+104:   const [chartTooltip, setChartTooltip] = useState<{ visible: boolean; x: number; y: number; label: string; value: string }>({ visible: false, x: 0, y: 0, label: '', value: '' });
+105:   const [showInviteModal, setShowInviteModal] = useState(false);
+106:   const location = useLocation();
+107:   const [selectedPathId, setSelectedPathId] = useState<string | null>(location.state?.pathId || null);
+108:   const [selectedPathTitle, setSelectedPathTitle] = useState<string>(location.state?.pathName || '');
+109: 
+110:   useEffect(() => {
+111:     if (location.state?.pathId) {
+112:       setSelectedPathId(location.state.pathId);
+113:       setSelectedPathTitle(location.state.pathName || '');
+114:     }
+115:   }, [location.state]);
+116: 
+117:   const [, setUsers] = useState<VisibleUser[]>([
+118:     {
+119:       email: currentUser.email,
+120:       firstName: currentUser.firstName ?? 'Admin',
+121:       lastName: currentUser.lastName ?? 'User',
+122:       roles: currentUser.roles,
+123:       primaryRole: currentUser.primaryRole,
+124:       status: 'activated',
+125:     },
+126:   ]);
+127: 
+128:   // LIVE DATABASE METRICS STATE
+129:   const [dbData, setDbData] = useState({
+130:     totalUsers: 0,
+131:     totalTrainers: 0,
+132:     totalTrainees: 0,
+133:     totalPaths: 0,
+134:     totalModules: 0,
+135:     totalTasks: 0,
+136:     pendingReviews: 0,
+137:     acceptedCount: 0,
+138:     completionRate: 0,
+139:     averageScore: 0,
+140:     totalLessons: 0,
+141:     currentStreak: 0,
+142:     activityTimestamps: [] as any[],
+143:   });
+144: 
+145:   const [traineePath, setTraineePath] = useState<any | null>(null);
+146:   const [upcomingTasks, setUpcomingTasks] = useState<any[]>([]);
+147:   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
+148:   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+149:   const [detailedTraineeModules, setDetailedTraineeModules] = useState<any[]>([]);
+150:   const [heatmapDays, setHeatmapDays] = useState(140);
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
+Created At: 2026-08-06T11:38:51Z
+Completed At: 2026-08-06T11:38:51Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 1041
+Total Bytes: 51373
+Showing lines 1 to 25
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { useMemo, useState, useEffect, useRef } from 'react';
+2: import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+3: import { InviteUserModal } from '../components/users/InviteUserModal';
+4: import { UsersSection } from '../components/users/UserManagement';
+5: import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+6: import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+7: import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
+8: import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+9: import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
+10: import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
+11: import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
+12: import { SettingsSection } from '../components/SettingsSection/SettingsSection';
+13: import { userService } from '../services/userService';
+14: import { learningPathService } from '../services/learningPathService';
+15: import { assignmentService } from '../services/assignmentService';
+16: import { curriculumService } from '../services/curriculumService';
+17: import { analyticsService, progressService, type ChartBundle } from '../services/lmsApi';
+18: import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
+19: import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
+20: import { useNotifications } from '../context/NotificationContext';
+21: import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+22: import type { RoleName, SessionUser } from '../types/auth';
+23: 
+24: const calculateStreak = (submissions: any[]) => {
+25:   if (!submissions || submissions.length === 0) return 0;
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
+Created At: 2026-08-06T11:58:01Z
+Completed At: 2026-08-06T11:58:01Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 894
+Total Bytes: 41042
+Showing lines 1 to 100
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { useMemo, useState, useEffect, useRef } from 'react';
+2: import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+3: import { InviteUserModal } from '../components/users/InviteUserModal';
+4: import { UsersSection } from '../components/users/UserManagement';
+5: import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+6: import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+7: import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
+8: import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+9: import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
+10: import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
+11: import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
+12: import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts';
+13: import { SettingsSection } from '../components/SettingsSection/SettingsSection';
+14: import { userService } from '../services/userService';
+15: import { learningPathService } from '../services/learningPathService';
+16: import { assignmentService } from '../services/assignmentService';
+17: import { curriculumService } from '../services/curriculumService';
+18: import { analyticsService, progressService, type ChartBundle } from '../services/lmsApi';
+19: import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
+20: import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
+21: import { useNotifications } from '../context/NotificationContext';
+22: import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+23: import type { RoleName, SessionUser } from '../types/auth';
+24: 
+25: const calculateStreak = (submissions: any[]) => {
+26:   if (!submissions || submissions.length === 0) return 0;
+27: 
+28:   const today = new Date();
+29:   today.setHours(0, 0, 0, 0);
+30: 
+31:   const dates = new Set<string>();
+32:   submissions.forEach(s => {
+33:     const d = new Date(s.submittedAt || s.createdAt);
+34:     if (!isNaN(d.getTime())) {
+35:       d.setHours(0, 0, 0, 0);
+36:       dates.add(d.toISOString().split("T")[0]);
+37:     }
+38:   });
+39: 
+40:   let streak = 0;
+41:   let current = new Date(today);
+42: 
+43:   // Check if they submitted today
+44:   const todayStr = current.toISOString().split("T")[0];
+45:   if (!dates.has(todayStr)) {
+46:     // If not today, check yesterday. If yesterday has no submissions, streak is 0.
+47:     current.setDate(current.getDate() - 1);
+48:     if (!dates.has(current.toISOString().split("T")[0])) {
+49:       return 0;
+50:     }
+51:   }
+52: 
+53:   // Count backwards from current day
+54:   while (true) {
+55:     const key = current.toISOString().split("T")[0];
+56:     if (dates.has(key)) {
+57:       streak++;
+58:       current.setDate(current.getDate() - 1);
+59:     } else {
+60:       break;
+61:     }
+62:   }
+63:   return streak;
+64: };
+65: 
+66: type DashboardPageProps = {
+67:   accessToken: string;
+68:   activeRole: RoleName;
+69:   activeSection: string;
+70:   currentUser: SessionUser;
+71: };
+72: 
+73: type VisibleUser = {
+74:   email: string;
+75:   firstName: string;
+76:   lastName: string;
+77:   roles: RoleName[];
+78:   primaryRole: RoleName;
+79:   status: 'invited' | 'activated';
+80: };
+81: 
+82: const getRangeLabel = (days: number) => {
+83:   const end = new Date();
+84:   const start = new Date();
+85:   start.setDate(end.getDate() - days);
+86: 
+87:   const startMonth = start.toLocaleString('default', { month: 'short' });
+88:   const endMonth = end.toLocaleString('default', { month: 'short' });
+89: 
+90:   if (startMonth === endMonth) {
+91:     return startMonth;
+92:   }
+93:   return `${startMonth}-${endMonth}`;
+94: };
+95: 
+96: export function DashboardPage({
+97:   accessToken,
+98:   activeRole,
+99:   activeSection,
+100:   currentUser,
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
+Created At: 2026-08-07T05:19:18Z
+Completed At: 2026-08-07T05:19:18Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 894
+Total Bytes: 41042
+Showing lines 1 to 25
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: import { useMemo, useState, useEffect, useRef } from 'react';
+2: import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+3: import { InviteUserModal } from '../components/users/InviteUserModal';
+4: import { UsersSection } from '../components/users/UserManagement';
+5: import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+6: import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
+7: import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
+8: import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+9: import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
+10: import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
+11: import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
+12: import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts';
+13: import { SettingsSection } from '../components/SettingsSection/SettingsSection';
+14: import { userService } from '../services/userService';
+15: import { learningPathService } from '../services/learningPathService';
+16: import { assignmentService } from '../services/assignmentService';
+17: import { curriculumService } from '../services/curriculumService';
+18: import { analyticsService, progressService, type ChartBundle } from '../services/lmsApi';
+19: import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
+20: import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
+21: import { useNotifications } from '../context/NotificationContext';
+22: import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+23: import type { RoleName, SessionUser } from '../types/auth';
+24: 
+25: const calculateStreak = (submissions: any[]) => {
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---
+Created At: 2026-08-07T05:19:45Z
+Completed At: 2026-08-07T05:19:47Z
+The following changes were made by the multi_replace_file_content tool to: e:\LMS_System\LMS_System\frontend\src\pages\DashboardPage.tsx. If relevant, proactively run terminal commands to execute this code for the USER. Don't ask for permission.
+[diff_block_start]
+@@ -1,5 +1,6 @@
+ import { useMemo, useState, useEffect, useRef } from 'react';
+ import { useNavigate, useLocation, Navigate } from 'react-router-dom';
++import confetti from 'canvas-confetti';
+ import { InviteUserModal } from '../components/users/InviteUserModal';
+ import { UsersSection } from '../components/users/UserManagement';
+ import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
+@@ -21,6 +21,246 @@
+ import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+ import type { RoleName, SessionUser } from '../types/auth';
+ 
++// 1. Lightweight number tween hook
++function useAnimatedValue(targetValue: number, duration: number = 800) {
++  const [value, setValue] = useState(0);
++  const prevTargetRef = useRef(0);
++
++  useEffect(() => {
++    // Respect prefers-reduced-motion
++    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
++    if (prefersReducedMotion) {
++      setValue(targetValue);
++      prevTargetRef.current = targetValue;
++      return;
++    }
++
++    const startValue = prevTargetRef.current;
++    if (startValue === targetValue) {
++      setValue(targetValue);
++      return;
++    }
++
++    let startTime: number | null = null;
++    let animationFrameId: number;
++
++    const animate = (time: number) => {
++      if (!startTime) startTime = time;
++      const elapsed = time - startTime;
++      const progress = Math.min(elapsed / duration, 1);
++      
++      // ease-out cubic
++      const easeProgress = 1 - Math.pow(1 - progress, 3);
++      
++      const currentVal = Math.round(startValue + (targetValue - startValue) * easeProgress);
++      setValue(currentVal);
++
++      if (progress < 1) {
++        animationFrameId = requestAnimationFrame(animate);
++      } else {
++        prevTargetRef.current = targetValue;
++      }
++    };
++
++    animationFrameId = requestAnimationFrame(animate);
++    return () => cancelAnimationFrame(animationFrameId);
++  }, [targetValue, duration]);
++
++  return value;
++}
++
++// 2. Trainee Progress Ring Component
++function TraineeProgressRing({ 
++  progressPercent, 
++  completedLessons, 
++  totalLessons, 
++  currentPathTitle, 
++  onPathClick 
++}: { 
++  progressPercent: number, 
++  completedLessons: number, 
++  totalLessons: number, 
++  currentPathTitle: string,
++  onPathClick: () => void 
++}) {
++  const animatedPercent = useAnimatedValue(progressPercent, 1000);
++  const [strokeOffset, setStrokeOffset] = useState(251); // 251 is full circumference
++  const [showTooltip, setShowTooltip] = useState(false);
++  const [showCheckmark, setShowCheckmark] = useState(false);
++
++  useEffect(() => {
++    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
++    const targetOffset = 251 - (251 * progressPercent) / 100;
++    
++    if (prefersReducedMotion) {
++      setStrokeOffset(targetOffset);
++    } else {
++      // Trigger animation slightly after mount
++      const timer = setTimeout(() => {
++        setStrokeOffset(targetOffset);
++      }, 50);
++      return () => clearTimeout(timer);
++    }
++  }, [progressPercent]);
++
++  useEffect(() => {
++    if (progressPercent === 100) {
++      const timer = setTimeout(() => setShowCheckmark(true), 800);
++      return () => clearTimeout(timer);
++    } else {
++      setShowCheckmark(false);
++    }
++  }, [progressPercent]);
++
++  return (
++    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
++      <div
++        style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer', outline: 'none' }}
++        onMouseEnter={() => setShowTooltip(true)}
++        onMouseLeave={() => setShowTooltip(false)}
++        onFocus={() => setShowTooltip(true)}
++        onBlur={() => setShowTooltip(false)}
++        onClick={onPathClick}
++        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPathClick(); }}
++        tabIndex={0}
++        role="button"
++        aria-label={`${currentPathTitle}: ${progressPercent}% complete`}
++      >
++        <svg width="130" height="130" viewBox="0 0 100 100">
++          <circle cx="50" cy="50" r="40" fill="none" stroke="#f1f5f9" strokeWidth="10" />
++          <circle
++            cx="50"
++            cy="50"
++            r="40"
++            fill="none"
++            stroke="#4f46e5"
++            strokeWidth="10"
++            strokeDasharray="251"
++            strokeDashoffset={strokeOffset}
++            strokeLinecap="round"
++            transform="rotate(-90 50 50)"
++            style={{ transition: 'stroke-dashoffset 0.9s cubic-bezier(0.16, 1, 0.3, 1)' }}
++          />
++        </svg>
++        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
++          {showCheckmark ? (
++            <div style={{
++              fontSize: '32px', color: '#10b981', 
++              animation: 'popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards'
++            }}>✓</div>
++          ) : (
++            <>
++              <span style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{animatedPercent}%</span>
++              <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Complete</span>
++            </>
++          )}
++        </div>
++        
++        {/* CSS for popIn animation (inlined for safety) */}
++        <style>{`
++          @keyframes popIn {
++            0% { transform: scale(0); opacity: 0; }
++            70% { transform: scale(1.15); opacity: 1; }
++            100% { transform: scale(1); opacity: 1; }
++          }
++        `}</style>
++
++        {showTooltip && (
++          <div style={{
++            position: 'absolute',
++            top: '-50px',
++            left: '50%',
++            transform: 'translateX(-50%)',
++            background: '#0f172a',
++            color: '#fff',
++            padding: '8px 12px',
++            borderRadius: '6px',
++            fontSize: '12px',
++            whiteSpace: 'nowrap',
++            zIndex: 10,
++            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
++            pointerEvents: 'none'
++          }}>
++            <div style={{ fontWeight: 600, marginBottom: '4px' }}>{currentPathTitle} — {progressPercent}% complete</div>
++            <div style={{ color: '#cbd5e1' }}>{completedLessons} of {totalLessons || 1} lessons completed</div>
++            {/* Tooltip triangle */}
++            <div style={{
++              position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)',
++              width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent',
++              borderTop: '4px solid #0f172a'
++            }} />
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
++
++// 3. Streak Celebration Component
++function StreakCard({ currentStreak }: { currentStreak: number }) {
++  const animatedStreak = useAnimatedValue(currentStreak, 800);
++  const prevStreakRef = useRef(currentStreak);
++  const flameRef = useRef<HTMLDivElement>(null);
++  const [milestoneMsg, setMilestoneMsg] = useState<string | null>(null);
++  const [bounce, setBounce] = useState(false);
++
++  useEffect(() => {
++    // On load, prevStreak is currentStreak. If it changes and increments:
++    if (prevStreakRef.current !== undefined && currentStreak > prevStreakRef.current) {
++      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
++      
++      setBounce(true);
++      setTimeout(() => setBounce(false), 300);
++
++      // Check milestones
++      let particleCount = 20;
++      if (currentStreak === 7) { setMilestoneMsg("7-day streak! 🔥"); particleCount = 35; }
++      else if (currentStreak === 30) { setMilestoneMsg("30-day streak! 🏆"); particleCount = 40; }
++      else if (currentStreak === 100) { setMilestoneMsg("100-day streak! 💎"); particleCount = 50; }
++      else { setMilestoneMsg(null); }
++
++      // Fire confetti from flame
++      if (!prefersReducedMotion && flameRef.current) {
++        const rect = flameRef.current.getBoundingClientRect();
++        const originX = (rect.left + rect.width / 2) / window.innerWidth;
++        const originY = (rect.top + rect.height / 2) / window.innerHeight;
++        
++        confetti({
++          particleCount,
++          spread: 50,
++          origin: { x: originX, y: originY },
++          colors: ['#4f46e5', '#ea580c', '#10b981', '#ec4899'],
++          disableForReducedMotion: true,
++          zIndex: 9999
++        });
++      }
++    }
++    prevStreakRef.current = currentStreak;
++  }, [currentStreak]);
++
++  return (
++    <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
++      <div 
++        ref={flameRef}
++        style={{ 
++          width: '36px', height: '36px', borderRadius: '10px', background: '#f0fdf4', 
++          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a',
++          transform: bounce ? 'scale(1.3)' : 'scale(1)',
++          transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
++        }}>
++        🔥
++      </div>
++      <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
++        {animatedStreak} days
++      </div>
++      <div style={{ fontSize: '12px', color: '#64748b' }}>Current Streak</div>
++      <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
++        {milestoneMsg ? milestoneMsg : (currentStreak === 0 ? 'Submit a task to start!' : 'Keep it up!')}
++      </div>
++    </div>
++  );
++}
++
+ const calculateStreak = (submissions: any[]) => {
+   if (!submissions || submissions.length === 0) return 0;
+ 
+[diff_block_end]
+
+Please note that the above snippet only shows the MODIFIED lines from the last change. It shows up to 3 lines of unchanged lines before and after the modified lines. The actual file contents may have many more lines not shown.
+---
+Created At: 2026-08-12T08:00:33Z
+Completed At: 2026-08-12T08:00:33Z
+File Path: `file:///e:/LMS_System/LMS_System/frontend/src/pages/DashboardPage.tsx`
+Total Lines: 1161
+Total Bytes: 50816
+Showing lines 730 to 1000
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+730:           <LearningPathsSection
+731:             currentUser={{
+732:               id: currentUser?.id ?? 'trainee-99',
+733:               name: currentUser?.firstName ?? 'User',
+734:               role: activeRole as any
+735:             }}
+736:             accessToken={accessToken}
+737:             onNavigateToModules={(pathId: string, pathName: string) => {
+738:               if (isTrainee) {
+739:                 navigate('/modules', { state: { pathId, pathName } });
+740:               } else {
+741:                 setSelectedPathId(pathId);
+742:                 setSelectedPathTitle(pathName);
+743:               }
+744:             }}
+745:             onBackToAllPaths={handleBackToAllPaths}
+746:           />
+747:         )}
+748:       </div>
+749:     );
+750:   }
+751:   if (activeSection === 'Modules' || activeSection === 'Module Details') {
+752:     const pathId = location.state?.pathId || selectedPathId || traineePath?.id || '';
+753:     const pathTitle = location.state?.pathName || selectedPathTitle || traineePath?.title || 'All Modules';
+754: 
+755:     if (!pathId) {
+756:       return <Navigate to="/learning-paths" replace />;
+757:     }
+758: 
+759:     return (
+760:       <div className="dashboard-content">
+761:         <ModulesManagementSection
+762:           currentPathId={pathId}
+763:           currentPathTitle={pathTitle}
+764:           userRole={activeRole as 'Admin' | 'Trainer' | 'Trainee'}
+765:           accessToken={accessToken}
+766:           onBack={handleBackToAllPaths}
+767:         />
+768:       </div>
+769:     );
+770:   }
+771: 
+772:   if (activeSection === 'Progress' || activeSection === 'Analytics') {
+773:     return (
+774:       <div className="dashboard-content">
+775:         <ProgressAnalyticsSection
+776:           accessToken={accessToken}
+777:           activeRole={activeRole}
+778:           currentUser={currentUser}
+779:         />
+780:       </div>
+781:     );
+782:   }
+783: 
+784:   if (activeSection === 'Settings') {
+785:     return (
+786:       <div className="dashboard-content">
+787:         <SettingsSection accessToken={accessToken} activeRole={activeRole} currentUser={currentUser} />
+788:       </div>
+789:     );
+790:   }
+791: 
+792:   // ========================================================
+793:   // DEFAULT DASHBOARD HOME (ROLE-ADAPTIVE DB VIEWS)
+794:   // ========================================================
+795:   const firstName = currentUser.firstName || currentUser.name?.split(' ')[0] || 'User';
+796: 
+797:   if (isTrainee) {
+798:     const currentPathTitle = traineePath?.title || traineePath?.name || 'No path assigned';
+799:     const totalModules = traineePath?.modules?.length || 0;
+800:     const progressPercent = traineePath ? (progressStats.completionPercent || dbData.completionRate || 0) : 0;
+801:     
+802:     // Evaluate actual module completion from detailedTraineeModules
+803:     let completedModules = 0;
+804:     if (detailedTraineeModules && detailedTraineeModules.length > 0) {
+805:       completedModules = detailedTraineeModules.filter((m: any) => {
+806:         const allTasks = (m.lessons || []).flatMap((l: any) => l.assignments || []);
+807:         if (allTasks.length === 0) {
+808:           // If no tasks, check if lessons are marked complete
+809:           const lessons = m.lessons || [];
+810:           return lessons.length > 0 && lessons.every((l: any) => l.isCompleted);
+811:         }
+812:         const doneTasks = allTasks.filter((t: any) => 
+813:           t.userSubmission?.evaluationStatus === 'accepted_high' || 
+814:           (t.userSubmission && t.userSubmission.score >= (t.minPassScore || 0)) ||
+815:           t.userSubmission?.status === 'Accepted' ||
+816:           t.userSubmission?.status === 'Evaluated'
+817:         ).length;
+818:         return doneTasks === allTasks.length;
+819:       }).length;
+820:     } else {
+821:       completedModules = Math.min(
+822:         totalModules,
+823:         progressPercent > 0 && totalModules > 0
+824:           ? Math.max(1, Math.round((progressPercent / 100) * totalModules))
+825:           : 0
+826:       );
+827:     }
+828: 
+829:     const currentStreak = dbData.currentStreak || calculateStreak(mySubmissions);
+830:     const traineeAvgScore = progressStats.averageScore || 0;
+831: 
+832:     return (
+833:       <div className="dashboard-content" style={{ padding: '24px 32px', width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+834:         <header style={{ marginBottom: '24px' }}>
+835:           <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Good morning, {firstName}</h1>
+836:           <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px', margin: 0 }}>
+837:             {traineePath
+838:               ? `You're ${progressPercent}% through ${currentPathTitle}. Keep the momentum!`
+839:               : `Welcome, ${firstName}! No learning path assigned yet — check back soon or explore available paths.`}
+840:           </p>
+841:         </header>
+842: 
+843:         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+844:           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+845:             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>📖</div>
+846:             <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>{currentPathTitle}</div>
+847:             <div style={{ fontSize: '12px', color: '#64748b' }}>Current Path</div>
+848:             <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 600, marginTop: '4px' }}>
+849:               {traineePath ? `Module ${completedModules} of ${totalModules}` : '0 Modules'}
+850:             </div>
+851:           </div>
+852: 
+853:           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+854:             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7c3aed' }}>🎯</div>
+855:             <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>{dbData.totalTasks}</div>
+856:             <div style={{ fontSize: '12px', color: '#64748b' }}>Tasks Assigned</div>
+857:             <div style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 600, marginTop: '4px' }}>
+858:               {upcomingTasks.length} upcoming
+859:             </div>
+860:           </div>
+861: 
+862:           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+863:             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ea580c' }}>⭐</div>
+864:             <div style={{ fontSize: '28px', fontWeight: '800', marginTop: '12px', color: '#0f172a' }}>{progressPercent}%</div>
+865:             <div style={{ fontSize: '12px', color: '#64748b' }}>Overall Progress</div>
+866:             <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
+867:               {traineePath ? progressStats.completedLessons : 0}/{traineePath ? progressStats.totalLessons : 0} lessons
+868:             </div>
+869:           </div>
+870: 
+871:           <StreakCard currentStreak={currentStreak} />
+872:         </section>
+873: 
+874:         <section style={{ display: 'grid', gridTemplateColumns: '1.2fr 2.5fr', gap: '20px' }}>
+875: 
+876:           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+877:             <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', position: 'relative' }}>
+878:               <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Learning Path Progress</h3>
+879:               
+880:               <TraineeProgressRing 
+881:                 progressPercent={progressPercent}
+882:                 completedLessons={progressStats.completedLessons}
+883:                 totalLessons={progressStats.totalLessons}
+884:                 currentPathTitle={currentPathTitle}
+885:                 onPathClick={() => {
+886:                   if (traineePath) {
+887:                     navigate('/learning-paths', { state: { pathId: traineePath.id, pathName: traineePath.title } });
+888:                   }
+889:                 }}
+890:               />
+891: 
+892:               <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+893:                 {(traineePath?.modules || []).slice(0, 5).map((m: any, idx: number) => {
+894:                   let isCompleted = false;
+895:                   if (detailedTraineeModules && detailedTraineeModules.length > 0) {
+896:                     const detailedMod = detailedTraineeModules.find((dm: any) => dm.id === m.id);
+897:                     if (detailedMod) {
+898:                       const allTasks = (detailedMod.lessons || []).flatMap((l: any) => l.assignments || []);
+899:                       if (allTasks.length === 0) {
+900:                         const lessons = detailedMod.lessons || [];
+901:                         isCompleted = lessons.length > 0 && lessons.every((l: any) => l.isCompleted);
+902:                       } else {
+903:                         const doneTasks = allTasks.filter((t: any) => 
+904:                           t.userSubmission?.evaluationStatus === 'accepted_high' || 
+905:                           (t.userSubmission && t.userSubmission.score >= (t.minPassScore || 0)) ||
+906:                           t.userSubmission?.status === 'Accepted' ||
+907:                           t.userSubmission?.status === 'Evaluated'
+908:                         ).length;
+909:                         isCompleted = doneTasks === allTasks.length;
+910:                       }
+911:                     }
+912:                   } else {
+913:                     isCompleted = idx < completedModules;
+914:                   }
+915: 
+916:                   return (
+917:                     <div 
+918:                       key={m.id || idx} 
+919:                       style={{ 
+920:                         display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+921:                         padding: '4px 8px', borderRadius: 6, 
+922:                         background: isCompleted ? '#f0fdf4' : '#fafafa',
+923:                         cursor: isCompleted ? 'pointer' : 'default',
+924:                         transition: 'background 0.2s'
+925:                       }}
+926:                       onClick={() => {
+927:                         if (isCompleted && traineePath) {
+928:                           navigate('/learning-paths', { state: { pathId: traineePath.id, pathName: traineePath.title } });
+929:                         }
+930:                       }}
+931:                       onMouseEnter={(e) => { if (isCompleted) e.currentTarget.style.background = '#dcfce7'; }}
+932:                       onMouseLeave={(e) => { if (isCompleted) e.currentTarget.style.background = '#f0fdf4'; }}
+933:                     >
+934:                       <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
+935:                         <span style={{ color: isCompleted ? '#16a34a' : '#94a3b8', fontWeight: 700, marginRight: 6 }}>
+936:                           {isCompleted ? '✓' : '○'}
+937:                         </span>
+938:                         {m.title || `Module ${idx + 1}`}
+939:                       </span>
+940:                       <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: isCompleted ? '#dcfce7' : '#f1f5f9', color: isCompleted ? '#166534' : '#64748b' }}>
+941:                         {isCompleted ? 'Completed' : 'Pending'}
+942:                       </span>
+943:                     </div>
+944:                   );
+945:                 })}
+946:                 {(!traineePath?.modules || traineePath.modules.length === 0) && (
+947:                   <div style={{ color: '#94a3b8', fontSize: 12 }}>No modules assigned yet.</div>
+948:                 )}
+949:               </div>
+950:             </div>
+951: 
+952:             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+953:               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+954:                 <strong style={{ fontSize: '12px', color: '#64748b' }}>Latest Feedback</strong>
+955:                 <span style={{ fontSize: 10, fontWeight: 700, color: traineeAvgScore >= 75 ? '#16a34a' : '#ea580c', background: traineeAvgScore >= 75 ? '#dcfce7' : '#fff7ed', padding: '2px 6px', borderRadius: 4 }}>
+956:                   {traineeAvgScore >= 75 ? 'Excellent' : 'Needs Focus'}
+957:                 </span>
+958:               </div>
+959:               <p style={{ fontSize: '13px', color: '#334155', margin: '6px 0 0 0', fontStyle: 'italic' }}>
+960:                 {traineeAvgScore > 0
+961:                   ? `Overall average evaluation score: ${traineeAvgScore}%`
+962:                   : 'No evaluation feedback in database yet.'}
+963:               </p>
+964:             </div>
+965:           </div>
+966: 
+967:           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+968:             <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, display: 'flex', flexDirection: 'column' }}>
+969:               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+970:                 <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Daily Activity</h3>
+971:                 <select
+972:                   value={heatmapDays}
+973:                   onChange={(e) => setHeatmapDays(Number(e.target.value))}
+974:                   style={{ fontSize: 12, fontWeight: 600, background: '#f8fafc', color: '#334155', padding: '4px 8px', borderRadius: 6, border: '1px solid #e2e8f0', cursor: 'pointer' }}
+975:                 >
+976:                   <option value={30}>Last 30 Days ({getRangeLabel(30)})</option>
+977:                   <option value={90}>Last 90 Days ({getRangeLabel(90)})</option>
+978:                   <option value={140}>Last 140 Days ({getRangeLabel(140)})</option>
+979:                   <option value={180}>Last 180 Days ({getRangeLabel(180)})</option>
+980:                   <option value={365}>Last 1 Year ({getRangeLabel(365)})</option>
+981:                 </select>
+982:               </div>
+983:               <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 12px 0' }}>
+984:                 {dbData.activityTimestamps?.length || mySubmissions.length} items completed total
+985:               </p>
+986:               <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+987:                 <DailyActivityHeatmap submissions={dbData.activityTimestamps?.length ? dbData.activityTimestamps : mySubmissions} daysToDispay={heatmapDays} />
+988:               </div>
+989:             </div>
+990:           </div>
+991: 
+992:         </section>
+993:       </div>
+994:     );
+995:   }
+996: 
+997:   // 🔵 B. TRAINER / ADMIN DASHBOARD VIEW
+998:   return (
+999:     <div className="dashboard-content" style={{ padding: '24px 32px', width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+1000: 
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.
+
+---

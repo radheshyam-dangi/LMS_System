@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { InviteUserModal } from '../components/users/InviteUserModal';
 import { UsersSection } from '../components/users/UserManagement';
 import { LearningPathsSection } from '../components/LearningPathsSection/LearningPathsSection';
@@ -17,7 +17,51 @@ import { analyticsService, progressService, type ChartBundle } from '../services
 import { ModulesManagementSection } from '../components/ModulePathSection/ModulesManagementSection';
 import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
 import { useNotifications } from '../context/NotificationContext';
+import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
 import type { RoleName, SessionUser } from '../types/auth';
+import confetti from 'canvas-confetti';
+import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts';
+
+const calculateStreak = (submissions: any[]) => {
+  if (!submissions || submissions.length === 0) return 0;
+  
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const dates = new Set<string>();
+  submissions.forEach(s => {
+    const d = new Date(s.submittedAt || s.createdAt);
+    if (!isNaN(d.getTime())) {
+      d.setHours(0, 0, 0, 0);
+      dates.add(d.toISOString().split("T")[0]);
+    }
+  });
+
+  let streak = 0;
+  let current = new Date(today);
+  
+  // Check if they submitted today
+  const todayStr = current.toISOString().split("T")[0];
+  if (!dates.has(todayStr)) {
+    // If not today, check yesterday. If yesterday has no submissions, streak is 0.
+    current.setDate(current.getDate() - 1);
+    if (!dates.has(current.toISOString().split("T")[0])) {
+      return 0;
+    }
+  }
+
+  // Count backwards from current day
+  while (true) {
+    const key = current.toISOString().split("T")[0];
+    if (dates.has(key)) {
+      streak++;
+      current.setDate(current.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+  return streak;
+};
 
 type DashboardPageProps = {
   accessToken: string;
@@ -35,6 +79,246 @@ type VisibleUser = {
   status: 'invited' | 'activated';
 };
 
+function useAnimatedValue(targetValue: number, duration: number = 800) {
+  const [value, setValue] = useState(0);
+  const prevTargetRef = useRef(0);
+
+  useEffect(() => {
+    // Respect prefers-reduced-motion
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion) {
+      setValue(targetValue);
+      prevTargetRef.current = targetValue;
+      return;
+    }
+
+    const startValue = prevTargetRef.current;
+    if (startValue === targetValue) {
+      setValue(targetValue);
+      return;
+    }
+
+    let startTime: number | null = null;
+    let animationFrameId: number;
+
+    const animate = (time: number) => {
+      if (!startTime) startTime = time;
+      const elapsed = time - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // ease-out cubic
+      const easeProgress = 1 - Math.pow(1 - progress, 3);
+      
+      const currentVal = Math.round(startValue + (targetValue - startValue) * easeProgress);
+      setValue(currentVal);
+
+      if (progress < 1) {
+        animationFrameId = requestAnimationFrame(animate);
+      } else {
+        prevTargetRef.current = targetValue;
+      }
+
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [targetValue, duration]);
+
+  return value;
+}
+
+function TraineeProgressRing({ 
+  progressPercent, 
+  currentPathTitle,
+  onPathClick,
+  completedLessons,
+  totalLessons
+}: { 
+  progressPercent: number; 
+  currentPathTitle: string; 
+  onPathClick: () => void;
+  completedLessons: number;
+  totalLessons: number;
+}) {
+  const animatedPercent = useAnimatedValue(progressPercent, 1000);
+  const [strokeOffset, setStrokeOffset] = useState(251); // 251 is full circumference
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showCheckmark, setShowCheckmark] = useState(false);
+
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const targetOffset = 251 - (251 * progressPercent) / 100;
+    
+    if (prefersReducedMotion) {
+      setStrokeOffset(targetOffset);
+    } else {
+      // Trigger animation slightly after mount
+      const timer = setTimeout(() => {
+        setStrokeOffset(targetOffset);
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [progressPercent]);
+
+  useEffect(() => {
+    if (progressPercent === 100) {
+      const timer = setTimeout(() => setShowCheckmark(true), 800);
+      return () => clearTimeout(timer);
+    } else {
+      setShowCheckmark(false);
+    }
+  }, [progressPercent]);
+
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
+      <div
+        style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer', outline: 'none' }}
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+        onFocus={() => setShowTooltip(true)}
+        onBlur={() => setShowTooltip(false)}
+        onClick={onPathClick}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPathClick(); }}
+        tabIndex={0}
+        role="button"
+        aria-label={`${currentPathTitle}: ${progressPercent}% complete`}
+      >
+        <svg width="130" height="130" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="40" fill="none" stroke="#f1f5f9" strokeWidth="10" />
+          <circle
+            cx="50"
+            cy="50"
+            r="40"
+            fill="none"
+            stroke="#4f46e5"
+            strokeWidth="10"
+            strokeDasharray="251"
+            strokeDashoffset={strokeOffset}
+            strokeLinecap="round"
+            transform="rotate(-90 50 50)"
+            style={{ transition: 'stroke-dashoffset 0.9s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          />
+        </svg>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+          {showCheckmark ? (
+            <div style={{
+              fontSize: '32px', color: '#10b981', 
+              animation: 'popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards'
+            }}>✓</div>
+          ) : (
+            <>
+              <span style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{animatedPercent}%</span>
+              <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Complete</span>
+            </>
+          )}
+        </div>
+        
+        {/* CSS for popIn animation (inlined for safety) */}
+        <style>{`
+          @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            70% { transform: scale(1.15); opacity: 1; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+        `}</style>
+
+        {showTooltip && (
+          <div style={{
+            position: 'absolute',
+            top: '-50px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: '#0f172a',
+            color: '#fff',
+            padding: '8px 12px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            whiteSpace: 'nowrap',
+            zIndex: 10,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            pointerEvents: 'none'
+          }}>
+            <div style={{ fontWeight: 600, marginBottom: '4px' }}>{currentPathTitle} — {progressPercent}% complete</div>
+            <div style={{ color: '#cbd5e1' }}>{completedLessons} of {totalLessons || 1} lessons completed</div>
+            {/* Tooltip triangle */}
+            <div style={{
+              position: 'absolute', bottom: '-4px', left: '50%', transform: 'translateX(-50%)',
+              width: 0, height: 0, borderLeft: '4px solid transparent', borderRight: '4px solid transparent',
+              borderTop: '4px solid #0f172a'
+            }} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StreakCard({ currentStreak }: { currentStreak: number }) {
+  const animatedStreak = useAnimatedValue(currentStreak, 800);
+  const prevStreakRef = useRef(currentStreak);
+  const flameRef = useRef<HTMLDivElement>(null);
+  const [milestoneMsg, setMilestoneMsg] = useState<string | null>(null);
+  const [bounce, setBounce] = useState(false);
+
+  useEffect(() => {
+    // On load, prevStreak is currentStreak. If it changes and increments:
+    if (prevStreakRef.current !== undefined && currentStreak > prevStreakRef.current) {
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      
+      setBounce(true);
+      setTimeout(() => setBounce(false), 300);
+
+      // Check milestones
+      let particleCount = 20;
+      if (currentStreak === 7) { setMilestoneMsg("7-day streak! 🔥"); particleCount = 35; }
+      else if (currentStreak === 30) { setMilestoneMsg("30-day streak! 🏆"); particleCount = 40; }
+      else if (currentStreak === 100) { setMilestoneMsg("100-day streak! 💎"); particleCount = 50; }
+      else { setMilestoneMsg(null); }
+
+      // Fire confetti from flame
+      if (!prefersReducedMotion && flameRef.current) {
+        const rect = flameRef.current.getBoundingClientRect();
+        const originX = (rect.left + rect.width / 2) / window.innerWidth;
+        const originY = (rect.top + rect.height / 2) / window.innerHeight;
+        
+        confetti({
+          particleCount,
+          spread: 50,
+          origin: { x: originX, y: originY },
+          colors: ['#4f46e5', '#ea580c', '#10b981', '#ec4899'],
+          disableForReducedMotion: true,
+          zIndex: 9999
+        });
+      }
+    }
+    prevStreakRef.current = currentStreak;
+  }, [currentStreak]);
+
+  return (
+    <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+      <div 
+        ref={flameRef}
+        style={{ 
+          width: '36px', height: '36px', borderRadius: '10px', background: '#f0fdf4', 
+          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a',
+          transform: bounce ? 'scale(1.3)' : 'scale(1)',
+          transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+        }}>
+        🔥
+      </div>
+      <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+        {animatedStreak} days
+      </div>
+      <div style={{ fontSize: '12px', color: '#64748b' }}>Current Streak</div>
+      <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
+        {milestoneMsg ? milestoneMsg : (currentStreak === 0 ? 'Submit a task to start!' : 'Keep it up!')}
+      </div>
+    </div>
+  );
+}
+
+
+
 export function DashboardPage({
   accessToken,
   activeRole,
@@ -46,8 +330,16 @@ export function DashboardPage({
   // Chart tooltip state
   const [chartTooltip, setChartTooltip] = useState<{ visible: boolean; x: number; y: number; label: string; value: string }>({ visible: false, x: 0, y: 0, label: '', value: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [selectedPathId, setSelectedPathId] = useState<string | null>(null);
-  const [selectedPathTitle, setSelectedPathTitle] = useState<string>('');
+  const location = useLocation();
+  const [selectedPathId, setSelectedPathId] = useState<string | null>(location.state?.pathId || null);
+  const [selectedPathTitle, setSelectedPathTitle] = useState<string>(location.state?.pathName || '');
+
+  useEffect(() => {
+    if (location.state?.pathId) {
+      setSelectedPathId(location.state.pathId);
+      setSelectedPathTitle(location.state.pathName || '');
+    }
+  }, [location.state]);
 
   const [, setUsers] = useState<VisibleUser[]>([
     {
@@ -77,13 +369,14 @@ export function DashboardPage({
 
   const [traineePath, setTraineePath] = useState<any | null>(null);
   const [upcomingTasks, setUpcomingTasks] = useState<any[]>([]);
-  const [, setMySubmissions] = useState<any[]>([]);
+  const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
   const [progressStats, setProgressStats] = useState({
     completedLessons: 0,
     totalLessons: 0,
     completionPercent: 0,
+    averageScore: 0,
   });
   const [charts, setCharts] = useState<ChartBundle>({
     progressTrends: [],
@@ -124,6 +417,7 @@ export function DashboardPage({
             completedLessons: 0,
             totalLessons: 0,
             completionPercent: 0,
+            averageScore: 0,
           })),
         ]);
 
@@ -221,11 +515,22 @@ export function DashboardPage({
         setMySubmissions(mySubs || []);
 
         if (isTrainee && pathsList?.length > 0) {
-          const assigned =
-            pathsList.find((p: any) => p.assignedToTraineeIds?.includes(currentUser.id)) ||
-            pathsList[0];
+          let assigned = null;
+          if (mySubs && mySubs.length > 0) {
+            // Find most recent submission's learning path
+            for (const sub of mySubs) {
+              const pId = sub.assignment?.learningPath?.id || (sub.assignment as any)?.learningPathId;
+              if (pId) {
+                assigned = pathsList.find((p: any) => p.id === pId);
+                if (assigned) break;
+              }
+            }
+          }
+          if (!assigned) {
+             assigned = pathsList.find((p: any) => p.assignedToTraineeIds?.includes(currentUser.id)) || pathsList[0];
+          }
           setTraineePath(assigned);
-          setUpcomingTasks(tasksTree.slice(0, 4));
+          setUpcomingTasks([]);
         } else {
           setTraineePath(null);
           setUpcomingTasks([]);
@@ -302,26 +607,17 @@ export function DashboardPage({
   if (activeSection === 'Learning Paths') {
     return (
       <div className="dashboard-content">
-        {selectedPathId ? (
-          isTrainee ? (
-            <TraineeCurriculumView
-              learningPathId={selectedPathId}
-              learningPathTitle={selectedPathTitle || 'Curriculum Modules'}
-              accessToken={accessToken}
-              onBack={handleBackToAllPaths}
-            />
-          ) : (
-            <CurriculumManager
-              learningPathId={selectedPathId}
-              learningPathTitle={selectedPathTitle || 'Curriculum Modules'}
-              currentUser={{
-                id: currentUser?.id ?? 'user-01',
-                role: activeRole as any,
-              }}
-              accessToken={accessToken}
-              onBack={handleBackToAllPaths}
-            />
-          )
+        {selectedPathId && !isTrainee ? (
+          <CurriculumManager
+            learningPathId={selectedPathId}
+            learningPathTitle={selectedPathTitle || 'Curriculum Modules'}
+            currentUser={{
+              id: currentUser?.id ?? 'user-01',
+              role: activeRole as any,
+            }}
+            accessToken={accessToken}
+            onBack={handleBackToAllPaths}
+          />
         ) : (
           <LearningPathsSection
             currentUser={{
@@ -331,10 +627,11 @@ export function DashboardPage({
             }}
             accessToken={accessToken}
             onNavigateToModules={(pathId: string, pathName: string) => {
-              setSelectedPathId(pathId);
-              setSelectedPathTitle(pathName);
               if (isTrainee) {
-                navigate('/modules');
+                navigate('/modules', { state: { pathId, pathName } });
+              } else {
+                setSelectedPathId(pathId);
+                setSelectedPathTitle(pathName);
               }
             }}
             onBackToAllPaths={handleBackToAllPaths}
@@ -344,8 +641,25 @@ export function DashboardPage({
     );
   }
   if (activeSection === 'Modules' || activeSection === 'Module Details') {
-    const pathId = selectedPathId || traineePath?.id || '';
-    const pathTitle = selectedPathTitle || traineePath?.title || 'All Modules';
+    const pathId = location.state?.pathId || selectedPathId || traineePath?.id || '';
+    const pathTitle = location.state?.pathName || selectedPathTitle || traineePath?.title || 'All Modules';
+
+    if (!isTrainee) {
+      if (!pathId) {
+        return <Navigate to="/learning-paths" replace />;
+      }
+      return (
+        <div className="dashboard-content">
+          <CurriculumManager
+            learningPathId={pathId}
+            learningPathTitle={pathTitle}
+            currentUser={{ id: currentUser!.id, role: activeRole as 'Admin' | 'Trainer' | 'Trainee' }}
+            accessToken={accessToken}
+            onBack={handleBackToAllPaths}
+          />
+        </div>
+      );
+    }
 
     return (
       <div className="dashboard-content">
@@ -395,6 +709,9 @@ if (isTrainee) {
       ? Math.max(1, Math.round((progressPercent / 100) * totalModules))
       : 0,
   );
+  
+  const currentStreak = calculateStreak(mySubmissions);
+  const traineeAvgScore = progressStats.averageScore || 0;
 
   return (
     <div className="dashboard-content" style={{ padding: '24px 32px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -433,167 +750,46 @@ if (isTrainee) {
           </div>
         </div>
 
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a' }}>🔥</div>
-          <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
-            {dbData.acceptedCount} days
-          </div>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>Accepted Submissions</div>
-          <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
-            {dbData.acceptedCount === 0 ? 'No activity yet' : 'Keep going'}
-          </div>
-        </div>
+        <StreakCard currentStreak={currentStreak} />
       </section>
 
-      <section style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.4fr 1.3fr', gap: '20px' }}>
-
-        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', position: 'relative' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Learning Path Progress</h3>
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
-            <div
-              style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer' }}
-              onMouseEnter={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                setChartTooltip({
-                  visible: true,
-                  x: rect.width / 2,
-                  y: -10,
-                  label: currentPathTitle,
-                  value: `${progressPercent}% Complete · ${progressStats.completedLessons}/${progressStats.totalLessons || 1} lessons`,
-                });
-              }}
-              onMouseLeave={() => setChartTooltip((t) => ({ ...t, visible: false }))}
-            >
-              <svg width="130" height="130" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="40" fill="none" stroke="#f1f5f9" strokeWidth="10" />
-                <circle
-                  cx="50"
-                  cy="50"
-                  r="40"
-                  fill="none"
-                  stroke="#4f46e5"
-                  strokeWidth="10"
-                  strokeDasharray="251"
-                  strokeDashoffset={251 - (251 * progressPercent) / 100}
-                  strokeLinecap="round"
-                  transform="rotate(-90 50 50)"
-                  style={{ transition: 'stroke-dashoffset 0.8s ease' }}
-                />
-              </svg>
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{progressPercent}%</span>
-                <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Complete</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {(traineePath?.modules || []).slice(0, 5).map((m: any, idx: number) => (
-              <div key={m.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 6, background: '#fafafa' }}>
-                <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
-                  <span style={{ color: idx < completedModules ? '#16a34a' : '#94a3b8', fontWeight: 700, marginRight: 6 }}>
-                    {idx < completedModules ? '✓' : '○'}
-                  </span>
-                  {m.title || `Module ${idx + 1}`}
-                </span>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: idx < completedModules ? '#dcfce7' : '#f1f5f9', color: idx < completedModules ? '#166534' : '#64748b' }}>
-                  {idx < completedModules ? 'Completed' : 'Pending'}
-                </span>
-              </div>
-            ))}
-            {(!traineePath?.modules || traineePath.modules.length === 0) && (
-              <div style={{ color: '#94a3b8', fontSize: 12 }}>No modules assigned yet.</div>
-            )}
-          </div>
-        </div>
+      <section style={{ display: 'grid', gridTemplateColumns: '1.2fr 2.5fr', gap: '20px' }}>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, position: 'relative' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Weekly Activity</h3>
-              <span style={{ fontSize: 11, fontWeight: 700, background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: 6 }}>
-                Active Trend
-              </span>
-            </div>
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 12px 0' }}>
-              {progressStats.completedLessons} lessons completed · {dbData.acceptedCount} submissions accepted
-            </p>
-            <div style={{ height: '110px', position: 'relative' }}>
-              {(() => {
-                const points = [
-                  { x: 15, y: 55, label: 'Mon', lessons: 1, subs: 1 },
-                  { x: 50, y: 30, label: 'Tue', lessons: 2, subs: 1 },
-                  { x: 85, y: 45, label: 'Wed', lessons: 1, subs: 2 },
-                  { x: 120, y: 15, label: 'Thu', lessons: 3, subs: 2 },
-                  { x: 155, y: 40, label: 'Fri', lessons: 2, subs: 3 },
-                  { x: 185, y: 25, label: 'Sat', lessons: 4, subs: 3 },
-                ];
-                return (
-                  <svg width="100%" height="100%" viewBox="0 0 200 75" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="traineeLineGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M 15 55 Q 50 30, 85 45 T 155 40 T 185 25 L 185 75 L 15 75 Z"
-                      fill="url(#traineeLineGrad)"
-                    />
-                    <path
-                      d="M 15 55 Q 50 30, 85 45 T 155 40 T 185 25"
-                      fill="none"
-                      stroke="#6366f1"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                    />
-                    {points.map((pt, i) => (
-                      <g key={i} style={{ cursor: 'pointer' }}>
-                        <circle
-                          cx={pt.x}
-                          cy={pt.y}
-                          r="4"
-                          fill="#6366f1"
-                          stroke="#fff"
-                          strokeWidth="1.5"
-                          onMouseEnter={(e) => {
-                            const rect = (e.currentTarget.ownerSVGElement?.parentElement as HTMLElement)?.getBoundingClientRect();
-                            setChartTooltip({
-                              visible: true,
-                              x: (pt.x / 200) * (rect?.width || 200),
-                              y: (pt.y / 75) * (rect?.height || 75) - 20,
-                              label: `${pt.label} Activity`,
-                              value: `${pt.lessons} lesson${pt.lessons > 1 ? 's' : ''} · ${pt.subs} submission${pt.subs > 1 ? 's' : ''}`,
-                            });
-                          }}
-                          onMouseLeave={() => setChartTooltip((t) => ({ ...t, visible: false }))}
-                        />
-                      </g>
-                    ))}
-                  </svg>
-                );
-              })()}
-              {chartTooltip.visible && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: Math.min(Math.max(chartTooltip.x - 40, 0), 160),
-                    top: Math.max(chartTooltip.y - 30, -10),
-                    background: '#0f172a',
-                    color: '#fff',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: '5px 9px',
-                    borderRadius: 6,
-                    pointerEvents: 'none',
-                    whiteSpace: 'nowrap',
-                    zIndex: 10,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
-                  }}
-                >
-                  <div style={{ color: '#818cf8', fontSize: 10 }}>{chartTooltip.label}</div>
-                  <div>{chartTooltip.value}</div>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', position: 'relative' }}>
+            <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Learning Path Progress</h3>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
+  <div style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer' }}>
+    <TraineeProgressRing
+      progressPercent={progressPercent}
+      completedLessons={progressStats.completedLessons}
+      totalLessons={progressStats.totalLessons}
+      currentPathTitle={currentPathTitle}
+      onPathClick={() => {
+        if (traineePath) {
+          navigate(`/paths/${traineePath.id}`);
+        }
+      }}
+    />
+  </div>
+</div>
+
+            <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {(traineePath?.modules || []).slice(0, 5).map((m: any, idx: number) => (
+                <div key={m.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 6, background: '#fafafa' }}>
+                  <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
+                    <span style={{ color: idx < completedModules ? '#16a34a' : '#94a3b8', fontWeight: 700, marginRight: 6 }}>
+                      {idx < completedModules ? '✓' : '○'}
+                    </span>
+                    {m.title || `Module ${idx + 1}`}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: idx < completedModules ? '#dcfce7' : '#f1f5f9', color: idx < completedModules ? '#166534' : '#64748b' }}>
+                    {idx < completedModules ? 'Completed' : 'Pending'}
+                  </span>
                 </div>
+              ))}
+              {(!traineePath?.modules || traineePath.modules.length === 0) && (
+                <div style={{ color: '#94a3b8', fontSize: 12 }}>No modules assigned yet.</div>
               )}
             </div>
           </div>
@@ -601,35 +797,32 @@ if (isTrainee) {
           <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <strong style={{ fontSize: '12px', color: '#64748b' }}>Latest Feedback</strong>
-              <span style={{ fontSize: 10, fontWeight: 700, color: dbData.averageScore >= 75 ? '#16a34a' : '#ea580c', background: dbData.averageScore >= 75 ? '#dcfce7' : '#fff7ed', padding: '2px 6px', borderRadius: 4 }}>
-                {dbData.averageScore >= 75 ? 'Excellent' : 'In Progress'}
+              <span style={{ fontSize: 10, fontWeight: 700, color: traineeAvgScore >= 75 ? '#16a34a' : '#ea580c', background: traineeAvgScore >= 75 ? '#dcfce7' : '#fff7ed', padding: '2px 6px', borderRadius: 4 }}>
+                {traineeAvgScore >= 75 ? 'Excellent' : 'Needs Focus'}
               </span>
             </div>
             <p style={{ fontSize: '13px', color: '#334155', margin: '6px 0 0 0', fontStyle: 'italic' }}>
-              {dbData.averageScore > 0
-                ? `Latest average evaluation score: ${dbData.averageScore}/100`
+              {traineeAvgScore > 0
+                ? `Overall average evaluation score: ${traineeAvgScore}/100`
                 : 'No evaluation feedback in database yet.'}
             </p>
           </div>
         </div>
 
-        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-          <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Upcoming Tasks</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {(upcomingTasks.length > 0 ? upcomingTasks : []).map((task, idx) => (
-              <div key={task.id || idx} style={{ padding: '10px 12px', borderRadius: '8px', border: '1px solid #f1f5f9', background: '#fafafa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <strong style={{ fontSize: '12px', color: '#1e293b', display: 'block' }}>{task.title}</strong>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>⏱️ {task.due || 'Due Soon'}</span>
-                </div>
-                <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, background: task.priority === 'high' ? '#fee2e2' : '#fef3c7', color: task.priority === 'high' ? '#dc2626' : '#b45309' }}>
-                  {task.priority ? task.priority.toUpperCase() : 'MEDIUM'}
-                </span>
-              </div>
-            ))}
-            {upcomingTasks.length === 0 && (
-              <div style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>No upcoming tasks in database.</div>
-            )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Daily Activity</h3>
+              <span style={{ fontSize: 11, fontWeight: 700, background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: 6 }}>
+                Last 140 Days
+              </span>
+            </div>
+            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 12px 0' }}>
+              {mySubmissions.length} tasks submitted total
+            </p>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+              <DailyActivityHeatmap submissions={mySubmissions} daysToDispay={30} />
+            </div>
           </div>
         </div>
 
@@ -723,179 +916,29 @@ return (
     </section>
 
     <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', marginBottom: '24px' }}>
-
-      <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <div>
-            <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Progress Trends</h3>
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 0 0' }}>Submissions vs Completions from database</p>
-          </div>
-        </div>
-
-        {(() => {
-          const labels = charts.progressTrends.map((p) => p.label);
-          const subs = charts.progressTrends.map((p) => p.submissions);
-          const comps = charts.progressTrends.map((p) => p.completions);
-          const hasData = subs.some((v) => v > 0) || comps.some((v) => v > 0);
-          const subPath = seriesToPolyline(hasData ? subs : [0, 0, 0, 0, 0, 0], 500, 180, 40, 20);
-          const compPath = seriesToPolyline(hasData ? comps : [0, 0, 0, 0, 0, 0], 500, 180, 40, 20);
-          const area = seriesToAreaPath(hasData ? subs : [0, 0, 0, 0, 0, 0], 500, 180, 40, 20);
-          const yMax = Math.max(subPath.max, compPath.max, 1);
-          return (
-            <div style={{ position: 'relative', width: '100%', height: '180px' }}>
-              <svg width="100%" height="100%" viewBox="0 0 500 180" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="purpleGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.15" />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
-                <line x1="40" y1="20" x2="480" y2="20" stroke="#f1f5f9" strokeDasharray="3 3" />
-                <line x1="40" y1="60" x2="480" y2="60" stroke="#f1f5f9" strokeDasharray="3 3" />
-                <line x1="40" y1="100" x2="480" y2="100" stroke="#f1f5f9" strokeDasharray="3 3" />
-                <line x1="40" y1="140" x2="480" y2="140" stroke="#f1f5f9" strokeDasharray="3 3" />
-                <text x="8" y="24" fill="#94a3b8" fontSize="10">{yMax}</text>
-                <text x="12" y="175" fill="#94a3b8" fontSize="10">0</text>
-                <path d={area} fill="url(#purpleGradient)" />
-                <path d={subPath.path} fill="none" stroke="#6366f1" strokeWidth="2.5" />
-                <path d={compPath.path} fill="none" stroke="#10b981" strokeWidth="2.5" />
-                {subPath.coords.map((c, i) => (
-                  <circle
-                    key={`s-${i}`}
-                    cx={c.x}
-                    cy={c.y}
-                    r="5"
-                    fill="#6366f1"
-                    style={{ cursor: 'pointer' }}
-                    onMouseEnter={(e) => {
-                      const rect = (e.currentTarget.ownerSVGElement?.parentElement as HTMLElement)?.getBoundingClientRect();
-                      setChartTooltip({
-                        visible: true,
-                        x: e.clientX - (rect?.left || 0),
-                        y: e.clientY - (rect?.top || 0) - 12,
-                        label: labels[i] || `W${i + 1}`,
-                        value: `Submissions: ${subs[i] ?? 0} · Completions: ${comps[i] ?? 0}`,
-                      });
-                    }}
-                    onMouseLeave={() => setChartTooltip((t) => ({ ...t, visible: false }))}
-                  />
-                ))}
-              </svg>
-              {chartTooltip.visible && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: Math.min(Math.max(chartTooltip.x, 8), 360),
-                    top: Math.max(chartTooltip.y - 36, 4),
-                    background: '#0f172a',
-                    color: '#fff',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: '6px 10px',
-                    borderRadius: 8,
-                    pointerEvents: 'none',
-                    whiteSpace: 'nowrap',
-                    zIndex: 5,
-                    boxShadow: '0 4px 14px rgba(15,23,42,0.25)',
-                  }}
-                >
-                  <div>{chartTooltip.label}</div>
-                  <div style={{ fontWeight: 500, opacity: 0.9 }}>{chartTooltip.value}</div>
-                </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: '40px', paddingRight: '20px', fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
-                {(labels.length ? labels : ['—']).map((l) => (
-                  <span key={l}>{l}</span>
-                ))}
-              </div>
-              {!hasData && (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '13px' }}>
-                  0 submissions · 0% growth
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
-
-      <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Avg. Evaluation Score</h3>
-        <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 0 0' }}>Weekly average from database</p>
-
-        <div style={{ marginTop: '16px', display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-          <span style={{ fontSize: '32px', fontWeight: 800, color: '#0f172a' }}>{dbData.averageScore}</span>
-          <span style={{ color: '#94a3b8', fontSize: '14px' }}>/100</span>
-        </div>
-
-        {(() => {
-          const scores = charts.weeklyScores.map((w) => w.averageScore);
-          const labels = charts.weeklyScores.map((w) => w.label);
-          const hasData = scores.some((v) => v > 0);
-          const line = seriesToPolyline(hasData ? scores : [0, 0, 0, 0, 0, 0], 240, 90, 10, 10);
-          return (
-            <div style={{ marginTop: '20px', height: '100px', position: 'relative' }}>
-              <svg width="100%" height="100%" viewBox="0 0 240 90">
-                <line x1="10" y1="20" x2="230" y2="20" stroke="#f1f5f9" strokeDasharray="2 2" />
-                <line x1="10" y1="50" x2="230" y2="50" stroke="#f1f5f9" strokeDasharray="2 2" />
-                <path d={line.path} fill="none" stroke="#6366f1" strokeWidth="2" />
-                {line.coords.map((c, i) => (
-                  <circle
-                    key={i}
-                    cx={c.x}
-                    cy={c.y}
-                    r="4"
-                    fill="#6366f1"
-                    style={{ cursor: 'pointer' }}
-                    onMouseEnter={() =>
-                      setChartTooltip({
-                        visible: true,
-                        x: c.x,
-                        y: c.y,
-                        label: labels[i] || `W${i + 1}`,
-                        value: `Score: ${scores[i] ?? 0}`,
-                      })
-                    }
-                    onMouseLeave={() => setChartTooltip((t) => ({ ...t, visible: false }))}
-                  >
-                    <title>{`${labels[i] || `W${i + 1}`}: ${scores[i] ?? 0}`}</title>
-                  </circle>
-                ))}
-              </svg>
-              {chartTooltip.visible && chartTooltip.value.startsWith('Score:') && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: Math.min(chartTooltip.x, 160),
-                    top: Math.max(chartTooltip.y - 28, 0),
-                    background: '#0f172a',
-                    color: '#fff',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    padding: '5px 8px',
-                    borderRadius: 6,
-                    pointerEvents: 'none',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {chartTooltip.label} — {chartTooltip.value}
-                </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#94a3b8' }}>
-                {(charts.weeklyScores.length ? charts.weeklyScores : [{ label: 'W1' }, { label: 'W2' }, { label: 'W3' }, { label: 'W4' }, { label: 'W5' }, { label: 'W6' }]).map((w: any) => (
-                  <span key={w.label}>{w.label}</span>
-                ))}
-              </div>
-              {!hasData && (
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '12px' }}>
-                  0/100 · no scores yet
-                </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
-
-    </section>
+  <DashboardCharts
+    title="Progress Trends"
+    subtitle="Submissions vs Completions from database"
+    role={activeRole.toLowerCase()}
+    type="progress"
+    datasets={{
+      daily: (charts.dailyProgressTrends || []).map((d: any) => ({ ...d, name: d.label || d.name })),
+      weekly: (charts.weeklyProgressTrends || charts.progressTrends || []).map((d: any) => ({ ...d, name: d.label || d.name })),
+      monthly: (charts.yearlyProgressTrends || []).map((d: any) => ({ ...d, name: d.label || d.name }))
+    }}
+  />
+  <DashboardCharts
+    title="Avg. Evaluation Score"
+    subtitle="Weekly average from database"
+    role={activeRole.toLowerCase()}
+    type="score"
+    datasets={{
+      daily: (charts.dailyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints })),
+      weekly: (charts.weeklyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints })),
+      monthly: (charts.monthlyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints }))
+    }}
+  />
+</section>
 
     <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
       <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>

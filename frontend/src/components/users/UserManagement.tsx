@@ -91,9 +91,10 @@ const EMPTY_INVITE_FORM = {
 
 interface UsersSectionProps {
   onOpenInviteModal: () => void;
+  accessToken?: string;
 }
 
-export function UsersSection({ onOpenInviteModal }: UsersSectionProps) {
+export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionProps) {
   const [users, setUsers] = useState<UserDetail[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);

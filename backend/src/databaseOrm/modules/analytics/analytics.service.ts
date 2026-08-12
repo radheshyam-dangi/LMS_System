@@ -14,7 +14,7 @@ import { UserLessonProgressEntity } from '../../entities/userLessonProgress.enti
 export class AnalyticsEntityService {
   constructor(private readonly datasource: DataSource) {}
 
-  async getDashboardStats() {
+  async getDashboardStats(currentUser?: any) {
     const userRepo = this.datasource.getRepository(UserEntity);
     const pathRepo = this.datasource.getRepository(LearningPathEntity);
     const moduleRepo = this.datasource.getRepository(ModuleEntity);
@@ -24,6 +24,17 @@ export class AnalyticsEntityService {
     const enrollmentRepo = this.datasource.getRepository(EnrollmentEntity);
     const evaluationRepo = this.datasource.getRepository(EvaluationEntity);
     const progressRepo = this.datasource.getRepository(UserLessonProgressEntity);
+
+    const isTrainee = currentUser?.roles?.some((r: any) => String(r.name || r).toLowerCase() === 'trainee');
+    const isTrainer = currentUser?.roles?.some((r: any) => String(r.name || r).toLowerCase() === 'trainer');
+    const isAdmin = currentUser?.roles?.some((r: any) => String(r.name || r).toLowerCase() === 'admin');
+    const userId = currentUser?.id;
+    let trainerExpected = 0;
+    let trainerSubmitted = 0;
+    let tasksCompleted = 0;
+    let activityTimestamps: any[] = [];
+    let currentStreak = 0;
+
 
     const [
       users,

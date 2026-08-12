@@ -17,6 +17,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
+import { useSearch } from '../../context/SearchContext';
 
 type AppLayoutProps = {
   activeRole: RoleName;
@@ -41,14 +42,12 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
     main: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
-      { name: 'Modules', path: '/modules', icon: Layers },
       { name: 'Assignments', path: '/assignments', icon: ClipboardList },
       { name: 'Evaluations', path: '/evaluations', icon: Star },
       { name: 'Users', path: '/users', icon: Users },
       { name: 'Progress', path: '/progress', icon: TrendingUp },
     ],
     tools: [
-      { name: 'Analytics', path: '/analytics', icon: BarChart3 },
       { name: 'Settings', path: '/settings', icon: Settings },
     ],
   },
@@ -56,13 +55,11 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
     main: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
-      { name: 'Modules', path: '/modules', icon: Layers },
       { name: 'Assignments', path: '/assignments', icon: ClipboardList },
       { name: 'Evaluations', path: '/evaluations', icon: Star },
       { name: 'Progress', path: '/progress', icon: TrendingUp },
     ],
     tools: [
-      { name: 'Analytics', path: '/analytics', icon: BarChart3 },
       { name: 'Settings', path: '/settings', icon: Settings },
     ],
   },
@@ -70,7 +67,6 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
     main: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
-      { name: 'Modules', path: '/modules', icon: Layers },
       { name: 'Assignments', path: '/assignments', icon: ClipboardList },
       { name: 'Progress', path: '/progress', icon: TrendingUp },
     ],
@@ -98,6 +94,7 @@ export function AppLayout({
   const navigate = useNavigate();
   const location = useLocation();
   const { notifications, markAsRead, markAllRead, unreadCount } = useNotifications();
+  const { searchQuery, setSearchQuery } = useSearch();
   const [panelOpen, setPanelOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const count = Math.max(notificationCount, unreadCount);
@@ -238,7 +235,11 @@ export function AppLayout({
           <div className="topbar-actions">
             <div className="search-field">
               <span className="search-icon">🔍</span>
-              <input placeholder="Search anything... ⌘K" />
+              <input
+                placeholder="Search anything... ⌘K"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
 
             {showRoleSwitcher && (

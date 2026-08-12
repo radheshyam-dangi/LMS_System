@@ -1,0 +1,168 @@
+Created At: 2026-08-10T10:10:16Z
+Completed At: 2026-08-10T10:10:16Z
+
+				The command completed successfully.
+				Output:
+				<truncated 1 lines>
++          gap: 20px;
++        }
++        @media (max-width: 1024px) {
++          .trainee-dashboard-details {
++            grid-template-columns: 1fr;
++          }
++        }
++      `}</style>
++
++      <section className="trainee-dashboard-details">
+ 
+         <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', position: 'relative' }}>
+           <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Learning Path Progress</h3>
+           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
+-            <div
+-              style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer' }}
+-              onMouseEnter={(e) => {
+-                const rect = e.currentTarget.getBoundingClientRect();
+-                setChartTooltip({
+-                  visible: true,
+-                  x: rect.width / 2,
+-                  y: -10,
+-                  label: currentPathTitle,
+-                  value: `${progressPercent}% Complete · ${progressStats.completedLessons}/${progressStats.totalLessons || 1} lessons`,
+-                });
++            <TraineeProgressRing 
++              progressPercent={progressPercent}
++              completedLessons={progressStats.completedLessons}
++              totalLessons={progressStats.totalLessons}
++              currentPathTitle={currentPathTitle}
++              onPathClick={() => {
++                if (traineePath) {
++                  navigate('/learning-paths', { state: { pathId: traineePath.id, pathName: traineePath.title } });
++                }
+               }}
+-              onMouseLeave={() => setChartTooltip((t) => ({ ...t, visible: false }))}
+-            >
+-              <svg width="130" height="130" viewBox="0 0 100 100">
+-                <circle cx="50" cy="50" r="40" fill="none" stroke="#f1f5f9" strokeWidth="10" />
+-                <circle
+-                  cx="50"
+-                  cy="50"
+-                  r="40"
+-                  fill="none"
+-                  stroke="#4f46e5"
+-                  strokeWidth="10"
+-                  strokeDasharray="251"
+-                  strokeDashoffset={251 - (251 * progressPercent) / 100}
+-                  strokeLinecap="round"
+-                  transform="rotate(-90 50 50)"
+-                  style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+-                />
+-              </svg>
+-              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+-                <span style={{ fontSize: '22px', fontWeight: 800, color: '#0f172a' }}>{progressPercent}%</span>
+-                <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 600 }}>Complete</span>
+-              </div>
+-            </div>
++            />
+           </div>
+ 
+           <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+@@ -507,10 +677,10 @@ if (isTrainee) {
+           </div>
+         </div>
+ 
+-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
++        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', overflow: 'hidden' }}>
+           <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, position: 'relative' }}>
+             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+-              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Weekly Activity</h3>
++              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Daily Activity</h3>
+               <span style={{ fontSize: 11, fontWeight: 700, background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: 6 }}>
+                 Active Trend
+               </span>
+@@ -518,83 +688,8 @@ if (isTrainee) {
+             <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 12px 0' }}>
+               {progressStats.completedLessons} lessons completed · {dbData.acceptedCount} submissions accepted
+             </p>
+-            <div style={{ height: '110px', position: 'relative' }}>
+-              {(() => {
+-                const points = [
+-                  { x: 15, y: 55, label: 'Mon', lessons: 1, subs: 1 },
+-                  { x: 50, y: 30, label: 'Tue', lessons: 2, subs: 1 },
+-                  { x: 85, y: 45, label: 'Wed', lessons: 1, subs: 2 },
+-                  { x: 120, y: 15, label: 'Thu', lessons: 3, subs: 2 },
+-                  { x: 155, y: 40, label: 'Fri', lessons: 2, subs: 3 },
+-                  { x: 185, y: 25, label: 'Sat', lessons: 4, subs: 3 },
+-                ];
+-                return (
+-                  <svg width="100%" height="100%" viewBox="0 0 200 75" preserveAspectRatio="none">
+-                    <defs>
+-                      <linearGradient id="traineeLineGrad" x1="0" y1="0" x2="0" y2="1">
+-                        <stop offset="0%" stopColor="#6366f1" stopOpacity="0.25" />
+-                        <stop offset="100%" stopColor="#6366f1" stopOpacity="0.0" />
+-                      </linearGradient>
+-                    </defs>
+-                    <path
+-                      d="M 15 55 Q 50 30, 85 45 T 155 40 T 185 25 L 185 75 L 15 75 Z"
+-                      fill="url(#traineeLineGrad)"
+-                    />
+-                    <path
+-                      d="M 15 55 Q 50 30, 85 45 T 155 40 T 185 25"
+-                      fill="none"
+-                      stroke="#6366f1"
+-                      strokeWidth="2.5"
+-                      strokeLinecap="round"
+-                    />
+-                    {points.map((pt, i) => (
+-                      <g key={i} style={{ cursor: 'pointer' }}>
+-                        <circle
+-                          cx={pt.x}
+-                          cy={pt.y}
+-                          r="4"
+-                          fill="#6366f1"
+-                          stroke="#fff"
+-                          strokeWidth="1.5"
+-                          onMouseEnter={(e) => {
+-                            const rect = (e.currentTarget.ownerSVGElement?.parentElement as HTMLElement)?.getBoundingClientRect();
+-                            setChartTooltip({
+-                              visible: true,
+-                              x: (pt.x / 200) * (rect?.width || 200),
+-                              y: (pt.y / 75) * (rect?.height || 75) - 20,
+-                              label: `${pt.label} Activity`,
+-                              value: `${pt.lessons} lesson${pt.lessons > 1 ? 's' : ''} · ${pt.subs} submission${pt.subs > 1 ? 's' : ''}`,
+-                            });
+-                          }}
+-                          onMouseLeave={() => setChartTooltip((t) => ({ ...t, visible: false }))}
+-                        />
+-                      </g>
+-                    ))}
+-                  </svg>
+-                );
+-              })()}
+-              {chartTooltip.visible && (
+-                <div
+-                  style={{
+-                    position: 'absolute',
+-                    left: Math.min(Math.max(chartTooltip.x - 40, 0), 160),
+-                    top: Math.max(chartTooltip.y - 30, -10),
+-                    background: '#0f172a',
+-                    color: '#fff',
+-                    fontSize: 11,
+-                    fontWeight: 600,
+-                    padding: '5px 9px',
+-                    borderRadius: 6,
+-                    pointerEvents: 'none',
+-                    whiteSpace: 'nowrap',
+-                    zIndex: 10,
+-                    boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+-                  }}
+-                >
+-                  <div style={{ color: '#818cf8', fontSize: 10 }}>{chartTooltip.label}</div>
+-                  <div>{chartTooltip.value}</div>
+-                </div>
+-              )}
++            <div style={{ width: '100%', minHeight: '110px' }}>
++              <DailyActivityHeatmap submissions={mySubmissions} />
+             </div>
+           </div>
+ 
+

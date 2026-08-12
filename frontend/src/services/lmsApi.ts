@@ -10,7 +10,12 @@ const auth = (token: string) => ({
 
 export type ChartBundle = {
   progressTrends: { label: string; submissions: number; completions: number }[];
+  dailyProgressTrends?: { label: string; submissions: number; completions: number }[];
+  weeklyProgressTrends?: { label: string; submissions: number; completions: number }[];
+  yearlyProgressTrends?: { label: string; submissions: number; completions: number }[];
   weeklyScores: { label: string; averageScore: number; submissions: number }[];
+  dailyScores?: { label: string; averageScore: number; submissions: number }[];
+  monthlyScores?: { label: string; averageScore: number; submissions: number }[];
   skillDistribution: { name: string; count: number; percent: number }[];
   moduleCompletion: {
     id: string;
@@ -45,11 +50,26 @@ export type DashboardAnalytics = {
   completionGrowth: number;
   recentActivity: any[];
   charts: ChartBundle;
+  skillGrowth?: number;
+  tasksCompleted?: number;
+  totalGainedScore?: number;
+  totalMaxScore?: number;
+  learningVelocity?: number;
+  consistencyScore?: number;
+  currentStreak?: number;
+  learningStyle?: string;
+  estimatedCompletionDate?: string;
+  trainingEffectiveness?: number;
 };
 
 const emptyCharts = (): ChartBundle => ({
   progressTrends: [],
+  dailyProgressTrends: [],
+  weeklyProgressTrends: [],
+  yearlyProgressTrends: [],
   weeklyScores: [],
+  dailyScores: [],
+  monthlyScores: [],
   skillDistribution: [],
   moduleCompletion: [],
   pathPerformance: [],
