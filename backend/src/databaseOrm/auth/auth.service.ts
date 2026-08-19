@@ -196,6 +196,9 @@ export class AuthService {
       ) {
         throw error;
       }
+      //token is expired so we need to refresh the token
+      //generate new token
+      
       throw new BadRequestException(
         'Invitation token is invalid or has expired',
       );
