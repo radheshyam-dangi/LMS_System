@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Put,
+  Delete,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -90,5 +91,14 @@ export class NotificationController {
     const userId = currentUser?.id || currentUser?.sub;
     const affected = await this.notificationService.markAllAsRead(userId);
     return { affected, unreadCount: 0 };
+  }
+
+  @Delete(':id')
+  async deleteNotification(
+    @Param('id') id: string,
+    @GetUser() currentUser: any,
+  ) {
+    const userId = currentUser?.id || currentUser?.sub;
+    return await this.notificationService.deleteNotification(id, userId);
   }
 }

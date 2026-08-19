@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+} from '@nestjs/common';
 import { TagEntityService } from './tag.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { TagModel } from '../../../types/models/tag.model';

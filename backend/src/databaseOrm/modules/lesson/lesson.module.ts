@@ -9,10 +9,10 @@ import { UserLessonProgressEntity } from '../../entities/userLessonProgress.enti
 @Module({
   imports: [
     TypeOrmModule.forFeature([
-      LessonEntity, 
-      ModuleEntity, 
-      UserLessonProgressEntity
-    ])
+      LessonEntity,
+      ModuleEntity,
+      UserLessonProgressEntity,
+    ]),
   ],
   controllers: [LessonController],
   providers: [LessonEntityService],

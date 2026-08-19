@@ -7,7 +7,13 @@ import { UserEntity } from '../../entities/user.entity';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([EnrollmentEntity, UserEntity, LearningPathEntity])],
+  imports: [
+    TypeOrmModule.forFeature([
+      EnrollmentEntity,
+      UserEntity,
+      LearningPathEntity,
+    ]),
+  ],
   controllers: [EnrollmentController],
   providers: [EnrollmentEntityService],
   exports: [EnrollmentEntityService],

@@ -6,10 +6,10 @@ import { Entities } from '../../constants/entity';
 import { ForeignKeys } from '../../constants/foreignKeys';
 @Entity(Entities.Enrollment)
 export class EnrollmentEntity extends BaseEntity {
-  @Column({ 
-    type: 'timestamp', 
-    name: 'enrolledAt', 
-    default: () => 'CURRENT_TIMESTAMP' 
+  @Column({
+    type: 'timestamp',
+    name: 'enrolledAt',
+    default: () => 'CURRENT_TIMESTAMP',
   })
   enrolledAt: Date;
 
@@ -25,4 +25,9 @@ export class EnrollmentEntity extends BaseEntity {
   @ManyToOne(() => LearningPathEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: ForeignKeys.Enrollment.LearningPathId })
   learningPath: LearningPathEntity;
+
+  // Relation: Who assigned this learning path to the user
+  @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'assigned_by_id' })
+  assignedBy: UserEntity;
 }

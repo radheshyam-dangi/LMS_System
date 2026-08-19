@@ -25,7 +25,9 @@ export class EvaluationEntity extends BaseEntity {
   @Column({ type: 'text', nullable: false })
   feedback: string;
 
-  @ManyToOne(() => SubmissionEntity, (submission) => submission.evaluations, { onDelete: 'CASCADE' })
+  @ManyToOne(() => SubmissionEntity, (submission) => submission.evaluations, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: ForeignKeys.Evaluation.SubmissionId })
   submission: SubmissionEntity;
 

@@ -1,6 +1,14 @@
-import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+} from '@nestjs/common';
 import { UserEntityService } from './user.service';
-import type{ UserModel } from '../../../types/models/user.model';
+import type { UserModel } from '../../../types/models/user.model';
 import { RoutePaths } from '../../../constants/routePaths';
 @Controller(RoutePaths.Users)
 export class UserController {
@@ -12,14 +20,11 @@ export class UserController {
   }
 
   @Post('/signup')
-  async signup(@Body() signUpDto: UserModel) {   
+  async signup(@Body() signUpDto: UserModel) {
     return await this.userService.create(signUpDto);
   }
 
-  @Post('/login')
-  async login(@Body() body: Pick<UserModel, 'email' | 'password'>) {
-    return await this.userService.login(body.email, body.password ?? '');
-  }
+  // login endpoint moved to auth.controller.ts
 
   @Get('/requests/roles')
   async roleRequests() {
@@ -31,13 +36,24 @@ export class UserController {
     return await this.userService.findOne(id);
   }
 
+  @Get(':id/profile-stats')
+  async getProfileStats(@Param('id') id: string) {
+    return await this.userService.getUserProfileStats(id);
+  }
+
   @Put(':id/role')
-  async updateRole(@Param('id') id: string, @Body() body: { roleName: string }) {
+  async updateRole(
+    @Param('id') id: string,
+    @Body() body: { roleName: string },
+  ) {
     return await this.userService.updateUserRole(id, body.roleName);
   }
 
   @Put(':id')
-  async update(@Param('id') id: string, @Body() updateUserDto: Partial<UserModel>) {
+  async update(
+    @Param('id') id: string,
+    @Body() updateUserDto: Partial<UserModel>,
+  ) {
     return await this.userService.update(id, updateUserDto);
   }
 

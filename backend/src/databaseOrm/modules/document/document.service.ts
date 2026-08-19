@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { DocumentEntityService } from '../../services/document.service';
+import { Repository } from 'typeorm';
+import { BaseService } from '../../../common/services/base.service';
+import { DocumentEntity } from '../../entities/document.entity';
+import { DataSource } from 'typeorm';
 
 @Injectable()
-export class DocumentService{
-    constructor(
-        private DocumentEntityService : DocumentEntityService
-    ){}
-
+export class DocumentEntityService extends BaseService<DocumentEntity> {
+  protected repository: Repository<DocumentEntity>;
+  constructor(datasource: DataSource) {
+    super();
+    this.repository = datasource.getRepository<DocumentEntity>(DocumentEntity);
+  }
 }
-export {DocumentEntityService}

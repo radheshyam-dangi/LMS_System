@@ -243,8 +243,8 @@ export function TraineeSubmissionsView({ accessToken }: TraineeSubmissionsViewPr
                           borderRadius: '12px',
                           fontSize: '11px',
                           fontWeight: 700,
-                          background: sub.status === 'Accepted' ? '#dcfce7' : sub.status === 'Rejected' ? '#fee2e2' : '#e0f2fe',
-                          color: sub.status === 'Accepted' ? '#15803d' : sub.status === 'Rejected' ? '#b91c1c' : '#0369a1',
+                          background: sub.status === 'Approved' ? '#dcfce7' : sub.status === 'Rejected' ? '#fee2e2' : '#e0f2fe',
+                          color: sub.status === 'Approved' ? '#15803d' : sub.status === 'Rejected' ? '#b91c1c' : '#0369a1',
                           border: '1px solid #cbd5e1',
                         }}
                       >

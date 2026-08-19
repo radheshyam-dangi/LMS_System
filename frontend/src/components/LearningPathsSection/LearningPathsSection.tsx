@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from "recharts";
 import "./LearningPaths.css";
 import { learningPathService } from "../../services/learningPathService";
 import { userService } from "../../services/userService";
@@ -18,7 +19,7 @@ interface LearningPathsSectionProps {
     role: RoleName;
   };
   accessToken: string;
-  onNavigateToModules: (pathId: string, pathName: string) => void;
+  onNavigateToModules: (pathId: string, pathName: string, traineeId?: string) => void;
   onBackToAllPaths?: () => void;
 }
 
@@ -49,6 +50,9 @@ export function LearningPathsSection({
   // Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [selectedPathForTrainees, setSelectedPathForTrainees] = useState<string | null>(null);
+  const [expandedTraineeId, setExpandedTraineeId] = useState<string | null>(null);
+  const [expandedTraineeStats, setExpandedTraineeStats] = useState<any>(null);
   const [editingPathId, setEditingPathId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -61,6 +65,7 @@ export function LearningPathsSection({
   >([]);
   const [traineeSearchQuery, setTraineeSearchQuery] = useState("");
   const [isLoadingTrainees, setIsLoadingTrainees] = useState(false);
+  const [openDropdownPathId, setOpenDropdownPathId] = useState<string | null>(null);
 
   // Form Inputs
   const [formName, setFormName] = useState("");
@@ -107,9 +112,46 @@ export function LearningPathsSection({
     }
   };
 
+  const handleTraineeRowClick = async (traineeId: string, pathId: string) => {
+    if (expandedTraineeId === traineeId) {
+      setExpandedTraineeId(null);
+      setExpandedTraineeStats(null);
+      return;
+    }
+    setExpandedTraineeId(traineeId);
+    setExpandedTraineeStats(null); // Set to loading state
+    try {
+      const response = await fetch(`http://localhost:3000/v1/progress/user/${traineeId}?learningPathId=${pathId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      const data = await response.json();
+      setExpandedTraineeStats(data);
+    } catch (err) {
+      console.error("Failed to fetch trainee stats", err);
+    }
+  };
+
   useEffect(() => {
     loadDatabasePaths();
-  }, [accessToken]);
+    if (isAdmin || isTrainer) {
+      userService.fetchAllUsers(accessToken).then((rawUsersList) => {
+        const eligibleTrainees = (rawUsersList || []).filter((user: any) => {
+          const userRoles: string[] = [];
+          if (typeof user.role === "string") userRoles.push(user.role.toLowerCase());
+          if (typeof user.primaryRole === "string") userRoles.push(user.primaryRole.toLowerCase());
+          if (user.primaryRole?.name) userRoles.push(user.primaryRole.name.toLowerCase());
+          if (Array.isArray(user.roles)) {
+            user.roles.forEach((r: any) => {
+              if (typeof r === "string") userRoles.push(r.toLowerCase());
+              if (r?.name) userRoles.push(r.name.toLowerCase());
+            });
+          }
+          return userRoles.includes("trainee");
+        });
+        setAllTrainees(eligibleTrainees);
+      }).catch(() => {});
+    }
+  }, [accessToken, isAdmin, isTrainer]);
 
   // Open Edit Modal & Populate Form
   const handleOpenEditModal = (path: LearningPath) => {
@@ -509,44 +551,46 @@ export function LearningPathsSection({
                   {/* 🌟 DYNAMIC REAL-TIME PROGRESS BAR (TRAINEE vs TRAINER COHORT RULES) */}
                   {(() => {
                     const summary = progressSummary[path.id];
-                    const enrolledCount = path.assignedToTraineeIds?.length || summary?.enrolledCount || 0;
                     let progressVal = 0;
 
                     if (isTrainee) {
-                      // Trainee side: real-time user progress calculated from watched lessons + submitted tasks + visited resources
                       progressVal = summary?.userProgressPercent ?? (path as any).progressPercent ?? 0;
+                      return (
+                        <div style={{ marginTop: "14px", marginBottom: "8px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", color: "#475569", marginBottom: "6px" }}>
+                            <span style={{ fontWeight: 600 }}>My Learning Progress</span>
+                            <span style={{ fontWeight: 800, color: progressVal === 100 ? "#16a34a" : "#4f46e5" }}>
+                              {progressVal}% {progressVal === 100 ? "🎉 Complete" : ""}
+                            </span>
+                          </div>
+                          <div style={{ width: "100%", height: "8px", background: "#e2e8f0", borderRadius: "9999px", overflow: "hidden" }}>
+                            <div
+                              style={{
+                                width: `${progressVal}%`,
+                                height: "100%",
+                                background: progressVal === 100
+                                  ? "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)"
+                                  : "linear-gradient(90deg, #6366f1 0%, #4f46e5 100%)",
+                                borderRadius: "9999px",
+                                transition: "width 0.5s ease-in-out",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
                     } else {
-                      // Trainer/Admin side: 0% if no trainees enrolled, or real average progress across all enrolled trainees
-                      if (enrolledCount === 0) {
-                        progressVal = 0;
-                      } else {
-                        progressVal = summary?.cohortProgressPercent ?? (path as any).cohortProgress ?? 0;
-                      }
+                      return (
+                        <div style={{ marginTop: "14px", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Trainee Overview</span>
+                          <button
+                            onClick={() => setSelectedPathForTrainees(path.id)}
+                            style={{ padding: "4px 10px", background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: "6px", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}
+                          >
+                            See Trainee Progress
+                          </button>
+                        </div>
+                      );
                     }
-
-                    return (
-                      <div style={{ marginTop: "14px", marginBottom: "8px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", color: "#475569", marginBottom: "6px" }}>
-                          <span style={{ fontWeight: 600 }}>{isTrainee ? "My Learning Progress" : "Cohort Overall Progress"}</span>
-                          <span style={{ fontWeight: 800, color: progressVal === 100 ? "#16a34a" : "#4f46e5" }}>
-                            {progressVal}% {progressVal === 100 ? "🎉 Complete" : ""}
-                          </span>
-                        </div>
-                        <div style={{ width: "100%", height: "8px", background: "#e2e8f0", borderRadius: "9999px", overflow: "hidden" }}>
-                          <div
-                            style={{
-                              width: `${progressVal}%`,
-                              height: "100%",
-                              background: progressVal === 100
-                                ? "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)"
-                                : "linear-gradient(90deg, #6366f1 0%, #4f46e5 100%)",
-                              borderRadius: "9999px",
-                              transition: "width 0.5s ease-in-out",
-                            }}
-                          />
-                        </div>
-                      </div>
-                    );
                   })()}
 
                   {/* 🌟 ACTION BUTTONS CLUSTER - FLEX LAYOUT WRAPPED SAFELY */}
@@ -807,7 +851,11 @@ export function LearningPathsSection({
                               borderRadius: "4px",
                             }}
                           >
-                            ✓ Already Assigned ({currentTrainerName})
+                            ✓ Already Assigned{
+                              selectedPath.traineeAssigners?.[trainee.id]
+                                ? ` (${`${selectedPath.traineeAssigners[trainee.id].firstName || ''} ${selectedPath.traineeAssigners[trainee.id].lastName || ''}`.trim() || selectedPath.traineeAssigners[trainee.id].email})`
+                                : ''
+                            }
                           </span>
                         ) : isNewlyChecked ? (
                           <span
@@ -1164,6 +1212,150 @@ export function LearningPathsSection({
           </div>
         </div>
       )}
+      {selectedPathForTrainees && (() => {
+        const path = paths.find(p => p.id === selectedPathForTrainees);
+        const summary = progressSummary[selectedPathForTrainees] as any;
+        const assignedIds = path?.assignedToTraineeIds || [];
+        const trainees = allTrainees.filter(t => assignedIds.includes(t.id));
+
+        // Prepare chart data
+        let completed = 0, inProgress = 0, notStarted = 0;
+        trainees.forEach(t => {
+          const p = summary?.traineeProgressMap?.[t.id] || 0;
+          if (p === 100) completed++;
+          else if (p > 0) inProgress++;
+          else notStarted++;
+        });
+        const chartData = [
+          { name: 'Completed', value: completed, color: '#10b981' },
+          { name: 'In Progress', value: inProgress, color: '#4f46e5' },
+          { name: 'Not Started', value: notStarted, color: '#94a3b8' }
+        ].filter(d => d.value > 0);
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '850px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>Trainees Progress: {path?.title}</h2>
+                <button onClick={() => setSelectedPathForTrainees(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
+              </div>
+              <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                
+                {/* Graphical Progress Summary */}
+                {trainees.length > 0 && chartData.length > 0 && (
+                  <div style={{ display: 'flex', gap: '20px', alignItems: 'center', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ width: '200px', height: '200px' }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
+                            {chartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <RechartsTooltip />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 600, color: '#334155' }}>Cohort Overview</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {chartData.map((d, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: d.color }} />
+                              <span style={{ fontSize: '14px', color: '#475569', fontWeight: 500 }}>{d.name}</span>
+                            </div>
+                            <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{d.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Trainee Table */}
+                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Trainee Name</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Email</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Path Progress</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trainees.map(t => {
+                        const progress = summary?.traineeProgressMap?.[t.id] || 0;
+                        const isExpanded = expandedTraineeId === t.id;
+                        return (
+                          <React.Fragment key={t.id}>
+                            <tr 
+                              style={{ 
+                                borderBottom: isExpanded ? 'none' : '1px solid #e2e8f0', 
+                                cursor: 'pointer',
+                                background: isExpanded ? '#f0f9ff' : 'transparent',
+                                transition: 'background 0.2s'
+                              }}
+                              onClick={() => handleTraineeRowClick(t.id, selectedPathForTrainees)}
+                              onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = '#f8fafc'; }}
+                              onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}
+                            >
+                              <td style={{ padding: '12px 16px', fontWeight: 500, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontSize: '16px', color: '#94a3b8', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>
+                                {t.firstName} {t.lastName}
+                              </td>
+                              <td style={{ padding: '12px 16px', color: '#64748b' }}>{t.email}</td>
+                              <td style={{ padding: '12px 16px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <div style={{ flex: 1, height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                    <div style={{ height: '100%', background: progress === 100 ? '#10b981' : '#4f46e5', width: `${progress}%`, transition: 'width 0.5s' }} />
+                                  </div>
+                                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', width: '35px' }}>{progress}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                                <td colSpan={3} style={{ padding: '16px 24px' }}>
+                                  {!expandedTraineeStats ? (
+                                    <div style={{ fontSize: '13px', color: '#64748b' }}>Loading detailed progress...</div>
+                                  ) : (
+                                    <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                                      <div style={{ flex: '1 1 200px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Lessons Completed</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.completedLessons} / {expandedTraineeStats.totalLessons}</div>
+                                      </div>
+                                      <div style={{ flex: '1 1 200px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Tasks Approved</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.tasksAccepted} / {expandedTraineeStats.totalAssignments}</div>
+                                      </div>
+                                      <div style={{ flex: '1 1 200px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Average Score</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.averageScore}%</div>
+                                      </div>
+                                      <div style={{ flex: '1 1 200px' }}>
+                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Resources Visited</div>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.visitedResources} / {expandedTraineeStats.totalResources}</div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                      {trainees.length === 0 && (
+                        <tr><td colSpan={3} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No trainees assigned to this path.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

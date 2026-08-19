@@ -25,9 +25,14 @@ export class LessonController {
   constructor(private readonly lessonService: LessonEntityService) {}
 
   @Get()
-  async findAll(@Query('moduleId') moduleId?: string, @Query('learningPathId') learningPathId?: string) {
-    if (moduleId) return await this.lessonService.findLessonsByModuleId(moduleId);
-    if (learningPathId) return await this.lessonService.findLessonsByPathId(learningPathId);
+  async findAll(
+    @Query('moduleId') moduleId?: string,
+    @Query('learningPathId') learningPathId?: string,
+  ) {
+    if (moduleId)
+      return await this.lessonService.findLessonsByModuleId(moduleId);
+    if (learningPathId)
+      return await this.lessonService.findLessonsByPathId(learningPathId);
     return await this.lessonService.findAll();
   }
 
@@ -41,10 +46,12 @@ export class LessonController {
   @Roles('Admin', 'Trainer')
   async createLesson(@Body() dto: any, @GetUser() currentUser: any) {
     if (!dto.moduleId) {
-      throw new BadRequestException('moduleId is required in payload to create a lesson.');
+      throw new BadRequestException(
+        'moduleId is required in payload to create a lesson.',
+      );
     }
     await this.verifyOwnerOrAdmin(dto.moduleId, currentUser);
-    
+
     const userId = currentUser.id || currentUser.sub;
     return await this.lessonService.createLesson(dto, userId);
   }
@@ -52,10 +59,14 @@ export class LessonController {
   // 🔒 EDIT LESSON
   @Put(':id')
   @Roles('Admin', 'Trainer')
-  async updateLesson(@Param('id') id: string, @Body() dto: any, @GetUser() currentUser: any) {
+  async updateLesson(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @GetUser() currentUser: any,
+  ) {
     const lesson = await this.lessonService.findLessonById(id);
     const moduleId = lesson.module?.id;
-    
+
     await this.verifyOwnerOrAdmin(moduleId, currentUser);
     return await this.lessonService.updateLesson(id, dto);
   }
@@ -73,17 +84,23 @@ export class LessonController {
   }
 
   // 🛡️ Helper: Handles safe role extraction & ID comparison
-  private async verifyOwnerOrAdmin(moduleId: string | undefined, currentUser: any) {
+  private async verifyOwnerOrAdmin(
+    moduleId: string | undefined,
+    currentUser: any,
+  ) {
     if (!currentUser) {
       throw new ForbiddenException('User authentication session missing.');
     }
 
     // Extract roles from all common user payload variations
     const roles: string[] = [];
-    if (typeof currentUser.role === 'string') roles.push(currentUser.role.toLowerCase());
+    if (typeof currentUser.role === 'string')
+      roles.push(currentUser.role.toLowerCase());
     if (currentUser.role?.name) roles.push(currentUser.role.name.toLowerCase());
-    if (typeof currentUser.primaryRole === 'string') roles.push(currentUser.primaryRole.toLowerCase());
-    if (currentUser.primaryRole?.name) roles.push(currentUser.primaryRole.name.toLowerCase());
+    if (typeof currentUser.primaryRole === 'string')
+      roles.push(currentUser.primaryRole.toLowerCase());
+    if (currentUser.primaryRole?.name)
+      roles.push(currentUser.primaryRole.name.toLowerCase());
     if (Array.isArray(currentUser.roles)) {
       currentUser.roles.forEach((r: any) => {
         if (typeof r === 'string') roles.push(r.toLowerCase());
@@ -104,11 +121,14 @@ export class LessonController {
       throw new ForbiddenException('User ID token claim is missing.');
     }
 
-    const isOwner = await this.lessonService.checkIsModulePathOwner(moduleId, userId);
+    const isOwner = await this.lessonService.checkIsModulePathOwner(
+      moduleId,
+      userId,
+    );
 
     if (!isOwner) {
       throw new ForbiddenException(
-        'Access Denied: Only the creator of this Learning Path or an Admin can modify lessons.'
+        'Access Denied: Only the creator of this Learning Path or an Admin can modify lessons.',
       );
     }
   }

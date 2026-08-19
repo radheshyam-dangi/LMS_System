@@ -41,16 +41,23 @@ export class AssignmentController {
   @Roles('Admin', 'Trainer')
   async evaluateSubmission(
     @Param('id') submissionId: string,
-    @Body() dto: { score: number; feedback: string; status?: 'Accepted' | 'Rejected' | 'Evaluated' },
+    @Body()
+    dto: {
+      score: number;
+      feedback: string;
+      status?: 'Approved' | 'Rejected' | 'Evaluated';
+    },
     @GetUser() currentUser: any,
   ) {
     const evaluatorId = currentUser?.id || currentUser?.sub;
+    const isAdmin = this.assignmentService.isAdminUser(currentUser);
     return await this.assignmentService.evaluateSubmission(
       submissionId,
       evaluatorId,
       dto.score,
       dto.feedback,
-      dto.status || 'Accepted',
+      dto.status || 'Approved',
+      isAdmin
     );
   }
 
@@ -68,7 +75,11 @@ export class AssignmentController {
       submissionId,
     );
     // Also clear generic evaluation-queue notifications if linked by type only
-    await this.notificationService.markByTypes(userId, ['submission_pending'], submissionId);
+    await this.notificationService.markByTypes(
+      userId,
+      ['submission_pending'],
+      submissionId,
+    );
     const unreadCount = await this.notificationService.countUnread(userId);
     return { affected, unreadCount };
   }
@@ -105,7 +116,9 @@ export class AssignmentController {
     if (roles.includes('admin') || roles.includes('trainer')) return all;
 
     const traineeId = currentUser?.id || currentUser?.sub;
-    return all.filter((a) => (a.assignedToTraineeIds || []).includes(traineeId));
+    const myAssignments = await this.assignmentService.findMyAssignments(traineeId);
+    const myAssignmentIds = new Set(myAssignments.map((a) => a.id));
+    return all.filter((a) => myAssignmentIds.has(a.id));
   }
 
   @Post(':id/submit')
@@ -135,7 +148,8 @@ export class AssignmentController {
     const task = await this.assignmentService.findOne(id);
     await this.assignmentService.assertCanManageAssignment(task, currentUser);
     const ids = body.traineeIds || (body.traineeId ? [body.traineeId] : []);
-    return await this.assignmentService.assignToTrainees(id, ids);
+    const assignerId = currentUser.id || currentUser.sub;
+    return await this.assignmentService.assignToTrainees(id, ids, assignerId);
   }
 
   @Get()
@@ -144,16 +158,22 @@ export class AssignmentController {
     @Query('moduleId') moduleId?: string,
     @Query('learningPathId') learningPathId?: string,
     @Query('externalOnly') externalOnly?: string,
+    @GetUser() currentUser?: any,
   ) {
     if (lessonId) {
-      return await this.assignmentService.findByLessonId(lessonId);
+      return await this.assignmentService.findByLessonId(lessonId, currentUser);
     }
     if (externalOnly === 'true' || externalOnly === '1') {
-      return await this.assignmentService.findExternalAssignments();
+      return await this.assignmentService.findExternalAssignments(currentUser);
     }
-    const all = await this.assignmentService.findAll();
+    const all = await this.assignmentService.findAll(currentUser);
     return all.filter((a) => {
-      if (moduleId && a.module?.id !== moduleId && (a as any).moduleId !== moduleId) return false;
+      if (
+        moduleId &&
+        a.module?.id !== moduleId &&
+        (a as any).moduleId !== moduleId
+      )
+        return false;
       if (
         learningPathId &&
         a.learningPath?.id !== learningPathId &&
@@ -185,9 +205,13 @@ export class AssignmentController {
         ...(Array.isArray(currentUser?.roles) ? currentUser.roles : []),
       ].map((r) => (typeof r === 'string' ? r : r?.name || '').toLowerCase());
 
-      const isTrainerOrAdmin = roles.includes('admin') || roles.includes('trainer');
+      const isTrainerOrAdmin =
+        roles.includes('admin') || roles.includes('trainer');
       if (!isTrainerOrAdmin) {
-        const isOwner = await this.assignmentService.checkIsTaskPathOwner(dto.lessonId, userId);
+        const isOwner = await this.assignmentService.checkIsTaskPathOwner(
+          dto.lessonId,
+          userId,
+        );
         if (!isOwner) {
           throw new ForbiddenException(
             'Only trainers or admins can create path-linked assignments.',
@@ -201,7 +225,11 @@ export class AssignmentController {
 
   @Put(':id')
   @Roles('Admin', 'Trainer')
-  async updateAssignment(@Param('id') id: string, @Body() dto: any, @GetUser() currentUser: any) {
+  async updateAssignment(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @GetUser() currentUser: any,
+  ) {
     const task = await this.assignmentService.findOne(id);
     await this.assignmentService.assertCanManageAssignment(task, currentUser);
     return await this.assignmentService.updateAssignment(id, dto);

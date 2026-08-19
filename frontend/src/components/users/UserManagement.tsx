@@ -1,6 +1,8 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import "../../App.css";
 import { API_BASE_URL } from '../../api';
+import { analyticsService } from '../../services/lmsApi';
+import { UserProfileDrawer } from './UserProfileDrawer';
 
 export type UserStatus = 'Active' | 'Inactive' | 'At Risk';
 export type AppRole = 'Admin' | 'Trainer' | 'Trainee';
@@ -89,6 +91,27 @@ const EMPTY_INVITE_FORM = {
   role: 'Trainee' as AppRole,
 };
 
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia(query);
+    if (media.matches !== matches) setMatches(media.matches);
+    const listener = () => setMatches(media.matches);
+    media.addEventListener('change', listener);
+    return () => media.removeEventListener('change', listener);
+  }, [matches, query]);
+  return matches;
+}
+
 interface UsersSectionProps {
   onOpenInviteModal: () => void;
   accessToken?: string;
@@ -100,7 +123,11 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<'All' | AppRole>('All');
+  const [statusFilter, setStatusFilter] = useState<'All' | 'At Risk'>('All');
+  
+  const isMobile = useMediaQuery('(max-width: 768px)');
   
   // MUTUALLY EXCLUSIVE MODAL STATE MANAGER
   const [activeModal, setActiveModal] = useState<'NONE' | 'ADD_USER' | 'VIEW_DETAILS'>('NONE');
@@ -133,28 +160,35 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
     return users.reduce(
       (acc, user) => {
         acc.total += 1;
-        if (user.primaryRole === 'Trainer') acc.trainers += 1;
-        if (user.primaryRole === 'Trainee') acc.trainees += 1;
+        if (user.primaryRole === 'Trainer' && user.status !== 'Inactive') acc.activeTrainers += 1;
+        if (user.primaryRole === 'Trainee' && user.status !== 'Inactive') acc.activeTrainees += 1;
         if (user.status === 'At Risk') acc.atRisk += 1;
         return acc;
       },
-      { total: 0, trainers: 0, trainees: 0, atRisk: 0 }
+      { total: 0, activeTrainers: 0, activeTrainees: 0, atRisk: 0 }
     );
   }, [users]);
 
-  const avgProgress = useMemo(() => {
-    if (users.length === 0) return 0;
-    return Math.round(users.reduce((sum, u) => sum + u.progress, 0) / users.length);
-  }, [users]);
+  const [avgProgress, setAvgProgress] = useState<number>(0);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    analyticsService.fetchDashboard(accessToken, 'Admin')
+      .then(data => {
+        setAvgProgress(data.completionRate ?? 0);
+      })
+      .catch(err => console.error("Failed to fetch avg progress", err));
+  }, [accessToken]);
 
   const filteredUsers = useMemo(() => {
     return users.filter((user) => {
       const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
-      const matchesSearch = fullName.includes(searchTerm.toLowerCase()) || user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = fullName.includes(debouncedSearchTerm.toLowerCase()) || user.email.toLowerCase().includes(debouncedSearchTerm.toLowerCase());
       const matchesRole = selectedRoleFilter === 'All' || user.primaryRole === selectedRoleFilter;
-      return matchesSearch && matchesRole;
+      const matchesStatus = statusFilter === 'All' || user.status === statusFilter;
+      return matchesSearch && matchesRole && matchesStatus;
     });
-  }, [users, searchTerm, selectedRoleFilter]);
+  }, [users, debouncedSearchTerm, selectedRoleFilter, statusFilter]);
 
   const handleOpenAddUserModal = () => {
     // setInviteForm(EMPTY_INVITE_FORM);
@@ -214,7 +248,7 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
 
       {/* 2. Top Metric Cards Row */}
       <section className="metrics-grid-row">
-        <div className="metric-panel-card">
+        <div className="metric-panel-card clickable" onClick={() => { setSelectedRoleFilter('All'); setStatusFilter('All'); }}>
           <div className="card-header-info">
             <h3>{metrics.total}</h3>
             <span className="card-icon">👤</span>
@@ -222,9 +256,17 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
           <p className="card-label">Total Users <span className="fade-text">across all roles</span></p>
         </div>
 
-        <div className="metric-panel-card">
+        <div className="metric-panel-card clickable" onClick={() => { setSelectedRoleFilter('Trainee'); setStatusFilter('All'); }}>
           <div className="card-header-info">
-            <h3>{metrics.trainers}</h3>
+            <h3>{metrics.activeTrainees}</h3>
+            <span className="card-icon">🎓</span>
+          </div>
+          <p className="card-label">Active Trainees <span className="fade-text">in platform</span></p>
+        </div>
+
+        <div className="metric-panel-card clickable" onClick={() => { setSelectedRoleFilter('Trainer'); setStatusFilter('All'); }}>
+          <div className="card-header-info">
+            <h3>{metrics.activeTrainers}</h3>
             <span className="card-icon">👥</span>
           </div>
           <p className="card-label">Active Trainers <span className="fade-text">in platform</span></p>
@@ -235,10 +277,10 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
             <h3>{avgProgress}%</h3>
             <span className="card-icon">📉</span>
           </div>
-          <p className="card-label">Avg. Progress <span className="fade-text">across all paths</span></p>
+          <p className="card-label">Avg. Trainee Progress <span className="fade-text">across all paths</span></p>
         </div>
 
-        <div className="metric-panel-card risk-highlight">
+        <div className="metric-panel-card risk-highlight clickable" onClick={() => { setSelectedRoleFilter('All'); setStatusFilter('At Risk'); }}>
           <div className="card-header-info">
             <h3 className="risk-text">{metrics.atRisk}</h3>
             <span className="card-icon risk-icon">⚠️</span>
@@ -280,7 +322,15 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
 
       {/* 4. High Fidelity Data Table */}
       <section className="table-viewport-container">
-        {isLoading && <div className="table-status-message">Loading users…</div>}
+        {isLoading && (
+          <div className="table-status-message">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {[1, 2, 3].map(i => (
+                <div key={i} className="skeleton-row" style={{ height: '56px', background: '#f1f5f9', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {!isLoading && loadError && (
           <div className="table-status-message table-status-error">
@@ -292,10 +342,46 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
         )}
 
         {!isLoading && !loadError && filteredUsers.length === 0 && (
-          <div className="table-status-message">No users match your search/filters.</div>
+          <div className="empty-state-container" style={{ textAlign: 'center', padding: '64px 24px' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+            <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>No users found</h3>
+            <p style={{ color: '#64748b', margin: '0 0 24px' }}>Try adjusting your search or role filters to find who you're looking for.</p>
+            <button type="button" className="retry-load-btn" onClick={() => { setSearchTerm(''); setSelectedRoleFilter('All'); setStatusFilter('All'); }}>
+              Clear Filters
+            </button>
+          </div>
         )}
 
         {!isLoading && !loadError && filteredUsers.length > 0 && (
+          isMobile ? (
+            <div className="mobile-user-card-list">
+              {filteredUsers.map((user) => (
+                <div key={user.id} className="mobile-user-card" onClick={() => handleOpenDetailsModal(user)}>
+                  <div className="mobile-user-header">
+                    <div className="identity-data-cell">
+                      <div className="user-initials-avatar">
+                        {user.firstName[0]}{user.lastName[0]}
+                      </div>
+                      <div className="name-email-stack">
+                        <span className="full-name-string">{user.firstName} {user.lastName}</span>
+                        <span className="email-string">{user.email}</span>
+                      </div>
+                    </div>
+                    <button type="button" className="row-ellipsis-menu" onClick={(e) => e.stopPropagation()}>•••</button>
+                  </div>
+                  <div className="mobile-user-meta">
+                    <span className={`role-pill-badge role-${user.primaryRole.toLowerCase()}`}>
+                      {user.primaryRole}
+                    </span>
+                    <span className="registry-date-label" style={{ fontSize: '13px', color: '#64748b' }}>Joined: {user.joinedDisplay}</span>
+                  </div>
+                  <button type="button" className="mobile-view-details-btn" onClick={(e) => { e.stopPropagation(); handleOpenDetailsModal(user); }}>
+                    View Details
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
           <table className="fidelity-data-table">
             <thead>
               <tr>
@@ -307,7 +393,7 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
             </thead>
             <tbody>
               {filteredUsers.map((user) => (
-                <tr key={user.id} className="interactive-data-row">
+                <tr key={user.id} className="interactive-data-row" onClick={() => handleOpenDetailsModal(user)}>
                   <td className="identity-data-cell">
                     <div className="user-initials-avatar">
                       {user.firstName[0]}{user.lastName[0]}
@@ -325,11 +411,11 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
                   <td><span className="registry-date-label">{user.joinedDisplay}</span></td>
                   <td className="text-right-aligned">
                     <div className="actions-button-wrapper">
-                      <button type="button" className="row-ellipsis-menu">•••</button>
+                      <button type="button" className="row-ellipsis-menu" onClick={(e) => e.stopPropagation()}>•••</button>
                       <button
                         type="button"
                         className="view-details-action-btn"
-                        onClick={() => handleOpenDetailsModal(user)}
+                        onClick={(e) => { e.stopPropagation(); handleOpenDetailsModal(user); }}
                       >
                         View Details
                       </button>
@@ -339,44 +425,17 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
               ))}
             </tbody>
           </table>
+          )
         )}
       </section>
 
-      {/* 5. USER DETAILS MODAL (ONLY OPEN IF STATE IS VIEW_DETAILS) */}
-      {activeModal === 'VIEW_DETAILS' && selectedUser && (
-        <div className="modal-backdrop-blur-overlay" onClick={handleCloseAnyModal}>
-          <div className="modal-popup-container" onClick={(e) => e.stopPropagation()}>
-            <header className="modal-popup-header">
-              <h2>User Details Profile</h2>
-              <button type="button" className="modal-close-icon-btn" onClick={handleCloseAnyModal}>
-                Close ×
-              </button>
-            </header>
-
-            <div className="modal-profile-hero-section">
-              
-              <h2 className="modal-user-fullname">{selectedUser.firstName} {selectedUser.lastName}</h2>
-              <p className="modal-user-email">{selectedUser.email}</p>
-            </div>
-
-            <div className="modal-profile-metadata-grid">
-              <div className="grid-meta-box">
-                <label>Primary Role - </label>
-                <strong>{selectedUser.primaryRole}</strong>
-              </div>
-              <div className="grid-meta-box">
-                <label>Status - </label>
-                <strong className={`status-text-${selectedUser.status.toLowerCase()}`}>
-                  {selectedUser.status}
-                </strong>
-              </div>
-              <div className="grid-meta-box">
-                <label>Joined - </label>
-                <strong>{selectedUser.joinedDisplay}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* 5. USER DETAILS DRAWER */}
+      {selectedUser && (
+        <UserProfileDrawer
+          user={selectedUser}
+          isOpen={activeModal === 'VIEW_DETAILS'}
+          onClose={handleCloseAnyModal}
+        />
       )}
 
       {/* 6. ADD TO SKILLFORGE MODAL (ONLY OPEN IF STATE IS ADD_USER) */}

@@ -8,7 +8,11 @@ import { ForeignKeys } from '../../constants/foreignKeys';
 @Entity(Entities.UserLessonProgress)
 @Unique(['user', 'lesson'])
 export class UserLessonProgressEntity extends BaseEntity {
-  @Column({ type: 'timestamp', name: 'completedAt', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({
+    type: 'timestamp',
+    name: 'completedAt',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   completedAt: Date;
 
   @Column({ type: 'boolean', default: true })

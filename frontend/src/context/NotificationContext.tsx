@@ -21,6 +21,7 @@ type NotificationContextValue = {
   markSectionRead: (section: string) => Promise<void>;
   markRelatedRead: (entityType: string, entityId: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  deleteNotification: (id: string) => Promise<void>;
 };
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
@@ -65,8 +66,12 @@ export function NotificationProvider({ accessToken, children }: ProviderProps) {
       return;
     }
     void refresh();
-    const id = window.setInterval(() => void refresh(), 8000);
-    return () => window.clearInterval(id);
+
+    const intervalId = setInterval(() => {
+      void refresh();
+    }, 10000); // Poll every 10 seconds
+
+    return () => clearInterval(intervalId);
   }, [accessToken, refresh]);
 
   const markAsRead = useCallback(
@@ -115,6 +120,18 @@ export function NotificationProvider({ accessToken, children }: ProviderProps) {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   }, []);
 
+  const deleteNotification = useCallback(async (id: string) => {
+    if (!tokenRef.current) return;
+    await notificationService.deleteNotification(id, tokenRef.current);
+    setNotifications((prev) => {
+      const removed = prev.find(n => n.id === id);
+      if (removed && !removed.isRead) {
+         setUnreadCount(c => Math.max(0, c - 1));
+      }
+      return prev.filter((n) => n.id !== id);
+    });
+  }, []);
+
   const value = useMemo(
     () => ({
       notifications,
@@ -124,8 +141,9 @@ export function NotificationProvider({ accessToken, children }: ProviderProps) {
       markSectionRead,
       markRelatedRead,
       markAllRead,
+      deleteNotification,
     }),
-    [notifications, unreadCount, refresh, markAsRead, markSectionRead, markRelatedRead, markAllRead],
+    [notifications, unreadCount, refresh, markAsRead, markSectionRead, markRelatedRead, markAllRead, deleteNotification],
   );
 
   return (
@@ -144,6 +162,7 @@ export function useNotifications() {
       markSectionRead: async () => undefined,
       markRelatedRead: async () => undefined,
       markAllRead: async () => undefined,
+      deleteNotification: async () => undefined,
     };
   }
   return ctx;

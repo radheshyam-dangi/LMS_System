@@ -22,7 +22,11 @@ export class SubmissionEntity extends BaseEntity {
   @Column({ type: 'varchar', default: 'pending' })
   status: string;
 
-  @Column({ type: 'timestamp', name: 'submittedAt', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({
+    type: 'timestamp',
+    name: 'submittedAt',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   submittedAt: Date;
 
   @ManyToOne(() => AssignmentEntity, { onDelete: 'CASCADE' })

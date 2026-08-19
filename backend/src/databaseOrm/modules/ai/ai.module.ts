@@ -7,7 +7,13 @@ import { AiMessageEntity } from '../../entities/aiMessage.entity';
 import { AiFeedbackEntity } from '../../entities/aiFeedback.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([AiConversationEntity, AiMessageEntity, AiFeedbackEntity])],
+  imports: [
+    TypeOrmModule.forFeature([
+      AiConversationEntity,
+      AiMessageEntity,
+      AiFeedbackEntity,
+    ]),
+  ],
   controllers: [AiController],
   providers: [AiEntityService],
   exports: [AiEntityService],

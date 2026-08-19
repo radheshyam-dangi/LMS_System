@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { EnrollmentEntity } from '../../entities/enrollment.entity';
 import { UserEntity } from '../../entities/user.entity';
@@ -16,7 +20,7 @@ export class EnrollmentEntityService {
     this.pathRepository = this.datasource.getRepository(LearningPathEntity);
   }
 
-  async create(userId: string, learningPathId: string, status = 'active') {
+  async create(userId: string, learningPathId: string, status = 'active', assignedById?: string) {
     if (!userId || !learningPathId) {
       throw new BadRequestException('userId and learningPathId are required.');
     }
@@ -24,11 +28,19 @@ export class EnrollmentEntityService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException(`User "${userId}" not found.`);
 
-    const path = await this.pathRepository.findOne({ where: { id: learningPathId } });
-    if (!path) throw new NotFoundException(`Learning path "${learningPathId}" not found.`);
+    const path = await this.pathRepository.findOne({
+      where: { id: learningPathId },
+    });
+    if (!path)
+      throw new NotFoundException(
+        `Learning path "${learningPathId}" not found.`,
+      );
 
     const existing = await this.repository.findOne({
-      where: { user: { id: userId }, learningPath: { id: learningPathId } } as any,
+      where: {
+        user: { id: userId },
+        learningPath: { id: learningPathId },
+      },
       relations: ['user', 'learningPath'],
     });
     if (existing) return existing;
@@ -39,6 +51,7 @@ export class EnrollmentEntityService {
         learningPath: { id: learningPathId } as any,
         status,
         enrolledAt: new Date(),
+        assignedBy: assignedById ? { id: assignedById } as any : null,
       }),
     );
   }
@@ -46,7 +59,8 @@ export class EnrollmentEntityService {
   async findAll(filters?: { userId?: string; learningPathId?: string }) {
     const where: any = {};
     if (filters?.userId) where.user = { id: filters.userId };
-    if (filters?.learningPathId) where.learningPath = { id: filters.learningPathId };
+    if (filters?.learningPathId)
+      where.learningPath = { id: filters.learningPathId };
 
     return await this.repository.find({
       where: Object.keys(where).length ? where : undefined,
@@ -60,7 +74,8 @@ export class EnrollmentEntityService {
       where: { id },
       relations: ['user', 'learningPath'],
     });
-    if (!enrollment) throw new NotFoundException(`Enrollment "${id}" not found.`);
+    if (!enrollment)
+      throw new NotFoundException(`Enrollment "${id}" not found.`);
     return enrollment;
   }
 

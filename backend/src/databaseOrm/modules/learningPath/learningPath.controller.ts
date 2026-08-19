@@ -24,7 +24,6 @@ import { Roles } from '../../../common/decorator/roles.decorator';
 export class LearningPathController {
   constructor(private readonly lpService: LearningPathEntityService) {}
 
-  
   @Get()
   async findAll() {
     return await this.lpService.findAll();
@@ -50,7 +49,11 @@ export class LearningPathController {
    */
   @Put(':id')
   @Roles('Admin', 'Trainer')
-  async update(@Param('id') id: string, @Body() dto: any, @GetUser() currentUser: any) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @GetUser() currentUser: any,
+  ) {
     await this.verifyOwnerOrAdmin(id, currentUser);
     return await this.lpService.updatePath(id, dto);
   }
@@ -69,22 +72,28 @@ export class LearningPathController {
   /**
    * 5. ASSIGN TRAINEE - ALL Trainers & Admins can assign trainees!
    */
-@Post(':id/assign')
-@Roles('Admin', 'Trainer')
-async assignTrainee(@Param('id') id: string, @Body() body: { traineeId?: string; traineeIds?: string[] }) {
-  const idsToAssign = body.traineeIds || (body.traineeId ? [body.traineeId] : []);
+  @Post(':id/assign')
+  @Roles('Admin', 'Trainer')
+  async assignTrainee(
+    @Param('id') id: string,
+    @Body() body: { traineeId?: string; traineeIds?: string[] },
+    @GetUser() currentUser: any,
+  ) {
+    const idsToAssign =
+      body.traineeIds || (body.traineeId ? [body.traineeId] : []);
 
-  if (idsToAssign.length === 0) {
-    throw new BadRequestException('At least one Trainee ID is required.');
+    if (idsToAssign.length === 0) {
+      throw new BadRequestException('At least one Trainee ID is required.');
+    }
+
+    let updatedPath;
+    const assignerId = currentUser?.id || currentUser?.sub;
+    for (const tId of idsToAssign) {
+      updatedPath = await this.lpService.assignTraineeToPath(id, tId, assignerId);
+    }
+
+    return updatedPath;
   }
-
-  let updatedPath;
-  for (const tId of idsToAssign) {
-    updatedPath = await this.lpService.assignTraineeToPath(id, tId);
-  }
-
-  return updatedPath;
-}
 
   // 🛡️ Helper: Verify Owner or Admin
   private async verifyOwnerOrAdmin(pathId: string, currentUser: any) {
@@ -105,9 +114,13 @@ async assignTrainee(@Param('id') id: string, @Body() body: { traineeId?: string;
     const ownerId = path?.createdBy?.id || (path as any)?.createdById;
     const currentUserId = currentUser.id || currentUser.sub;
 
-    if (!path || String(ownerId || '').toLowerCase() !== String(currentUserId || '').toLowerCase()) {
+    if (
+      !path ||
+      String(ownerId || '').toLowerCase() !==
+        String(currentUserId || '').toLowerCase()
+    ) {
       throw new ForbiddenException(
-        'Access Denied: Only the Learning Path Owner or an Admin can edit or delete this path.'
+        'Access Denied: Only the Learning Path Owner or an Admin can edit or delete this path.',
       );
     }
   }

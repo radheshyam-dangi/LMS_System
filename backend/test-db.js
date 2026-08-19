@@ -1,0 +1,1 @@
+const { Client } = require('pg'); async function test(pw) { const client = new Client({ user: 'postgres', host: 'localhost', database: 'lms_db', password: pw, port: 5432 }); try { await client.connect(); console.log('SUCCESS:', pw); client.end(); } catch (e) { console.log('FAIL:', pw, e.message); } } test('r2!Yg8pT\');

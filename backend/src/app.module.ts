@@ -21,15 +21,26 @@ import { ProgressModule } from './databaseOrm/modules/progress/progress.module';
 import { AiModule } from './databaseOrm/modules/ai/ai.module';
 import { AnalyticsModule } from './databaseOrm/modules/analytics/analytics.module';
 import { NotificationModule } from './databaseOrm/modules/notification/notification.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { HealthModule } from './databaseOrm/modules/health/health.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, 
+      isGlobal: true,
+      envFilePath: '.env',
     }),
 
     // Pass the AppDataSource options directly into TypeOrmModule
     TypeOrmModule.forRoot(AppDataSource.options),
+
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 100,
+      },
+    ]),
+    HealthModule,
 
     UserModule,
     RoleModule,

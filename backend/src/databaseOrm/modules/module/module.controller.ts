@@ -26,7 +26,8 @@ export class ModuleController {
 
   @Get()
   async findAll(@Query('learningPathId') learningPathId?: string) {
-    if (learningPathId) return await this.moduleService.findModulesByPathId(learningPathId);
+    if (learningPathId)
+      return await this.moduleService.findModulesByPathId(learningPathId);
     return await this.moduleService.findAll();
   }
 
@@ -39,19 +40,28 @@ export class ModuleController {
   @Roles('Admin', 'Trainer')
   async create(@Body() dto: any, @GetUser() currentUser: any) {
     if (!dto.learningPathId) {
-      throw new BadRequestException('learningPathId is required to create a module.');
+      throw new BadRequestException(
+        'learningPathId is required to create a module.',
+      );
     }
     await this.verifyOwnerOrAdmin(dto.learningPathId, currentUser);
-    return await this.moduleService.createModuleForPath(dto, currentUser.id || currentUser.sub);
+    return await this.moduleService.createModuleForPath(
+      dto,
+      currentUser.id || currentUser.sub,
+    );
   }
 
   // 🔒 PUT ENDPOINT UPDATE
   @Put(':id')
   @Roles('Admin', 'Trainer')
-  async updateModule(@Param('id') id: string, @Body() dto: any, @GetUser() currentUser: any) {
+  async updateModule(
+    @Param('id') id: string,
+    @Body() dto: any,
+    @GetUser() currentUser: any,
+  ) {
     // 1. Fetch Module with relations
     const module = await this.moduleService.findModuleWithDetails(id);
-    
+
     // 2. Safely resolve Learning Path ID
     const lpId = module.learningPath?.id;
     await this.verifyOwnerOrAdmin(lpId, currentUser);
@@ -68,7 +78,10 @@ export class ModuleController {
     return await this.moduleService.deleteModule(id);
   }
 
-  private async verifyOwnerOrAdmin(learningPathId: string | undefined, currentUser: any) {
+  private async verifyOwnerOrAdmin(
+    learningPathId: string | undefined,
+    currentUser: any,
+  ) {
     const roles: string[] = [];
     const push = (v: any) => {
       if (!v) return;
@@ -83,15 +96,20 @@ export class ModuleController {
     if (roles.includes('admin') || roles.includes('trainer')) return;
 
     if (!learningPathId) {
-      throw new BadRequestException('Associated Learning Path ID was not found for this module.');
+      throw new BadRequestException(
+        'Associated Learning Path ID was not found for this module.',
+      );
     }
 
     const userId = currentUser.id || currentUser.sub;
-    const isOwner = await this.moduleService.checkIsPathOwner(learningPathId, userId);
+    const isOwner = await this.moduleService.checkIsPathOwner(
+      learningPathId,
+      userId,
+    );
 
     if (!isOwner) {
       throw new ForbiddenException(
-        'Access Denied: Only the creator of this Learning Path or an Admin can modify this module.'
+        'Access Denied: Only the creator of this Learning Path or an Admin can modify this module.',
       );
     }
   }

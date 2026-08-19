@@ -8,10 +8,10 @@ import { RoleEntity } from '../../entities/role.entity';
 @Module({
   imports: [
     // Registers the entity for TypeORM operations inside this scope
-    TypeOrmModule.forFeature([UserEntity, RoleEntity])
+    TypeOrmModule.forFeature([UserEntity, RoleEntity]),
   ],
   controllers: [UserController],
   providers: [UserEntityService],
-  exports: [UserEntityService]
+  exports: [UserEntityService],
 })
 export class UserModule {}

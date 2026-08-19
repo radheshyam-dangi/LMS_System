@@ -128,8 +128,12 @@ export function ModulesManagementSection({
   };
 
   const closeModule = () => {
-    setOpenModuleId(null);
-    setOpenModuleData(null);
+    if (isTrainee) {
+      onBack();
+    } else {
+      setOpenModuleId(null);
+      setOpenModuleData(null);
+    }
   };
 
   // ── Mark lesson watched (Trainee) ─────────────────────────────────────────
@@ -262,9 +266,8 @@ export function ModulesManagementSection({
       const s = subByAssignment.get(t.id);
       return s && typeof s.score === 'number';
     });
-    const avgScore = tasksScored.length > 0
-      ? Math.round(tasksScored.reduce((sum: number, t: any) => sum + (subByAssignment.get(t.id)?.score || 0), 0) / tasksScored.length)
-      : 0;
+    const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
+    const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
     const calculatedProgress = lessons.length
       ? Math.round((completedLessons / lessons.length) * 100)
@@ -316,47 +319,115 @@ export function ModulesManagementSection({
               {selectedPathTitle}
             </button>
             <span>›</span>
-            <span style={{ color: '#0f172a', fontWeight: 600 }}>{openModuleData.title}</span>
+            {modules.length > 1 ? (
+              <select
+                value={openModuleId || ''}
+                onChange={(e) => void openModule(e.target.value)}
+                style={{
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 6,
+                  background: '#f8fafc',
+                  color: '#0f172a',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  padding: '2px 24px 2px 8px',
+                  cursor: 'pointer',
+                  outline: 'none',
+                  appearance: 'none',
+                  backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2364748b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 4px center',
+                  backgroundSize: '12px'
+                }}
+              >
+                {modules.map((m: any) => (
+                  <option key={m.id} value={m.id}>{m.title}</option>
+                ))}
+              </select>
+            ) : (
+              <span style={{ color: '#0f172a', fontWeight: 600 }}>{openModuleData.title}</span>
+            )}
           </div>
         </div>
 
-        {/* ── Purple Gradient Banner ── */}
-        <div style={{ background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)', color: '#fff', margin: '0 24px', borderRadius: 16, overflow: 'hidden' }}>
-          <div style={{ padding: '32px 40px 24px' }}>
-            <p style={{ fontSize: 11, opacity: 0.85, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+        {/* ── Premium Hero Banner ── */}
+        <div style={{ margin: '0 24px', position: 'relative' }}>
+          <div style={{ 
+            background: 'linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #8b5cf6 100%)', 
+            color: '#fff', 
+            borderRadius: 24, 
+            padding: '48px 48px 64px 48px',
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 20px 40px -10px rgba(79,70,229,0.3)'
+          }}>
+            {/* Decorative background circles */}
+            <div style={{ position: 'absolute', top: -50, right: -50, width: 300, height: 300, background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%' }} />
+            <div style={{ position: 'absolute', bottom: -100, left: 100, width: 250, height: 250, background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%' }} />
+            
+            <p style={{ position: 'relative', fontSize: 12, opacity: 0.9, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 800, color: '#e0e7ff' }}>
               MODULE · {(openModuleData.level || 'Beginner').toUpperCase()} · {selectedPathTitle.toUpperCase()}
             </p>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
+            <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
               <div style={{ flex: 1 }}>
-                <h1 style={{ fontSize: 28, margin: '0 0 10px', fontWeight: 800, lineHeight: 1.2 }}>{openModuleData.title}</h1>
-                <p style={{ margin: 0, opacity: 0.9, fontSize: 14, maxWidth: 680, lineHeight: 1.6 }}>
+                <h1 style={{ fontSize: 36, margin: '0 0 16px', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em' }}>{openModuleData.title}</h1>
+                <p style={{ margin: 0, opacity: 0.9, fontSize: 15, maxWidth: 680, lineHeight: 1.6, color: '#e0e7ff' }}>
                   {openModuleData.description || 'Module content and assessments for this learning track.'}
                 </p>
               </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div style={{ fontSize: 11, opacity: 0.85, fontWeight: 600 }}>Module Progress</div>
-                <div style={{ fontSize: 40, fontWeight: 800, lineHeight: 1 }}>{progressPercent}%</div>
+              <div style={{ textAlign: 'right', flexShrink: 0, background: 'rgba(255,255,255,0.1)', padding: '16px 24px', borderRadius: 16, backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)' }}>
+                <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Module Progress</div>
+                <div style={{ fontSize: 48, fontWeight: 900, lineHeight: 1 }}>{progressPercent}%</div>
               </div>
             </div>
+            
             {/* Progress bar */}
-            <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.25)', borderRadius: 4, marginTop: 22 }}>
-              <div style={{ width: `${progressPercent}%`, height: '100%', background: '#fff', borderRadius: 4, transition: 'width 0.6s ease' }} />
+            <div style={{ position: 'relative', width: '100%', height: 8, background: 'rgba(255,255,255,0.2)', borderRadius: 999, marginTop: 32, overflow: 'hidden' }}>
+              <div style={{ width: `${progressPercent}%`, height: '100%', background: '#10b981', borderRadius: 999, transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 0 10px rgba(16,185,129,0.5)' }} />
             </div>
           </div>
 
-          {/* Stats row */}
-          <div style={{ background: 'rgba(255,255,255,0.95)', color: '#0f172a', padding: '16px 40px', display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
+          {/* Overlapping Stats Row */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(4,1fr)', 
+            gap: 20, 
+            padding: '0 32px',
+            marginTop: -32,
+            position: 'relative',
+            zIndex: 10
+          }}>
             {[
               { icon: '⏱️', label: 'Duration', value: openModuleData.durationLabel || `${openModuleData.durationWeeks || 2} weeks` },
               { icon: '📖', label: 'Lessons', value: isTrainee ? `${completedLessons}/${lessons.length} done` : `${lessons.length} total` },
               { icon: '🎯', label: 'Tasks', value: isTrainee ? `${tasksSubmitted}/${tasks.length} submitted` : `${tasks.length} assigned` },
-              { icon: '🏆', label: 'Avg. Score', value: `${avgScore || 87}/100` },
+              { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
             ].map((m) => (
-              <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 22 }}>{m.icon}</span>
+              <div key={m.label} style={{ 
+                background: 'rgba(255, 255, 255, 0.95)', 
+                backdropFilter: 'blur(10px)',
+                padding: '20px', 
+                borderRadius: 16, 
+                border: '1px solid rgba(255,255,255,0.8)',
+                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01)',
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 16,
+                transition: 'transform 0.2s',
+                cursor: 'default'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                <div style={{ 
+                  width: 48, height: 48, borderRadius: 12, 
+                  background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 
+                }}>
+                  {m.icon}
+                </div>
                 <div>
-                  <span style={{ display: 'block', fontSize: 11, color: '#64748b', fontWeight: 500 }}>{m.label}</span>
-                  <strong style={{ fontSize: 14, color: '#0f172a' }}>{m.value}</strong>
+                  <span style={{ display: 'block', fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{m.label}</span>
+                  <strong style={{ fontSize: 18, color: '#0f172a', fontWeight: 800 }}>{m.value}</strong>
                 </div>
               </div>
             ))}
@@ -367,19 +438,50 @@ export function ModulesManagementSection({
         <div style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
 
           {/* Objectives + Outcomes */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
-            <div style={{ background: '#fff', padding: 22, borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-              <h4 style={{ margin: '0 0 14px', color: '#4f46e5', fontSize: 14, fontWeight: 700 }}>◎ Learning Objectives</h4>
-              <ul style={{ margin: 0, paddingLeft: 18, color: '#475569', fontSize: 13, lineHeight: 1.9 }}>
-                {objectives.map((o, i) => <li key={i}>{o}</li>)}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 40, marginTop: 12 }}>
+            <div style={{ 
+              background: 'linear-gradient(to right, #ffffff, #f8fafc)', 
+              padding: 32, 
+              borderRadius: 20, 
+              border: '1px solid #e2e8f0', 
+              borderLeft: '6px solid #4f46e5',
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' 
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+                  <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                </div>
+                <h4 style={{ margin: 0, color: '#1e293b', fontSize: 18, fontWeight: 800 }}>Learning Objectives</h4>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {objectives.map((o, i) => (
+                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, color: '#475569', fontSize: 14, lineHeight: 1.6 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#818cf8', marginTop: 8, flexShrink: 0 }} />
+                    {o}
+                  </li>
+                ))}
               </ul>
             </div>
-            <div style={{ background: '#fff', padding: 22, borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-              <h4 style={{ margin: '0 0 14px', color: '#16a34a', fontSize: 14, fontWeight: 700 }}>✓ Learning Outcomes</h4>
-              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: '#475569', fontSize: 13, lineHeight: 1.9 }}>
+            <div style={{ 
+              background: 'linear-gradient(to right, #ffffff, #f8fafc)', 
+              padding: 32, 
+              borderRadius: 20, 
+              border: '1px solid #e2e8f0', 
+              borderLeft: '6px solid #10b981',
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' 
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+                  <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <h4 style={{ margin: 0, color: '#1e293b', fontSize: 18, fontWeight: 800 }}>Learning Outcomes</h4>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {outcomes.map((o, i) => (
-                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                    <span style={{ color: '#16a34a', fontWeight: 700, marginTop: 1 }}>✓</span>
+                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, color: '#475569', fontSize: 14, lineHeight: 1.6 }}>
+                    <div style={{ color: '#10b981', marginTop: 2, flexShrink: 0 }}>
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
                     {o}
                   </li>
                 ))}
@@ -387,24 +489,24 @@ export function ModulesManagementSection({
             </div>
           </div>
 
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #e2e8f0', marginBottom: 20 }}>
+          {/* Modern Tabs */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 24, background: '#f1f5f9', padding: 6, borderRadius: 14, width: 'fit-content' }}>
             {tabLabels.map(([key, label]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setActiveTab(key)}
                 style={{
-                  padding: '10px 20px',
+                  padding: '10px 24px',
                   border: 'none',
-                  background: 'none',
+                  background: activeTab === key ? '#fff' : 'transparent',
+                  borderRadius: 10,
                   cursor: 'pointer',
-                  fontWeight: 600,
+                  fontWeight: activeTab === key ? 700 : 600,
                   fontSize: 14,
                   color: activeTab === key ? '#4f46e5' : '#64748b',
-                  borderBottom: activeTab === key ? '2px solid #4f46e5' : '2px solid transparent',
-                  marginBottom: -2,
-                  transition: 'color 0.15s',
+                  boxShadow: activeTab === key ? '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)' : 'none',
+                  transition: 'all 0.2s',
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -428,89 +530,116 @@ export function ModulesManagementSection({
                     key={lesson.id}
                     style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '18px 22px', background: '#fff',
+                      padding: '20px 24px', background: '#fff',
                       border: `1px solid ${isDone ? '#bbf7d0' : '#e2e8f0'}`,
-                      borderRadius: 12,
-                      borderLeft: isDone ? '4px solid #22c55e' : '4px solid #e2e8f0',
-                      transition: 'border-color 0.2s',
+                      borderRadius: 16,
+                      borderLeft: isDone ? '5px solid #10b981' : '5px solid #e2e8f0',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 10px 20px -5px rgba(0,0,0,0.05)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                      {/* Checkbox indicator — visible for ALL roles */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                      {/* Checkbox indicator */}
                       <div
                         style={{
-                          width: 22, height: 22, borderRadius: 6,
+                          width: 28, height: 28, borderRadius: 8,
                           border: isDone ? 'none' : '2px solid #cbd5e1',
-                          background: isDone ? '#22c55e' : '#fff',
+                          background: isDone ? '#10b981' : '#f8fafc',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           flexShrink: 0, cursor: isTrainee && !isDone ? 'pointer' : 'default',
-                          boxShadow: isDone ? '0 0 0 3px rgba(34,197,94,0.15)' : 'none',
+                          boxShadow: isDone ? '0 0 0 4px rgba(16,185,129,0.15)' : 'inset 0 2px 4px rgba(0,0,0,0.02)',
                           transition: 'all 0.2s',
                         }}
                         onClick={() => isTrainee && !isDone ? void markLessonWatched(lesson.id) : undefined}
                         title={isTrainee && !isDone ? 'Click to mark as watched' : isDone ? 'Completed' : 'Not completed'}
                       >
                         {isDone && (
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                            <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M3 8l3 3 7-7" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
                         )}
                       </div>
 
                       {/* Lesson number badge */}
                       <div style={{
-                        width: 28, height: 28, borderRadius: '50%',
+                        width: 36, height: 36, borderRadius: '50%',
                         background: isDone ? '#dcfce7' : '#f1f5f9',
-                        color: isDone ? '#15803d' : '#475569',
+                        color: isDone ? '#166534' : '#475569',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 12, fontWeight: 700, flexShrink: 0,
+                        fontSize: 14, fontWeight: 800, flexShrink: 0,
                       }}>
                         {lIdx + 1}
                       </div>
 
                       <div>
-                        <div style={{ fontSize: 15, fontWeight: 600, color: isDone ? '#64748b' : '#0f172a', textDecoration: isDone ? 'line-through' : 'none' }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: isDone ? '#64748b' : '#0f172a', textDecoration: isDone ? 'line-through' : 'none', marginBottom: 4 }}>
                           {lesson.title}
                         </div>
-                        <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-                          {isDone ? '✓ Watched' : 'Pending'} · ⏱ {lesson.durationMinutes || 15} min
+                        <div style={{ fontSize: 13, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {isDone ? (
+                            <span style={{ color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg> Watched
+                            </span>
+                          ) : (
+                            <span>Pending</span>
+                          )}
+                          <span style={{ color: '#cbd5e1' }}>•</span>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            {lesson.durationMinutes || 15} min
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                       {lesson.videoUrl && (
                         <a href={lesson.videoUrl} target="_blank" rel="noreferrer"
-                          style={{ fontSize: 12, color: '#4f46e5', fontWeight: 600, textDecoration: 'none', padding: '4px 10px', background: '#eff6ff', borderRadius: 6 }}>
-                          📹 Video
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: '#e0e7ff', borderRadius: 8, transition: 'background 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#c7d2fe'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = '#e0e7ff'}
+                        >
+                          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Video
                         </a>
                       )}
                       {lesson.articleUrl && (
                         <a href={lesson.articleUrl} target="_blank" rel="noreferrer"
-                          style={{ fontSize: 12, color: '#4f46e5', fontWeight: 600, textDecoration: 'none', padding: '4px 10px', background: '#eff6ff', borderRadius: 6 }}>
-                          📄 Article
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: '#e0e7ff', borderRadius: 8, transition: 'background 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#c7d2fe'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = '#e0e7ff'}
+                        >
+                          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg> Article
                         </a>
                       )}
 
-                      {/* Action button — varies by role + state */}
+                      {/* Action button */}
                       {isTrainee ? (
                         isDone ? (
-                          <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700, padding: '6px 14px', background: '#dcfce7', borderRadius: 8 }}>
-                            ✓ Done
+                          <span style={{ fontSize: 13, color: '#166534', fontWeight: 800, padding: '8px 16px', background: '#dcfce7', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg> Done
                           </span>
                         ) : (
                           <button
                             type="button"
                             onClick={() => void markLessonWatched(lesson.id)}
-                            style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', boxShadow: '0 2px 6px rgba(99,102,241,0.3)' }}
+                            style={{ padding: '9px 20px', background: 'linear-gradient(135deg, #4f46e5, #3b82f6)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.3)', transition: 'all 0.2s' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(79,70,229,0.4)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(79,70,229,0.3)'; }}
                           >
                             {lIdx === 0 || completedLessons > 0 ? 'Continue' : 'Start'}
                           </button>
                         )
                       ) : (
-                        // Trainer/Admin: show status read-only
                         <span style={{
-                          fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 8,
+                          fontSize: 13, fontWeight: 700, padding: '8px 16px', borderRadius: 10,
                           background: '#f8fafc', color: '#94a3b8', border: '1px solid #e2e8f0',
                         }}>
                           {isDone ? 'Watched' : 'Not watched'}
@@ -535,32 +664,55 @@ export function ModulesManagementSection({
                   const sub = subByAssignment.get(task.id);
                   const status = sub?.status || 'Not Started';
                   const statusColors: Record<string, { bg: string; color: string }> = {
-                    'Accepted': { bg: '#dcfce7', color: '#166534' },
+                    'Approved': { bg: '#dcfce7', color: '#166534' },
                     'Rejected': { bg: '#fee2e2', color: '#b91c1c' },
                     'Submitted': { bg: '#fef3c7', color: '#b45309' },
                     'Not Started': { bg: '#f1f5f9', color: '#475569' },
                   };
                   const sc = statusColors[status] || statusColors['Not Started'];
                   return (
-                    <div key={task.id} style={{ padding: '18px 22px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                      <div>
-                        <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a', fontWeight: 600 }}>{task.title}</h4>
-                        <span style={{ fontSize: 12, color: '#64748b' }}>
-                          {task.assignmentType} · {task.lessonTitle || 'Module task'} · Due {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'N/A'}
-                        </span>
+                    <div key={task.id} 
+                      style={{ padding: '20px 24px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 10px 20px -5px rgba(0,0,0,0.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', flexShrink: 0 }}>
+                          <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        </div>
+                        <div>
+                          <h4 style={{ margin: '0 0 6px', fontSize: 16, color: '#0f172a', fontWeight: 800 }}>{task.title}</h4>
+                          <div style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ background: '#e2e8f0', padding: '2px 8px', borderRadius: 6, fontWeight: 600, color: '#475569', fontSize: 11, textTransform: 'uppercase' }}>{task.assignmentType}</span>
+                            <span>{task.lessonTitle || 'Module task'}</span>
+                            <span style={{ color: '#cbd5e1' }}>•</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                              Due {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'N/A'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 999, background: sc.bg, color: sc.color }}>
-                          {status === 'Accepted' ? 'Approved' : status}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, padding: '6px 14px', borderRadius: 999, background: sc.bg, color: sc.color }}>
+                          {status === 'Approved' ? 'Approved' : status}
                           {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
                         </span>
-                        {isTrainee && status !== 'Accepted' && (
+                        {isTrainee && status !== 'Approved' && (
                           <button
                             type="button"
                             onClick={() => { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
-                            style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                            style={{ padding: '9px 20px', background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.3)', transition: 'all 0.2s' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(79,70,229,0.4)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(79,70,229,0.3)'; }}
                           >
-                            {sub ? 'Resubmit' : 'Submit'}
+                            {sub ? 'Resubmit' : 'Submit Task'}
                           </button>
                         )}
                       </div>
@@ -630,7 +782,7 @@ export function ModulesManagementSection({
                 <div style={{ padding: '24px 28px' }}>
                   <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Module Assessment</h3>
                   <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
-                    Submitted: {tasksSubmitted} · Average score: {avgScore}/100
+                    Submitted: {tasksSubmitted}
                   </p>
                   {tasks.map((task: any) => {
                     const sub = subByAssignment.get(task.id);
@@ -646,7 +798,7 @@ export function ModulesManagementSection({
                               {sub.score}/{task.maxScore || 100}
                             </span>
                           )}
-                          {isTrainee && (!sub || sub.status !== 'Accepted') && (
+                          {isTrainee && (!sub || sub.status !== 'Approved') && (
                             <button
                               type="button"
                               onClick={() => { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}

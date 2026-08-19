@@ -22,7 +22,12 @@ export class AssignmentEntity extends BaseEntity {
   @Column({ type: 'varchar', name: 'assignment_type', default: 'Subjective' })
   assignmentType: string;
 
-  @Column({ type: 'varchar', name: 'difficulty_level', nullable: true, default: 'Intermediate' })
+  @Column({
+    type: 'varchar',
+    name: 'difficulty_level',
+    nullable: true,
+    default: 'Intermediate',
+  })
   difficultyLevel: string;
 
   // MCQ Options & Correct Answer index JSON structure:
@@ -37,7 +42,10 @@ export class AssignmentEntity extends BaseEntity {
   dueDate: Date;
 
   // 1. Optional attachment to Lesson
-  @ManyToOne(() => LessonEntity, (lesson) => lesson.assignments, { nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => LessonEntity, (lesson) => lesson.assignments, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: ForeignKeys.Assignment.LessonId })
   lesson?: LessonEntity;
 
@@ -60,7 +68,11 @@ export class AssignmentEntity extends BaseEntity {
   externalUrl: string;
 
   /** Trainee UUIDs for external / direct assignments (no learning path required) */
-  @Column({ type: 'jsonb', name: 'assigned_to_trainee_ids', nullable: true, default: [] })
+  @Column({
+    type: 'jsonb',
+    name: 'assigned_to_trainee_ids',
+    nullable: true,
+    default: [],
+  })
   assignedToTraineeIds: string[];
-
 }

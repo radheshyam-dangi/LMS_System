@@ -4,19 +4,21 @@ import { useNotifications } from '../../context/NotificationContext';
 
 type Props = {
   accessToken: string;
+  currentUser?: any;
 };
 
 /**
  * Trainee Assignments: shows path-linked + external assignments assigned to the trainee.
  * Submitting increases the trainer's notification bell without a page reload.
  */
-export function TraineeAssignmentsView({ accessToken }: Props) {
+export function TraineeAssignmentsView({ accessToken, currentUser }: Props) {
   const { refresh: refreshNotifications } = useNotifications();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'all' | 'external' | 'path'>('all');
   const [submitTarget, setSubmitTarget] = useState<any | null>(null);
+  const [viewDetailsTarget, setViewDetailsTarget] = useState<any | null>(null);
   const [submissionText, setSubmissionText] = useState('');
   const [selectedMcqAnswers, setSelectedMcqAnswers] = useState<Record<number, number>>({});
   const [subjectiveAnswers, setSubjectiveAnswers] = useState<Record<number, string>>({});
@@ -85,7 +87,7 @@ export function TraineeAssignmentsView({ accessToken }: Props) {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 1100, margin: '0 auto' }}>
+    <div style={{ width: '100%' }}>
       <div style={{ marginBottom: 20 }}>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#0f172a' }}>Assignments</h1>
         <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: 13 }}>
@@ -122,7 +124,18 @@ export function TraineeAssignmentsView({ accessToken }: Props) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {filtered.map((a) => {
+        {[...filtered].sort((a, b) => {
+          const statusA = submissionByAssignment.get(a.id)?.status || 'Pending';
+          const statusB = submissionByAssignment.get(b.id)?.status || 'Pending';
+          const orderMap: Record<string, number> = {
+            'Rejected': 1,
+            'Pending': 2,
+            'Submitted': 3,
+            'Evaluated': 4,
+            'Approved': 4
+          };
+          return (orderMap[statusA] || 99) - (orderMap[statusB] || 99);
+        }).map((a) => {
           const isExternal =
             String(a.assignmentType || '').toLowerCase() === 'external' ||
             (!a.lesson && !a.module && !a.learningPath);
@@ -180,7 +193,7 @@ export function TraineeAssignmentsView({ accessToken }: Props) {
                     padding: '4px 10px',
                     borderRadius: 999,
                     background:
-                      status === 'Accepted'
+                      status === 'Approved'
                         ? '#dcfce7'
                         : status === 'Rejected'
                           ? '#fee2e2'
@@ -188,7 +201,7 @@ export function TraineeAssignmentsView({ accessToken }: Props) {
                             ? '#fef3c7'
                             : '#f1f5f9',
                     color:
-                      status === 'Accepted'
+                      status === 'Approved'
                         ? '#166534'
                         : status === 'Rejected'
                           ? '#b91c1c'
@@ -200,7 +213,27 @@ export function TraineeAssignmentsView({ accessToken }: Props) {
                   {status}
                   {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
                 </span>
-                {status !== 'Accepted' && (
+                
+                {(status === 'Approved' || status === 'Rejected' || status === 'Evaluated') && sub && (
+                  <button
+                    type="button"
+                    onClick={() => setViewDetailsTarget({ assignment: a, submission: sub })}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 8,
+                      border: '1px solid #e2e8f0',
+                      background: '#fff',
+                      color: '#0f172a',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    View Details
+                  </button>
+                )}
+
+                {status !== 'Approved' && (
                   <button
                     type="button"
                     onClick={() => {
@@ -557,6 +590,115 @@ export function TraineeAssignmentsView({ accessToken }: Props) {
           </div>
         </div>
       )}
+
+      {/* View Details Modal for Approved Assignments */}
+      {viewDetailsTarget && (() => {
+        const { assignment, submission } = viewDetailsTarget;
+        const traineeName = currentUser?.firstName 
+          ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim()
+          : currentUser?.name || 'Trainee';
+          
+        const assignerName = assignment.createdBy?.firstName
+          ? `${assignment.createdBy.firstName} ${assignment.createdBy.lastName || ''}`.trim()
+          : assignment.createdBy?.name || 'Trainer';
+          
+        const evaluatorName = submission.evaluatedBy?.firstName
+          ? `${submission.evaluatedBy.firstName} ${submission.evaluatedBy.lastName || ''}`.trim()
+          : submission.evaluatedBy?.name || 'Trainer';
+
+        const maxPoints = assignment.maxScore || 100;
+        const gainedPoints = submission.score || 0;
+        const questions = assignment.mcqConfig?.questions || [];
+        const isMcq = assignment.assignmentType === 'MCQ';
+
+        let parsedAnswers: any = {};
+        let rawText = submission.submissionText || '';
+        try {
+          if (rawText.startsWith('{') && rawText.includes('"answers"')) {
+            parsedAnswers = JSON.parse(rawText);
+          }
+        } catch(e) {}
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+            <div style={{ background: '#fff', width: '700px', borderRadius: '20px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.22)' }}>
+              
+              <div style={{ padding: '22px 26px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>📄 Evaluation Details: {assignment.title}</h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>Score: {gainedPoints} / {maxPoints} pts</p>
+                </div>
+                <button onClick={() => setViewDetailsTarget(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', width: '32px', height: '32px', cursor: 'pointer', fontSize: '18px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+              </div>
+
+              <div style={{ padding: '22px 26px', overflowY: 'auto', flex: 1 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Submitted By</div>
+                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 500, marginTop: '4px' }}>{traineeName}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Assigned By</div>
+                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 500, marginTop: '4px' }}>{assignerName}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Evaluated By</div>
+                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 500, marginTop: '4px' }}>{evaluatorName}</div>
+                  </div>
+                </div>
+
+                {submission.feedback && (
+                  <div style={{ marginBottom: '24px', background: '#f0fdf4', padding: '16px', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
+                    <div style={{ fontSize: '12px', color: '#166534', fontWeight: 700, marginBottom: '6px' }}>Trainer Feedback</div>
+                    <p style={{ margin: 0, fontSize: '13px', color: '#14532d', lineHeight: 1.5 }}>{submission.feedback}</p>
+                  </div>
+                )}
+
+                <h4 style={{ margin: '0 0 16px', fontSize: '15px', color: '#0f172a' }}>Answers & Questions ({questions.length || 1})</h4>
+                
+                {questions.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {questions.map((q: any, idx: number) => {
+                      const ansObj = parsedAnswers.answers || {};
+                      const textAnsObj = parsedAnswers.textAnswers || {};
+                      
+                      let userAnswer = '';
+                      if (isMcq) {
+                        const optIdx = ansObj[idx];
+                        userAnswer = typeof optIdx === 'number' && q.options ? q.options[optIdx] : 'No answer provided';
+                      } else {
+                        userAnswer = textAnsObj[idx] || 'No answer provided';
+                      }
+                      
+                      const qPoints = q.maxPoints || q.points || 10;
+
+                      return (
+                        <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                            <strong style={{ fontSize: '13px', color: '#0f172a', lineHeight: 1.5 }}>Q{idx + 1}: {q.questionText || q.question}</strong>
+                            <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 600, background: '#e0e7ff', padding: '2px 8px', borderRadius: '999px', flexShrink: 0 }}>{qPoints} pts</span>
+                          </div>
+                          <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155' }}>
+                            <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Answer:</span>
+                            {userAnswer}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                     <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                        <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Submission:</span>
+                        {parsedAnswers.raw || rawText}
+                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

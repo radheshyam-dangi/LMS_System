@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { TagEntityService} from '../../services/tag.service';
+
+import { DataSource, Repository } from 'typeorm';
+import { BaseService } from '../../../common/services/base.service';
+import { TagEntity } from '../../entities/tag.entity';
 
 @Injectable()
-export class TagService 
-{
-    constructor(private tagEntityService : TagEntityService){}
-
+export class TagEntityService extends BaseService<TagEntity> {
+  protected repository: Repository<TagEntity>;
+  constructor(datasource: DataSource) {
+    super();
+    this.repository = datasource.getRepository<TagEntity>(TagEntity);
+  }
 }
-export {TagEntityService};

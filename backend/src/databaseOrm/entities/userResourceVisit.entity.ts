@@ -7,7 +7,11 @@ import { Entities } from '../../constants/entity';
 @Entity(Entities.UserResourceVisit)
 @Unique(['user', 'resource'])
 export class UserResourceVisitEntity extends BaseEntity {
-  @Column({ type: 'timestamp', name: 'visited_at', default: () => 'CURRENT_TIMESTAMP' })
+  @Column({
+    type: 'timestamp',
+    name: 'visited_at',
+    default: () => 'CURRENT_TIMESTAMP',
+  })
   visitedAt: Date;
 
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })

@@ -7,7 +7,9 @@ export class AiMessageEntity extends BaseEntity {
   @Column({ type: 'uuid', name: 'conversation_id' })
   conversationId: string;
 
-  @ManyToOne(() => AiConversationEntity, (conv) => conv.messages, { onDelete: 'CASCADE' })
+  @ManyToOne(() => AiConversationEntity, (conv) => conv.messages, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'conversation_id' })
   conversation: AiConversationEntity;
 

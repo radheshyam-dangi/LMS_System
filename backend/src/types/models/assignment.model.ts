@@ -1,7 +1,7 @@
 import { BaseModel } from './base.model';
 
 export interface AssignmentModel extends BaseModel {
-  title : string;
+  title: string;
   description?: string;
   instructions?: string;
   difficultyLevel?: string;

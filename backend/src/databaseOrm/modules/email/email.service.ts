@@ -1,17 +1,22 @@
-import { Injectable, OnModuleInit, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import * as jwt from 'jsonwebtoken';
 
 @Injectable()
 export class EmailService implements OnModuleInit {
   private transporter: nodemailer.Transporter;
-  private readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secure-invitation-secret-key'; 
+  private readonly JWT_SECRET =
+    process.env.JWT_SECRET || 'your-secure-invitation-secret-key';
 
   async onModuleInit() {
     try {
       // Automatically creates a dynamic dummy account from Ethereal on the fly
       const testAccount = await nodemailer.createTestAccount();
-      
+
       console.log('------------------------------------------------------');
       console.log('Ethereal Dynamic Account Created Successfully!');
       console.log(`Username: ${testAccount.user}`);
@@ -22,13 +27,16 @@ export class EmailService implements OnModuleInit {
         host: testAccount.smtp.host,
         port: testAccount.smtp.port,
         secure: testAccount.smtp.secure,
-        auth: { 
-          user: testAccount.user, 
-          pass: testAccount.pass 
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
         },
       });
     } catch (error) {
-      console.error('Failed to provision Ethereal test environment account:', error);
+      console.error(
+        'Failed to provision Ethereal test environment account:',
+        error,
+      );
     }
   }
 
@@ -39,19 +47,19 @@ export class EmailService implements OnModuleInit {
     lastName: string;
     roles: string[];
     isPrimary: string;
-    senderName: string;   
-    senderEmail: string;  
+    senderName: string;
+    senderEmail: string;
   }) {
     const invitationToken = jwt.sign(
-      { 
-        email: dto.to, 
-        firstName: dto.firstName, 
-        lastName: dto.lastName, 
-        roles: dto.roles, 
-        isPrimary: dto.isPrimary 
+      {
+        email: dto.to,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        roles: dto.roles,
+        isPrimary: dto.isPrimary,
       },
       this.JWT_SECRET,
-      { expiresIn: '24h' }
+      { expiresIn: '24h' },
     );
 
     const frontendAcceptUrl = `http://localhost:5173/set-password?token=${invitationToken}`;
@@ -78,13 +86,13 @@ export class EmailService implements OnModuleInit {
     try {
       const info = await this.transporter.sendMail({
         // Maps the targeted admin custom email details natively
-        from: `"${dto.senderName}" <${dto.senderEmail}>`, 
+        from: `"${dto.senderName}" <${dto.senderEmail}>`,
         to: dto.to, // Displays target user on UI layout screen
         subject: dto.subject,
-        html: htmlContent, 
+        html: htmlContent,
       });
 
-      // Generates the browser execution preview URL string 
+      // Generates the browser execution preview URL string
       const previewUrl = nodemailer.getTestMessageUrl(info);
       console.log('\n========= EMAIL SENT (SANDBOX) =========');
       console.log(`From: "${dto.senderName}" <${dto.senderEmail}>`);
@@ -93,10 +101,11 @@ export class EmailService implements OnModuleInit {
       console.log('========================================\n');
 
       return { success: true, previewUrl };
-
     } catch (error) {
       console.error('Failed to send mock invitation payload:', error);
-      throw new InternalServerErrorException('Email service sandbox is temporarily offline');
+      throw new InternalServerErrorException(
+        'Email service sandbox is temporarily offline',
+      );
     }
   }
 }

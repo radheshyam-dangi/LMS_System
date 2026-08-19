@@ -128,26 +128,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
   // ─── Filter assignments by active role ────────────────────────────────
   const roleFilteredAssignments = useMemo(() => {
-    let result = assignments;
-    if (!isAdminView && currentUser) {
-      const uid = String(currentUser.id || currentUser.sub || '').toLowerCase();
-      result = result.filter((a: any) => {
-        const creatorId = String(a.createdBy?.id || a.createdById || '').toLowerCase();
-        const lpCreatorId = String(
-          a.learningPath?.createdBy?.id ||
-          a.lesson?.module?.learningPath?.createdBy?.id ||
-          a.module?.learningPath?.createdBy?.id ||
-          a.learningPath?.createdById || ''
-        ).toLowerCase();
-        const hasEvaluatedSub = (a.submissions || []).some((s: any) => {
-          const evalId = String(s.evaluatedBy?.id || s.evaluatedById || '').toLowerCase();
-          return evalId === uid;
-        });
-        return creatorId === uid || lpCreatorId === uid || hasEvaluatedSub;
-      });
-    }
-    return result;
-  }, [assignments, isAdminView, currentUser]);
+    return assignments;
+  }, [assignments]);
 
   // ─── Filter assignments by status ─────────────────────────────────────
   const filteredAssignments = useMemo(() => {
@@ -156,7 +138,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     if (statusFilter !== 'All') {
       result = result.filter((a: any) => {
         let st = (a.status || 'Pending').toLowerCase();
-        if (statusFilter.toLowerCase() === 'approved' && st === 'accepted') return true;
+        if (statusFilter.toLowerCase() === 'approved' && (st === 'approved' || st === 'accepted')) return true;
         if (statusFilter.toLowerCase() === 'needs improvement' && st === 'rejected') return true;
         return st === statusFilter.toLowerCase();
       });
@@ -175,9 +157,10 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   }, [roleFilteredAssignments, statusFilter, searchQuery]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Accepted: 0, Rejected: 0 };
+    const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Approved: 0, Rejected: 0 };
     roleFilteredAssignments.forEach((a: any) => {
-      const st = a.status || 'Pending';
+      let st = a.status || 'Pending';
+      if (st === 'Accepted') st = 'Approved';
       counts[st] = (counts[st] || 0) + 1;
     });
     return counts;
@@ -187,28 +170,12 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     { title: 'Pending', count: statusCounts['Pending'] || 0, key: 'Pending' },
     { title: 'Submitted', count: statusCounts['Submitted'] || 0, key: 'Submitted' },
     { title: 'Needs Improvement', count: statusCounts['Rejected'] || 0, key: 'Needs Improvement' },
-    { title: 'Approved', count: statusCounts['Accepted'] || 0, key: 'Approved' },
+    { title: 'Approved', count: statusCounts['Approved'] || 0, key: 'Approved' },
   ];
 
   const filteredPendingSubmissions = useMemo(() => {
-    let result = pendingSubmissions;
-    if (!isAdminView && currentUser) {
-      const uid = String(currentUser.id || currentUser.sub || '').toLowerCase();
-      result = result.filter((s: any) => {
-        const a = s.assignment;
-        const creatorId = String(a?.createdBy?.id || a?.createdById || '').toLowerCase();
-        const lpCreatorId = String(
-          a?.learningPath?.createdBy?.id ||
-          a?.lesson?.module?.learningPath?.createdBy?.id ||
-          a?.module?.learningPath?.createdBy?.id ||
-          a?.learningPath?.createdById || ''
-        ).toLowerCase();
-        const evalId = String(s.evaluatedBy?.id || s.evaluatedById || '').toLowerCase();
-        return creatorId === uid || lpCreatorId === uid || evalId === uid;
-      });
-    }
-    return result;
-  }, [pendingSubmissions, isAdminView, currentUser]);
+    return pendingSubmissions;
+  }, [pendingSubmissions]);
 
   // ─── Modal Handlers ──────────────────────────────────────────────
   const handleViewAssignment = (assign: any) => { setExpandedAssignmentId(assign.id); };
@@ -229,7 +196,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
   };
 
-  const handleEvaluate = async (status: 'Accepted' | 'Rejected') => {
+  const handleEvaluate = async (status: 'Approved' | 'Rejected') => {
     if (status === 'Rejected' && !evalFeedback.trim()) {
       alert('Feedback is mandatory when rejecting a submission.');
       return;
@@ -498,7 +465,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                           <span style={{ ...pc, padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, border: '1px solid' }}>{assign.priority || 'Medium'}</span>
                           <span style={{ ...sc, padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, border: '1px solid', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: sc.dot, display: 'inline-block' }} />
-                            {statusKey === 'Accepted' ? 'Approved' : statusKey}
+                            {statusKey === 'Accepted' || statusKey === 'Approved' ? 'Approved' : statusKey}
                           </span>
                         </div>
                         <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
@@ -713,10 +680,14 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Evaluate: {selectedSub.assignment?.title}</h3>
                 <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>Trainee: {selectedSub.trainee?.firstName} ({selectedSub.trainee?.email})</p>
-                {isAdminView && selectedSub.evaluatedBy && (
-                  <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>
-                    Evaluated by: {selectedSub.evaluatedBy?.firstName} {selectedSub.evaluatedBy?.lastName}
-                  </p>
+                {isAdminView && (
+                  <div style={{ fontSize: '12px', color: '#64748b', margin: '6px 0 0 0', padding: '6px', background: '#f1f5f9', borderRadius: '6px' }}>
+                    <div style={{ fontWeight: 600, marginBottom: '2px', color: '#334155' }}>Admin Details:</div>
+                    <p style={{ margin: '2px 0' }}>Assigned by: {selectedSub.assignedBy ? `${selectedSub.assignedBy.firstName} ${selectedSub.assignedBy.lastName}` : 'N/A'}</p>
+                    <p style={{ margin: '2px 0' }}>Author: {selectedSub.assignment?.createdBy ? `${selectedSub.assignment.createdBy.firstName} ${selectedSub.assignment.createdBy.lastName}` : 'N/A'}</p>
+                    <p style={{ margin: '2px 0' }}>Evaluated by: {selectedSub.evaluatedBy ? `${selectedSub.evaluatedBy.firstName} ${selectedSub.evaluatedBy.lastName}` : 'Pending evaluation'}</p>
+                    <p style={{ margin: '2px 0' }}>Status: <span style={{ fontWeight: 600 }}>{selectedSub.status || 'Submitted'}</span></p>
+                  </div>
                 )}
                 {isAdminView && selectedSub.score !== undefined && selectedSub.score !== null && (
                   <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0', fontWeight: 600 }}>
@@ -764,7 +735,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
               <button type="button" onClick={() => setSelectedSub(null)} style={{ padding: '9px 18px', background: '#f1f5f9', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
               <button type="button" disabled={isEvaluating} onClick={() => handleEvaluate('Rejected')} style={{ padding: '9px 18px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Reject ❌</button>
-              <button type="button" disabled={isEvaluating} onClick={() => handleEvaluate('Accepted')} style={{ padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Accept ✅</button>
+              <button type="button" disabled={isEvaluating} onClick={() => handleEvaluate('Approved')} style={{ padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Accept ✅</button>
             </div>
           </div>
         </div>

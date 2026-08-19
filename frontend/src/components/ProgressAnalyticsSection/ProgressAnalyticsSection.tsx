@@ -30,8 +30,6 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
     learningVelocity: 0,
     consistencyScore: 0,
     currentStreak: 0,
-    learningStyle: 'Unknown',
-    estimatedCompletionDate: '',
     totalTrainers: 0,
     totalTrainees: 0,
     trainingEffectiveness: 0,
@@ -44,6 +42,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
     moduleCompletion: [],
     pathPerformance: [],
   });
+  const [showTraineeModal, setShowTraineeModal] = useState(false);
 
   const displayName =
     [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') ||
@@ -57,7 +56,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
       setLoading(true);
       try {
         const [analytics, progress] = await Promise.all([
-          analyticsService.fetchDashboard(accessToken).catch(() => null),
+          analyticsService.fetchDashboard(accessToken, activeRole).catch(() => null),
           progressService.fetchMyStats(accessToken).catch(() => ({
             completedLessons: 0,
             totalLessons: 0,
@@ -82,8 +81,6 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
           learningVelocity: analytics?.learningVelocity ?? 0,
           consistencyScore: analytics?.consistencyScore ?? 0,
           currentStreak: analytics?.currentStreak ?? 0,
-          learningStyle: analytics?.learningStyle ?? 'Unknown',
-          estimatedCompletionDate: analytics?.estimatedCompletionDate ?? '',
           totalTrainers: analytics?.totalTrainers ?? 0,
           totalTrainees: analytics?.totalTrainees ?? 0,
           trainingEffectiveness: analytics?.trainingEffectiveness ?? 0,
@@ -106,49 +103,50 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
     ? charts.skillDistribution
     : [{ name: 'No data', count: 0, percent: 100 }];
 
-  let pathData = charts.pathPerformance.slice(0, 8).map((row: any) => ({
+  const traineeProgressList = charts.traineeProgressList || [];
+
+  const pathData = charts.pathPerformance.slice(0, 8).map((row: any) => ({
     name: row.title || 'Unknown Path',
     percent: row.averageProgress !== undefined ? row.averageProgress : (row.submitted > 0 ? Math.round((row.completed / row.submitted) * 100) : 0),
     enrolled: row.enrolledTrainees !== undefined ? row.enrolledTrainees : row.submitted,
-    score: row.averageScore || 0
-  }));
-
-  if (pathData.length > 0) {
-    pathData = [{ name: 'Start', percent: 0, score: 0, enrolled: 0 }, ...pathData];
-  }
-
-  const moduleData = charts.moduleCompletion.map((row: any) => ({
-    name: row.title || 'Unknown Module',
-    percent: row.percent || 0,
     score: row.averageScore || 0,
-    maxScore: row.maxScore || 0,
-    path: row.pathTitle
+    ...row
   }));
 
-  const distinctPaths = Array.from(new Set(moduleData.map((d: any) => d.path).filter(Boolean)));
-  const allModuleNames = Array.from(new Set(moduleData.map((d: any) => d.name)));
-
-  let detailedModuleChartData = allModuleNames.map((moduleName: any) => {
-    const row: any = { sequence: moduleName };
-    distinctPaths.forEach((path: any) => {
-      const mod = moduleData.find((d: any) => d.path === path && d.name === moduleName);
-      if (mod) {
-        row[path] = mod.percent;
-        row[`${path}_name`] = mod.name;
+  const traineeSeriesKeys = new Set<string>();
+  pathData.forEach((row: any) => {
+    Object.keys(row).forEach(key => {
+      if (!['id', 'title', 'submitted', 'completed', 'averageScore', 'name', 'percent', 'enrolled', 'score', 'averageProgress', 'enrolledTrainees'].includes(key)) {
+        traineeSeriesKeys.add(key);
       }
     });
-    return row;
   });
 
-  if (detailedModuleChartData.length > 0) {
-    const startRow: any = { sequence: 'Start' };
-    distinctPaths.forEach((path: any) => {
-      startRow[path] = 0;
-      startRow[`${path}_name`] = 'Start';
+  const traineePathSeries: SeriesConfig[] = Array.from(traineeSeriesKeys).map((key: string, idx: number) => ({
+    key: key,
+    name: key,
+    color: ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][idx % 5],
+    type: 'bar'
+  }));
+
+  const cohortPathSeries: SeriesConfig[] = [
+    { key: 'percent', name: 'Average Progress', color: '#4f46e5', type: 'bar' },
+    { key: 'score', name: 'Average Score', color: '#10b981', type: 'bar' }
+  ];
+
+  const pathProgressionData = charts.pathProgression || [];
+
+  const progressionSeriesKeys = new Set<string>();
+  pathProgressionData.forEach((row: any) => {
+    Object.keys(row).forEach(key => {
+      if (key !== 'sequence' && !key.endsWith('_name')) {
+        progressionSeriesKeys.add(key);
+      }
     });
-    detailedModuleChartData = [startRow, ...detailedModuleChartData];
-  }
-  const detailedModuleSeries: SeriesConfig[] = distinctPaths.map((p: any, idx: number) => ({
+  });
+  const distinctPaths = Array.from(progressionSeriesKeys);
+
+  const detailedModuleSeries: SeriesConfig[] = distinctPaths.map((p: string, idx: number) => ({
     key: p,
     name: p,
     color: ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][idx % 5],
@@ -184,7 +182,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
         <MetricCard
           value={loading ? '...' : isReports ? String(stats.totalTrainees || 0) : `${stats.skillGrowth}%`}
           label={isReports ? 'Total Trainees' : 'Skill Growth'}
-          hint={isReports ? "Assigned on platform" : `${stats.totalAssignments} assignments`}
+          hint={isReports ? "Assigned on platform" : `Across all assigned paths`}
         />
         {isReports && (
           <MetricCard
@@ -196,14 +194,9 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
         {!isReports && (
           <>
             <MetricCard
-              value={loading ? '...' : `${stats.consistencyScore}%`}
-              label="Consistency Score"
-              hint={`${stats.currentStreak} day streak`}
-            />
-            <MetricCard
-              value={loading ? '...' : stats.learningStyle}
-              label="Learning Style"
-              hint={stats.estimatedCompletionDate !== 'N/A' && stats.estimatedCompletionDate !== 'Completed' ? `Goal: ${stats.estimatedCompletionDate}` : stats.estimatedCompletionDate}
+              value={loading ? '...' : String(stats.activeEnrollments || 0)}
+              label="Total Paths Assigned"
+              hint={stats.activeEnrollments > 0 ? "Active Learning Paths" : "No active paths"}
             />
           </>
         )}
@@ -214,12 +207,8 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
           title={isReports ? 'Avg. Evaluation Score Trend' : 'Daily Activity Trend'}
           subtitle={isReports ? 'Daily evaluation scores (last 14 days)' : 'Daily activity points (last 30 days)'}
           role={activeRole.toLowerCase()}
-          type="score" 
-          datasets={{
-            daily: (charts.dailyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints })),
-            weekly: (charts.weeklyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints })),
-            monthly: (charts.monthlyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints }))
-          }}
+          type="score"
+          accessToken={accessToken}
         />
 
         <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>
@@ -276,7 +265,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
                     <PolarGrid stroke="#e2e8f0" />
                     <PolarAngleAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10 }} />
                     <Radar name="Performance" dataKey="percent" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.2} />
-                    <RechartsTooltip 
+                    <RechartsTooltip
                       formatter={(value: any) => [`${value}%`, 'Performance']}
                       contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontSize: '12px' }}
                     />
@@ -289,44 +278,118 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
       </div>
 
       {isReports && (
-        <MultiLineProgressChart
-          title="Path Performance"
-          subtitle="Aggregate Averages"
-          xAxisKey="name"
-          series={[
-            { key: 'percent', name: 'Average Progress', color: '#4f46e5' },
-            { key: 'score', name: 'Average Score', color: '#10b981' }
-          ]}
-          data={pathData}
-          emptyMessage="No path progress in database."
-        />
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 10 }}>
+            <button
+              onClick={() => setShowTraineeModal(true)}
+              style={{ padding: '6px 12px', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              See Trainee Progress
+            </button>
+          </div>
+          <MultiLineProgressChart
+            title="Path Performance"
+            subtitle="Aggregate Averages"
+            xAxisKey="name"
+            series={cohortPathSeries}
+            data={pathData}
+            emptyMessage="No path progress in database."
+          />
+        </div>
+      )}
+
+      {showTraineeModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+          <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>Trainee Progress Overview</h2>
+              <button onClick={() => setShowTraineeModal(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
+            </div>
+
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+              <div style={{ marginBottom: '24px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 12px 0', color: '#334155' }}>Trainee Statistics</h3>
+                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Trainee Name</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Completed Tasks</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Remaining Tasks</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Overall Progress</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {traineeProgressList.map((t: any, i: number) => (
+                        <tr key={i} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: '12px 16px', fontWeight: 500, color: '#0f172a' }}>{t.name}</td>
+                          <td style={{ padding: '12px 16px', color: '#10b981', fontWeight: 600 }}>{t.completed}</td>
+                          <td style={{ padding: '12px 16px', color: '#f59e0b', fontWeight: 600 }}>{t.remaining}</td>
+                          <td style={{ padding: '12px 16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ flex: 1, height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', background: '#4f46e5', width: `${t.progress}%` }} />
+                              </div>
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', width: '35px' }}>{t.progress}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {traineeProgressList.length === 0 && (
+                        <tr><td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No trainee data available.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div style={{ marginTop: '32px' }}>
+                <MultiLineProgressChart
+                  title="Graphical Trainee Progress"
+                  subtitle="Path Performance by Trainee"
+                  xAxisKey="name"
+                  series={traineePathSeries}
+                  data={pathData}
+                  emptyMessage="No path progress in database."
+                />
+              </div>
+            </div>
+
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', textAlign: 'right' }}>
+              <button onClick={() => setShowTraineeModal(false)} style={{ padding: '8px 16px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Close</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {!isReports && (
-        <MultiLineProgressChart
-          title="Module Progress"
-          subtitle={distinctPaths.length > 0 ? distinctPaths.join(', ') : 'All Paths'}
-          xAxisKey="sequence"
-          series={detailedModuleSeries}
-          data={detailedModuleChartData}
-          emptyMessage="No module progress in database."
-          tooltipLabelFormatter={(label: any) => label}
-          tooltipFormatter={(value: any, name: string, props: any) => {
-            const pathName = props.dataKey;
-            const moduleName = props.payload[`${pathName}_name`];
-            return [
-              `${value}%`, 
-              moduleName && moduleName !== 'Start' ? (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span>{pathName}</span>
-                  <span style={{ color: '#64748b', fontSize: '11px', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {moduleName}
-                  </span>
-                </div>
-              ) : pathName
-            ];
-          }}
-        />
+        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', marginTop: '24px' }}>
+          <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>Trainee Learning Journey - Module Completion</h3>
+          <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 16px 0' }}>{distinctPaths.length > 0 ? distinctPaths.join(', ') : 'All Paths'}</p>
+          <div style={{ width: '100%', height: 650 }}>
+            {charts.moduleCompletion.length > 0 ? (
+              <ResponsiveContainer>
+                <BarChart data={charts.moduleCompletion} margin={{ top: 20, right: 30, left: 0, bottom: 350 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="title" axisLine={false} tickLine={false} interval={0} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} angle={-45} textAnchor="end" />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} tickFormatter={(val) => `${val}%`} />
+                  <RechartsTooltip
+                    cursor={{ fill: '#f8fafc' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    itemStyle={{ fontSize: '13px', fontWeight: 600, color: '#4f46e5' }}
+                    labelStyle={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}
+                    formatter={(value: any) => [`${value}%`, 'Completion Percentage']}
+                  />
+                  <Bar dataKey="percent" name="Completion Percentage (%)" fill="#4f46e5" radius={[6, 6, 0, 0]} maxBarSize={60} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: '13px' }}>
+                No module progress in database.
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

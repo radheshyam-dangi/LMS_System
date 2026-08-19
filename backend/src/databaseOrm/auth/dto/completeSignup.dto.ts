@@ -7,6 +7,8 @@ export class CompleteSignupDto {
   newPassword!: string;
 
   @IsString()
-  @MinLength(8, { message: 'Retype password must be at least 8 characters long' })
+  @MinLength(8, {
+    message: 'Retype password must be at least 8 characters long',
+  })
   retypePassword!: string;
 }

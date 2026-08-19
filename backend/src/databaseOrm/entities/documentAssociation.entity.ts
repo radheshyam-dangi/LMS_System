@@ -9,7 +9,11 @@ export class DocumentAssociationEntity extends BaseEntity {
   @Column({ type: 'varchar', name: 'associationType', nullable: false })
   associationType: string;
 
-  @Column({ type: 'uuid', name: ForeignKeys.DocumentAssociation.AssociationId, nullable: false })
+  @Column({
+    type: 'uuid',
+    name: ForeignKeys.DocumentAssociation.AssociationId,
+    nullable: false,
+  })
   associationId: string;
 
   @Column({ type: 'text', nullable: true })

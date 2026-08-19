@@ -30,10 +30,20 @@ export class ModuleEntity extends BaseEntity {
   difficultyLevel: string;
 
   /** e.g. "3 weeks" or numeric weeks */
-  @Column({ type: 'varchar', name: 'duration_label', nullable: true, default: '2 weeks' })
+  @Column({
+    type: 'varchar',
+    name: 'duration_label',
+    nullable: true,
+    default: '2 weeks',
+  })
   durationLabel: string;
 
-  @Column({ type: 'integer', name: 'duration_weeks', nullable: true, default: 2 })
+  @Column({
+    type: 'integer',
+    name: 'duration_weeks',
+    nullable: true,
+    default: 2,
+  })
   durationWeeks: number;
 
   /** Learning objectives list */
@@ -54,7 +64,10 @@ export class ModuleEntity extends BaseEntity {
   @OneToMany(() => ModuleEntity, (module) => module.parent)
   children?: ModuleEntity[];
 
-  @ManyToOne(() => LearningPathEntity, (lp) => lp.modules, { nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => LearningPathEntity, (lp) => lp.modules, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'learningPathId' })
   learningPath?: LearningPathEntity;
 
@@ -62,9 +75,14 @@ export class ModuleEntity extends BaseEntity {
   @JoinColumn({ name: 'createdById' })
   createdBy?: UserEntity;
 
-  @OneToMany(() => LessonEntity, (lesson) => lesson.module, { cascade: true, onDelete: 'CASCADE' })
+  @OneToMany(() => LessonEntity, (lesson) => lesson.module, {
+    cascade: true,
+    onDelete: 'CASCADE',
+  })
   lessons: LessonEntity[];
 
-  @OneToMany(() => ResourceEntity, (resource) => resource.module, { cascade: true })
+  @OneToMany(() => ResourceEntity, (resource) => resource.module, {
+    cascade: true,
+  })
   resources: ResourceEntity[];
 }

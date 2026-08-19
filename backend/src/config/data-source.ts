@@ -11,12 +11,9 @@ export const AppDataSource = new DataSource({
   port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 5432,
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'lms_db', 
-  
+  database: process.env.DB_NAME || 'lms_db',
+
   entities: [path.join(__dirname, '../databaseOrm/**/*.entity{.ts,.js}')],
   migrations: [path.join(__dirname, '../databaseOrm/migrations/*{.ts,.js}')],
-  synchronize: true, 
-
-  
+  synchronize: true,
 });
-

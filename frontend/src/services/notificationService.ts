@@ -51,6 +51,11 @@ export const notificationService = {
     return data;
   },
 
+  deleteNotification: async (id: string, token: string) => {
+    const { data } = await axios.delete(`${API_BASE_URL}/notifications/${id}`, auth(token));
+    return data;
+  },
+
   markByTypes: async (
     token: string,
     types: NotificationType[],

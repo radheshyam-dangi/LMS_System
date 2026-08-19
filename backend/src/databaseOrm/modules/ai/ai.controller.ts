@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Param, UseGuards, ForbiddenException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
 import { AiEntityService } from './ai.service';
 import { JwtAuthGuard } from '../../auth/guards/JWT.auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';

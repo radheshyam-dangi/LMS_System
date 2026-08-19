@@ -33,7 +33,12 @@ export class NotificationEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 255, nullable: true })
   link: string;
 
-  @Column({ type: 'varchar', name: 'related_entity_type', length: 64, nullable: true })
+  @Column({
+    type: 'varchar',
+    name: 'related_entity_type',
+    length: 64,
+    nullable: true,
+  })
   relatedEntityType: string;
 
   @Column({ type: 'uuid', name: 'related_entity_id', nullable: true })

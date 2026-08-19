@@ -46,11 +46,23 @@ export class SeedDummyActivityAndDocuments1782715000002 implements MigrationInte
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DELETE FROM "DocumentAssociation" WHERE id IN ('a5000000-0000-0000-0000-000000000001', 'a5000000-0000-0000-0000-000000000002');`);
-    await queryRunner.query(`DELETE FROM "Document" WHERE id IN ('a4000000-0000-0000-0000-000000000001', 'a4000000-0000-0000-0000-000000000002');`);
-    await queryRunner.query(`DELETE FROM "Evaluation" WHERE id = 'a3000000-0000-0000-0000-000000000001';`);
-    await queryRunner.query(`DELETE FROM "Submission" WHERE id IN ('a2000000-0000-0000-0000-000000000001', 'a2000000-0000-0000-0000-000000000002');`);
-    await queryRunner.query(`DELETE FROM "UserLessonProgress" WHERE id IN ('a1000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000002', 'a1000000-0000-0000-0000-000000000003');`);
-    await queryRunner.query(`DELETE FROM "Enrollment" WHERE id IN ('a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002');`);
+    await queryRunner.query(
+      `DELETE FROM "DocumentAssociation" WHERE id IN ('a5000000-0000-0000-0000-000000000001', 'a5000000-0000-0000-0000-000000000002');`,
+    );
+    await queryRunner.query(
+      `DELETE FROM "Document" WHERE id IN ('a4000000-0000-0000-0000-000000000001', 'a4000000-0000-0000-0000-000000000002');`,
+    );
+    await queryRunner.query(
+      `DELETE FROM "Evaluation" WHERE id = 'a3000000-0000-0000-0000-000000000001';`,
+    );
+    await queryRunner.query(
+      `DELETE FROM "Submission" WHERE id IN ('a2000000-0000-0000-0000-000000000001', 'a2000000-0000-0000-0000-000000000002');`,
+    );
+    await queryRunner.query(
+      `DELETE FROM "UserLessonProgress" WHERE id IN ('a1000000-0000-0000-0000-000000000001', 'a1000000-0000-0000-0000-000000000002', 'a1000000-0000-0000-0000-000000000003');`,
+    );
+    await queryRunner.query(
+      `DELETE FROM "Enrollment" WHERE id IN ('a0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002');`,
+    );
   }
 }

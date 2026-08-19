@@ -34,10 +34,12 @@ export class NotificationService {
       relatedEntityId: dto.relatedEntityId ?? null,
       isRead: false,
     } as Partial<NotificationEntity>);
-    return await this.repository.save(row as NotificationEntity);
+    return await this.repository.save(row);
   }
 
-  async createMany(dtos: CreateNotificationDto[]): Promise<NotificationEntity[]> {
+  async createMany(
+    dtos: CreateNotificationDto[],
+  ): Promise<NotificationEntity[]> {
     if (!dtos.length) return [];
     const rows = dtos.map((dto) =>
       this.repository.create({
@@ -51,14 +53,15 @@ export class NotificationService {
         isRead: false,
       } as Partial<NotificationEntity>),
     );
-    return await this.repository.save(rows as NotificationEntity[]);
+    return await this.repository.save(rows);
   }
 
-  async findForUser(userId: string, unreadOnly = false): Promise<NotificationEntity[]> {
+  async findForUser(
+    userId: string,
+    unreadOnly = false,
+  ): Promise<NotificationEntity[]> {
     return await this.repository.find({
-      where: unreadOnly
-        ? ({ userId, isRead: false } as any)
-        : ({ userId } as any),
+      where: unreadOnly ? { userId, isRead: false } : { userId },
       order: { createdAt: 'DESC' },
       take: 50,
     });
@@ -66,12 +69,14 @@ export class NotificationService {
 
   async countUnread(userId: string): Promise<number> {
     return await this.repository.count({
-      where: { userId, isRead: false } as any,
+      where: { userId, isRead: false },
     });
   }
 
   async markAsRead(id: string, userId: string): Promise<NotificationEntity> {
-    const note = await this.repository.findOne({ where: { id, userId } as any });
+    const note = await this.repository.findOne({
+      where: { id, userId },
+    });
     if (!note) throw new NotFoundException('Notification not found.');
     if (!note.isRead) {
       note.isRead = true;
@@ -83,7 +88,7 @@ export class NotificationService {
 
   async markAllAsRead(userId: string): Promise<number> {
     const result = await this.repository.update(
-      { userId, isRead: false } as any,
+      { userId, isRead: false },
       { isRead: true, readAt: new Date() },
     );
     return result.affected ?? 0;
@@ -127,9 +132,18 @@ export class NotificationService {
         isRead: false,
         relatedEntityType,
         relatedEntityId,
-      } as any,
+      },
       { isRead: true, readAt: new Date() },
     );
     return result.affected ?? 0;
+  }
+
+  async deleteNotification(id: string, userId: string): Promise<boolean> {
+    const note = await this.repository.findOne({
+      where: { id, userId },
+    });
+    if (!note) throw new NotFoundException('Notification not found.');
+    await this.repository.remove(note);
+    return true;
   }
 }

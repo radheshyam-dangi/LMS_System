@@ -28,11 +28,19 @@ export class EnrollmentController {
     @GetUser() currentUser: any,
   ) {
     const roles = this.extractRoles(currentUser);
-    const canEnrollOthers = roles.includes('admin') || roles.includes('trainer');
+    const canEnrollOthers =
+      roles.includes('admin') || roles.includes('trainer');
     const userId =
-      canEnrollOthers && body.userId ? body.userId : currentUser.id || currentUser.sub;
+      canEnrollOthers && body.userId
+        ? body.userId
+        : currentUser.id || currentUser.sub;
 
-    return await this.enrollmentService.create(userId, body.learningPathId, body.status || 'active');
+    return await this.enrollmentService.create(
+      userId,
+      body.learningPathId,
+      body.status || 'active',
+      (currentUser.id || currentUser.sub) // The person making the request is the assigner
+    );
   }
 
   @Get('me')
@@ -82,7 +90,8 @@ export class EnrollmentController {
     if (!user) return roles;
     if (typeof user.role === 'string') roles.push(user.role.toLowerCase());
     if (user.role?.name) roles.push(user.role.name.toLowerCase());
-    if (typeof user.primaryRole === 'string') roles.push(user.primaryRole.toLowerCase());
+    if (typeof user.primaryRole === 'string')
+      roles.push(user.primaryRole.toLowerCase());
     if (user.primaryRole?.name) roles.push(user.primaryRole.name.toLowerCase());
     if (Array.isArray(user.roles)) {
       user.roles.forEach((r: any) => {

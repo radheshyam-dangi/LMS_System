@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { AiConversationEntity } from '../../entities/aiConversation.entity';
 import { AiMessageEntity } from '../../entities/aiMessage.entity';
@@ -47,11 +51,14 @@ export class AiEntityService {
       where: { id },
       relations: ['messages'],
     });
-    if (!conversation) throw new NotFoundException(`Conversation "${id}" not found.`);
-    if (conversation.userId !== userId) throw new ForbiddenException('Access denied.');
+    if (!conversation)
+      throw new NotFoundException(`Conversation "${id}" not found.`);
+    if (conversation.userId !== userId)
+      throw new ForbiddenException('Access denied.');
     if (Array.isArray(conversation.messages)) {
       conversation.messages.sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
       );
     }
     return conversation;

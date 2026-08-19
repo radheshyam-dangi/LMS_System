@@ -15,8 +15,9 @@ const getErrorMessage = async (response: Response, fallback: string) => {
 };
 
 export const login = async (email: string, password: string): Promise<LoginResponse> => {
-  const response = await fetch(`${API_BASE_URL}/users/login`, {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
+    credentials: 'include',
     headers: jsonHeaders,
     body: JSON.stringify({ email, password }),
   });

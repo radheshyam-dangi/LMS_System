@@ -233,7 +233,7 @@ export const curriculumService = {
 
   evaluateSubmission: async (
     submissionId: string,
-    payload: { score: number; feedback: string; status?: 'Accepted' | 'Rejected' | 'Evaluated' },
+    payload: { score: number; feedback: string; status?: 'Approved' | 'Rejected' | 'Evaluated' },
     token: string
   ) => {
     const response = await axios.put(

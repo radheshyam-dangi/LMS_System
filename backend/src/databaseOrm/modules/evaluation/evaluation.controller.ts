@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+} from '@nestjs/common';
 import { EvaluationEntitytService } from './evaluation.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { EvaluationModel } from '../../../types/models/evaluation.model';

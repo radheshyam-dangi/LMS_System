@@ -20,7 +20,10 @@ export class ProgressController {
 
   @Post('lessons/:lessonId/complete')
   @Roles('Trainee', 'Trainer', 'Admin')
-  async completeLesson(@Param('lessonId') lessonId: string, @GetUser() currentUser: any) {
+  async completeLesson(
+    @Param('lessonId') lessonId: string,
+    @GetUser() currentUser: any,
+  ) {
     const userId = currentUser?.id || currentUser?.sub;
     if (!userId) throw new ForbiddenException('User session missing.');
     return await this.progressService.completeLesson(userId, lessonId);
@@ -28,7 +31,10 @@ export class ProgressController {
 
   @Post('resources/:resourceId/visit')
   @Roles('Trainee', 'Trainer', 'Admin')
-  async visitResource(@Param('resourceId') resourceId: string, @GetUser() currentUser: any) {
+  async visitResource(
+    @Param('resourceId') resourceId: string,
+    @GetUser() currentUser: any,
+  ) {
     const userId = currentUser?.id || currentUser?.sub;
     if (!userId) throw new ForbiddenException('User session missing.');
     return await this.progressService.visitResource(userId, resourceId);

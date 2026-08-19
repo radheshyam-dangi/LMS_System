@@ -23,13 +23,26 @@ export class LessonEntity extends BaseEntity {
   @Column({ type: 'varchar', name: 'article_url', nullable: true })
   articleUrl: string;
 
-  @Column({ type: 'integer', name: 'duration_minutes', nullable: true, default: 15 })
+  @Column({
+    type: 'integer',
+    name: 'duration_minutes',
+    nullable: true,
+    default: 15,
+  })
   durationMinutes: number;
 
-  @Column({ type: 'integer', name: 'display_order', nullable: true, default: 1 })
+  @Column({
+    type: 'integer',
+    name: 'display_order',
+    nullable: true,
+    default: 1,
+  })
   displayOrder: number;
 
-  @ManyToOne(() => ModuleEntity, (module) => module.lessons, { nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => ModuleEntity, (module) => module.lessons, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: ForeignKeys.Lesson.ModuleId })
   module?: ModuleEntity;
 

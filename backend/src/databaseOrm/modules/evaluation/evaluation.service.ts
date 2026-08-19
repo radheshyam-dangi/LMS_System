@@ -1,10 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { EvaluationEntitytService} from '../../services/evaluation.service';
+import { DataSource, Repository } from 'typeorm';
+import { BaseService } from '../../../common/services/base.service';
+import { EvaluationEntity } from '../../entities/evaluation.entity';
 
 @Injectable()
-export class EvaluationService{
-    constructor(
-        private EvaluationEntityService : EvaluationEntitytService){}
-    
+export class EvaluationEntitytService extends BaseService<EvaluationEntity> {
+  protected repository: Repository<EvaluationEntity>;
+  constructor(datasource: DataSource) {
+    super();
+    this.repository =
+      datasource.getRepository<EvaluationEntity>(EvaluationEntity);
+  }
 }
-export {EvaluationEntitytService}

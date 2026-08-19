@@ -7,7 +7,7 @@ export const Entities = {
   LearningPath: 'LearningPath',
   LearningPathModule: 'LearningPathModule',
   Notification: 'Notification',
-  Resource:'Resource',
+  Resource: 'Resource',
   Lesson: 'Lesson',
   Module: 'Module',
   ModuleKeyPoint: 'ModuleKeyPoint',

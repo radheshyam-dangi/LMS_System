@@ -18,41 +18,46 @@ import { ModulesManagementSection } from '../components/ModulePathSection/Module
 import { seriesToAreaPath, seriesToPolyline } from '../utils/charts';
 import { useNotifications } from '../context/NotificationContext';
 import { DailyActivityHeatmap } from '../components/DailyActivityHeatmap/DailyActivityHeatmap';
+import { NotificationsSection } from '../components/NotificationsSection/NotificationsSection';
 import type { RoleName, SessionUser } from '../types/auth';
 import confetti from 'canvas-confetti';
 import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts';
 
-const calculateStreak = (submissions: any[]) => {
-  if (!submissions || submissions.length === 0) return 0;
+const calculateStreak = (activityTimestamps: string[]) => {
+  if (!activityTimestamps || activityTimestamps.length === 0) return { streak: 0, activeToday: false };
   
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const toLocalDateStr = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
   
   const dates = new Set<string>();
-  submissions.forEach(s => {
-    const d = new Date(s.submittedAt || s.createdAt);
+  activityTimestamps.forEach(ts => {
+    const d = new Date(ts);
     if (!isNaN(d.getTime())) {
-      d.setHours(0, 0, 0, 0);
-      dates.add(d.toISOString().split("T")[0]);
+      dates.add(toLocalDateStr(d));
     }
   });
 
   let streak = 0;
-  let current = new Date(today);
+  let current = new Date();
   
-  // Check if they submitted today
-  const todayStr = current.toISOString().split("T")[0];
-  if (!dates.has(todayStr)) {
-    // If not today, check yesterday. If yesterday has no submissions, streak is 0.
+  const todayStr = toLocalDateStr(current);
+  const activeToday = dates.has(todayStr);
+
+  if (!activeToday) {
+    // If not today, check yesterday
     current.setDate(current.getDate() - 1);
-    if (!dates.has(current.toISOString().split("T")[0])) {
-      return 0;
+    if (!dates.has(toLocalDateStr(current))) {
+      return { streak: 0, activeToday: false };
     }
   }
 
-  // Count backwards from current day
+  // Count backwards from current
   while (true) {
-    const key = current.toISOString().split("T")[0];
+    const key = toLocalDateStr(current);
     if (dates.has(key)) {
       streak++;
       current.setDate(current.getDate() - 1);
@@ -60,7 +65,7 @@ const calculateStreak = (submissions: any[]) => {
       break;
     }
   }
-  return streak;
+  return { streak, activeToday };
 };
 
 type DashboardPageProps = {
@@ -253,16 +258,30 @@ function TraineeProgressRing({
   );
 }
 
-function StreakCard({ currentStreak }: { currentStreak: number }) {
+function StreakCard({ currentStreak, activeToday, onCelebrate }: { currentStreak: number; activeToday: boolean; onCelebrate: (val: number) => void }) {
   const animatedStreak = useAnimatedValue(currentStreak, 800);
-  const prevStreakRef = useRef(currentStreak);
   const flameRef = useRef<HTMLDivElement>(null);
   const [milestoneMsg, setMilestoneMsg] = useState<string | null>(null);
   const [bounce, setBounce] = useState(false);
 
   useEffect(() => {
-    // On load, prevStreak is currentStreak. If it changes and increments:
-    if (prevStreakRef.current !== undefined && currentStreak > prevStreakRef.current) {
+    const toLocalDateStr = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+    
+    const todayStr = toLocalDateStr(new Date());
+    const lsKey = 'lastStreakCelebrationDate_v3';
+    const lastCelDate = localStorage.getItem(lsKey);
+
+    // We celebrate ONLY if:
+    // 1. Streak is > 0
+    // 2. The trainee was ACTIVE TODAY (they completed a task/lesson today)
+    // 3. We have NOT celebrated today yet.
+    if (currentStreak > 0 && activeToday && lastCelDate !== todayStr) {
+      localStorage.setItem(lsKey, todayStr);
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       
       setBounce(true);
@@ -286,13 +305,12 @@ function StreakCard({ currentStreak }: { currentStreak: number }) {
           spread: 50,
           origin: { x: originX, y: originY },
           colors: ['#4f46e5', '#ea580c', '#10b981', '#ec4899'],
-          disableForReducedMotion: true,
           zIndex: 9999
         });
       }
+      onCelebrate(currentStreak);
     }
-    prevStreakRef.current = currentStreak;
-  }, [currentStreak]);
+  }, [currentStreak, activeToday, onCelebrate]);
 
   return (
     <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
@@ -331,13 +349,22 @@ export function DashboardPage({
   const [chartTooltip, setChartTooltip] = useState<{ visible: boolean; x: number; y: number; label: string; value: string }>({ visible: false, x: 0, y: 0, label: '', value: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
   const location = useLocation();
-  const [selectedPathId, setSelectedPathId] = useState<string | null>(location.state?.pathId || null);
-  const [selectedPathTitle, setSelectedPathTitle] = useState<string>(location.state?.pathName || '');
+  const [selectedPathId, setSelectedPathId] = useState<string | null>((location.state as any)?.pathId || null);
+  const [selectedPathTitle, setSelectedPathTitle] = useState<string>((location.state as any)?.pathName || '');
+  const [heatmapRange, setHeatmapRange] = useState<number>(() => {
+    const saved = sessionStorage.getItem('dailyActivityRange');
+    return saved ? parseInt(saved, 10) : 30;
+  });
 
   useEffect(() => {
-    if (location.state?.pathId) {
-      setSelectedPathId(location.state.pathId);
-      setSelectedPathTitle(location.state.pathName || '');
+    sessionStorage.setItem('dailyActivityRange', heatmapRange.toString());
+  }, [heatmapRange]);
+
+  useEffect(() => {
+    const state = location.state as any;
+    if (state?.pathId) {
+      setSelectedPathId(state.pathId);
+      setSelectedPathTitle(state.pathName || '');
     }
   }, [location.state]);
 
@@ -365,6 +392,8 @@ export function DashboardPage({
     completionRate: 0,
     averageScore: 0,
     totalLessons: 0,
+    currentStreak: 0,
+    activityTimestamps: [] as string[],
   });
 
   const [traineePath, setTraineePath] = useState<any | null>(null);
@@ -372,11 +401,12 @@ export function DashboardPage({
   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
   const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
-  const [progressStats, setProgressStats] = useState({
+  const [progressStats, setProgressStats] = useState<any>({
     completedLessons: 0,
     totalLessons: 0,
     completionPercent: 0,
     averageScore: 0,
+    completedModuleIds: [],
   });
   const [charts, setCharts] = useState<ChartBundle>({
     progressTrends: [],
@@ -487,7 +517,7 @@ export function DashboardPage({
         });
 
         const pendingCount = analytics?.pendingReviews ?? (pendingSubs?.length || 0);
-        const acceptedCount = (mySubs || []).filter((s: any) => s.status === 'Accepted').length;
+        const acceptedCount = (mySubs || []).filter((s: any) => s.status === 'Approved').length;
         const calcRate =
           analytics?.completionRate ??
           (taskCount > 0
@@ -509,6 +539,8 @@ export function DashboardPage({
           completionRate: calcRate,
           averageScore: analytics?.averageScore ?? 0,
           totalLessons: analytics?.totalLessons ?? myProgress.totalLessons ?? 0,
+          currentStreak: analytics?.currentStreak ?? 0,
+          activityTimestamps: (analytics as any)?.activityTimestamps || [],
         });
 
         setPendingSubmissions(pendingSubs || analytics?.recentActivity || []);
@@ -527,7 +559,7 @@ export function DashboardPage({
             }
           }
           if (!assigned) {
-             assigned = pathsList.find((p: any) => p.assignedToTraineeIds?.includes(currentUser.id)) || pathsList[0];
+             assigned = pathsList.find((p: any) => p.assignedToTraineeIds?.includes(currentUser.id));
           }
           setTraineePath(assigned);
           setUpcomingTasks([]);
@@ -550,6 +582,8 @@ export function DashboardPage({
             completionRate: 0,
             averageScore: 0,
             totalLessons: 0,
+            currentStreak: 0,
+            activityTimestamps: [],
           });
         }
       } finally {
@@ -561,7 +595,7 @@ export function DashboardPage({
     return () => {
       isMounted = false;
     };
-  }, [accessToken, activeRole, currentUser.id, isTrainee]);
+  }, [accessToken, activeRole, currentUser.id, isTrainee, activeSection]);
 
   // ========================================================
   // ROUTING ENGINE VIEW CONDITIONALS 
@@ -570,7 +604,7 @@ export function DashboardPage({
   if (isAdmin && activeSection === 'Users') {
     return (
       <div className="dashboard-content">
-        <UsersSection onOpenInviteModal={() => setShowInviteModal(true)} />
+        <UsersSection onOpenInviteModal={() => setShowInviteModal(true)} accessToken={accessToken} />
         {showInviteModal && (
           <InviteUserModal
             accessToken={accessToken}
@@ -593,13 +627,21 @@ export function DashboardPage({
       <div className="dashboard-content">
         {isTrainee ? (
           activeSection === 'Assignments' ? (
-            <TraineeAssignmentsView accessToken={accessToken} />
+            <TraineeAssignmentsView accessToken={accessToken} currentUser={currentUser} />
           ) : (
             <TraineeSubmissionsView accessToken={accessToken} />
           )
         ) : (
           <TrainerEvaluationDashboard accessToken={accessToken} currentUser={currentUser} />
         )}
+      </div>
+    );
+  }
+
+  if (activeSection === 'Notifications') {
+    return (
+      <div className="dashboard-content">
+        <NotificationsSection />
       </div>
     );
   }
@@ -702,7 +744,8 @@ const firstName = currentUser.firstName || currentUser.name?.split(' ')[0] || 'U
 if (isTrainee) {
   const currentPathTitle = traineePath?.title || traineePath?.name || 'No path assigned';
   const totalModules = traineePath?.modules?.length || 0;
-  const progressPercent = progressStats.completionPercent || dbData.completionRate || 0;
+  // Use exact lessons completion % as overall progress
+  const progressPercent = progressStats.totalLessons > 0 ? Math.round((progressStats.completedLessons / progressStats.totalLessons) * 100) : 0;
   const completedModules = Math.min(
     totalModules,
     progressStats.completedLessons > 0 && totalModules > 0
@@ -710,7 +753,11 @@ if (isTrainee) {
       : 0,
   );
   
-  const currentStreak = calculateStreak(mySubmissions);
+  const combinedTimestamps = [
+    ...(dbData.activityTimestamps || []),
+    ...mySubmissions.map(s => s.submittedAt || s.createdAt)
+  ];
+  const { streak: currentStreak, activeToday } = calculateStreak(combinedTimestamps);
   const traineeAvgScore = progressStats.averageScore || 0;
 
   return (
@@ -750,7 +797,14 @@ if (isTrainee) {
           </div>
         </div>
 
-        <StreakCard currentStreak={currentStreak} />
+        <StreakCard 
+          currentStreak={currentStreak} 
+          activeToday={activeToday}
+          onCelebrate={(val) => {
+            analyticsService.celebrateStreak(val, accessToken).catch(console.error);
+            setDbData(prev => ({...prev, currentStreak: val}));
+          }} 
+        />
       </section>
 
       <section style={{ display: 'grid', gridTemplateColumns: '1.2fr 2.5fr', gap: '20px' }}>
@@ -759,39 +813,56 @@ if (isTrainee) {
           <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', position: 'relative' }}>
             <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Learning Path Progress</h3>
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
-  <div style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer' }}>
-    <TraineeProgressRing
-      progressPercent={progressPercent}
-      completedLessons={progressStats.completedLessons}
-      totalLessons={progressStats.totalLessons}
-      currentPathTitle={currentPathTitle}
-      onPathClick={() => {
-        if (traineePath) {
-          navigate(`/paths/${traineePath.id}`);
-        }
-      }}
-    />
-  </div>
-</div>
-
-            <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {(traineePath?.modules || []).slice(0, 5).map((m: any, idx: number) => (
-                <div key={m.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 6, background: '#fafafa' }}>
-                  <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
-                    <span style={{ color: idx < completedModules ? '#16a34a' : '#94a3b8', fontWeight: 700, marginRight: 6 }}>
-                      {idx < completedModules ? '✓' : '○'}
-                    </span>
-                    {m.title || `Module ${idx + 1}`}
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: idx < completedModules ? '#dcfce7' : '#f1f5f9', color: idx < completedModules ? '#166534' : '#64748b' }}>
-                    {idx < completedModules ? 'Completed' : 'Pending'}
-                  </span>
+              {traineePath ? (
+                <div style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer' }}>
+                  <TraineeProgressRing
+                    progressPercent={progressPercent}
+                    completedLessons={progressStats.completedLessons}
+                    totalLessons={progressStats.totalLessons}
+                    currentPathTitle={currentPathTitle}
+                    onPathClick={() => {
+                      if (traineePath) {
+                        navigate(`/paths/${traineePath.id}`);
+                      }
+                    }}
+                  />
                 </div>
-              ))}
-              {(!traineePath?.modules || traineePath.modules.length === 0) && (
-                <div style={{ color: '#94a3b8', fontSize: 12 }}>No modules assigned yet.</div>
+              ) : (
+                <div style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center', margin: '30px 0' }}>
+                  No learning path assigned yet.
+                </div>
               )}
             </div>
+
+            {traineePath && (
+              <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {(traineePath.modules || []).slice(0, 5).map((m: any, idx: number) => {
+                  let isCompleted = false;
+                  if (progressStats?.completedModuleIds && progressStats.completedModuleIds.length > 0) {
+                    isCompleted = progressStats.completedModuleIds.includes(m.id);
+                  } else if (m.lessons && m.lessons.length > 0) {
+                    isCompleted = m.lessons.every((l: any) => progressStats?.completedLessonIds?.includes(l.id));
+                  }
+                  
+                  return (
+                  <div key={m.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 6, background: '#fafafa' }}>
+                    <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
+                      <span style={{ color: isCompleted ? '#16a34a' : '#94a3b8', fontWeight: 700, marginRight: 6 }}>
+                        {isCompleted ? '✓' : '○'}
+                      </span>
+                      {m.title || `Module ${idx + 1}`}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: isCompleted ? '#dcfce7' : '#f1f5f9', color: isCompleted ? '#166534' : '#64748b' }}>
+                      {isCompleted ? 'Completed' : 'Pending'}
+                    </span>
+                  </div>
+                  );
+                })}
+                {(!traineePath.modules || traineePath.modules.length === 0) && (
+                  <div style={{ color: '#94a3b8', fontSize: 12 }}>No modules assigned yet.</div>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -810,18 +881,27 @@ if (isTrainee) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Daily Activity</h3>
-              <span style={{ fontSize: 11, fontWeight: 700, background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: 6 }}>
-                Last 140 Days
-              </span>
+          <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>Daily Activity</h3>
+                <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>Submissions and activity</p>
+              </div>
+              <select 
+                value={heatmapRange}
+                onChange={(e) => setHeatmapRange(Number(e.target.value))}
+                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', background: '#fff', outline: 'none', cursor: 'pointer' }}
+              >
+                <option value={30}>Last 30 days</option>
+                <option value={60}>Last 60 days</option>
+                <option value={90}>Last 90 days</option>
+                <option value={120}>Last 120 days</option>
+                <option value={240}>Last 240 days</option>
+                <option value={365}>Last 365 days</option>
+              </select>
             </div>
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '2px 0 12px 0' }}>
-              {mySubmissions.length} tasks submitted total
-            </p>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-              <DailyActivityHeatmap submissions={mySubmissions} daysToDispay={30} />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '16px 0', overflowX: 'auto', minHeight: '180px' }}>
+              <DailyActivityHeatmap submissions={mySubmissions} daysToDispay={heatmapRange} />
             </div>
           </div>
         </div>
@@ -921,22 +1001,14 @@ return (
     subtitle="Submissions vs Completions from database"
     role={activeRole.toLowerCase()}
     type="progress"
-    datasets={{
-      daily: (charts.dailyProgressTrends || []).map((d: any) => ({ ...d, name: d.label || d.name })),
-      weekly: (charts.weeklyProgressTrends || charts.progressTrends || []).map((d: any) => ({ ...d, name: d.label || d.name })),
-      monthly: (charts.yearlyProgressTrends || []).map((d: any) => ({ ...d, name: d.label || d.name }))
-    }}
+    accessToken={accessToken}
   />
   <DashboardCharts
     title="Avg. Evaluation Score"
     subtitle="Weekly average from database"
     role={activeRole.toLowerCase()}
     type="score"
-    datasets={{
-      daily: (charts.dailyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints })),
-      weekly: (charts.weeklyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints })),
-      monthly: (charts.monthlyScores || []).map((d: any) => ({ ...d, name: d.label, averageScore: d.averageScore || d.activityPoints }))
-    }}
+    accessToken={accessToken}
   />
 </section>
 

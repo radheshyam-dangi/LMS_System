@@ -1,9 +1,10 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../api';
 
-const auth = (token: string) => ({
+const auth = (token?: string) => ({
+  withCredentials: true,
   headers: {
-    Authorization: `Bearer ${token}`,
+    Authorization: token ? `Bearer ${token}` : '',
     'Content-Type': 'application/json',
   },
 });
@@ -17,6 +18,8 @@ export type ChartBundle = {
   dailyScores?: { label: string; averageScore: number; submissions: number }[];
   monthlyScores?: { label: string; averageScore: number; submissions: number }[];
   skillDistribution: { name: string; count: number; percent: number }[];
+  traineeProgressList?: any[];
+  pathProgression?: any[];
   moduleCompletion: {
     id: string;
     title: string;
@@ -58,6 +61,7 @@ export type DashboardAnalytics = {
   consistencyScore?: number;
   currentStreak?: number;
   learningStyle?: string;
+  celebrateStreak?: boolean;
   estimatedCompletionDate?: string;
   trainingEffectiveness?: number;
 };
@@ -76,8 +80,9 @@ const emptyCharts = (): ChartBundle => ({
 });
 
 export const analyticsService = {
-  fetchDashboard: async (token: string): Promise<DashboardAnalytics> => {
-    const { data } = await axios.get(`${API_BASE_URL}/analytics/dashboard`, auth(token));
+  fetchDashboard: async (token: string, role?: string): Promise<DashboardAnalytics> => {
+    const query = role ? `?role=${role.toLowerCase()}` : '';
+    const { data } = await axios.get(`${API_BASE_URL}/analytics/dashboard${query}`, auth(token));
     return {
       totalUsers: data?.totalUsers ?? 0,
       totalTrainers: data?.totalTrainers ?? 0,
@@ -92,16 +97,38 @@ export const analyticsService = {
       activeEnrollments: data?.activeEnrollments ?? 0,
       completionGrowth: data?.completionGrowth ?? 0,
       recentActivity: Array.isArray(data?.recentActivity) ? data.recentActivity : [],
+      skillGrowth: data?.skillGrowth,
+      tasksCompleted: data?.tasksCompleted,
+      totalGainedScore: data?.totalGainedScore,
+      totalMaxScore: data?.totalMaxScore,
+      learningVelocity: data?.learningVelocity,
+      consistencyScore: data?.consistencyScore,
+      currentStreak: data?.currentStreak,
+      learningStyle: data?.learningStyle,
+      celebrateStreak: data?.celebrateStreak,
+      estimatedCompletionDate: data?.estimatedCompletionDate,
+      trainingEffectiveness: data?.trainingEffectiveness,
       charts: data?.charts
         ? {
             progressTrends: data.charts.progressTrends || [],
+            dailyProgressTrends: data.charts.dailyProgressTrends,
+            weeklyProgressTrends: data.charts.weeklyProgressTrends,
+            yearlyProgressTrends: data.charts.yearlyProgressTrends,
             weeklyScores: data.charts.weeklyScores || [],
+            dailyScores: data.charts.dailyScores,
+            monthlyScores: data.charts.monthlyScores,
             skillDistribution: data.charts.skillDistribution || [],
             moduleCompletion: data.charts.moduleCompletion || [],
             pathPerformance: data.charts.pathPerformance || [],
+            traineeProgressList: data.charts.traineeProgressList || [],
+            pathProgression: data.charts.pathProgression || [],
           }
         : emptyCharts(),
     };
+  },
+  celebrateStreak: async (val: number, token: string) => {
+    // Return dummy true for now, since it wasn't implemented before
+    return true;
   },
 };
 

@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+} from '@nestjs/common';
 import { DocumentEntityService } from './document.service';
 import { RoutePaths } from '../../../constants/routePaths';
 import type { DocumentModel } from '../../../types/models/document.model';

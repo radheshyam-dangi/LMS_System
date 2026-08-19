@@ -1,32 +1,38 @@
-import { Entity, Column, ManyToMany, JoinTable, ManyToOne, JoinColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  ManyToMany,
+  JoinTable,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { RoleEntity } from './role.entity';
 import { Entities, Junctions } from '../../constants/entity';
 import { ForeignKeys } from '../../constants/foreignKeys';
 
-@Entity(Entities.User) 
+@Entity(Entities.User)
 export class UserEntity extends BaseEntity {
-  
-  @Column({ 
-    type: 'varchar', 
-    unique: true, 
-    nullable: false 
+  @Column({
+    type: 'varchar',
+    unique: true,
+    nullable: false,
   })
   email: string;
 
-  @Column({ 
-    type: 'varchar', 
-    name: 'first_name', 
-    nullable: true 
+  @Column({
+    type: 'varchar',
+    name: 'first_name',
+    nullable: true,
   })
-  firstName: string; 
+  firstName: string;
 
-  @Column({ 
-    type: 'varchar', 
-    name: 'last_name', 
-    nullable: true 
+  @Column({
+    type: 'varchar',
+    name: 'last_name',
+    nullable: true,
   })
-  lastName: string; 
+  lastName: string;
 
   @Column({
     type: 'varchar',
@@ -48,7 +54,7 @@ export class UserEntity extends BaseEntity {
   })
   isActive: boolean;
 
-  @ManyToMany(()=> RoleEntity,(role)=>role.users,{cascade:true})
+  @ManyToMany(() => RoleEntity, (role) => role.users, { cascade: true })
   @JoinTable({
     name: Junctions.UserRoles,
     joinColumn: {
@@ -59,11 +65,17 @@ export class UserEntity extends BaseEntity {
       name: ForeignKeys.UserRoles.RoleId,
       referencedColumnName: 'id',
     },
-    
   })
   roles: RoleEntity[];
   // Inside user.entity.ts
-@ManyToOne(() => RoleEntity, { eager: true, nullable: true })
-@JoinColumn({ name: 'primary_role_id' })
-primaryRole: RoleEntity; // 👈 Check that this is exactly "primaryRole" and not "primary_role"
+  @ManyToOne(() => RoleEntity, { eager: true, nullable: true })
+  @JoinColumn({ name: 'primary_role_id' })
+  primaryRole: RoleEntity; // 👈 Check that this is exactly "primaryRole" and not "primary_role"
+
+  @Column({
+    type: 'int',
+    name: 'last_celebrated_streak',
+    default: 0,
+  })
+  lastCelebratedStreak: number;
 }

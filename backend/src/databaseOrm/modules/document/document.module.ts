@@ -6,7 +6,9 @@ import { DocumentEntity } from '../../entities/document.entity';
 import { DocumentAssociationEntity } from '../../entities/documentAssociation.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DocumentEntity,DocumentAssociationEntity])],
+  imports: [
+    TypeOrmModule.forFeature([DocumentEntity, DocumentAssociationEntity]),
+  ],
   controllers: [DocumentController],
   providers: [DocumentEntityService],
   exports: [DocumentEntityService],

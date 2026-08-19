@@ -20,27 +20,33 @@ export class ProgressEntityService {
 
   constructor(private readonly datasource: DataSource) {
     this.repository = this.datasource.getRepository(UserLessonProgressEntity);
-    this.visitRepository = this.datasource.getRepository(UserResourceVisitEntity);
+    this.visitRepository = this.datasource.getRepository(
+      UserResourceVisitEntity,
+    );
     this.lessonRepository = this.datasource.getRepository(LessonEntity);
     this.resourceRepository = this.datasource.getRepository(ResourceEntity);
     this.assignmentRepository = this.datasource.getRepository(AssignmentEntity);
-    this.submissionRepository = this.datasource.getRepository(AssignmentSubmissionEntity);
+    this.submissionRepository = this.datasource.getRepository(
+      AssignmentSubmissionEntity,
+    );
     this.pathRepository = this.datasource.getRepository(LearningPathEntity);
   }
 
   async completeLesson(userId: string, lessonId: string) {
-    const lesson = await this.lessonRepository.findOne({ where: { id: lessonId } });
+    const lesson = await this.lessonRepository.findOne({
+      where: { id: lessonId },
+    });
     if (!lesson) throw new NotFoundException(`Lesson "${lessonId}" not found.`);
 
     let progress = await this.repository.findOne({
-      where: { user: { id: userId }, lesson: { id: lessonId } } as any,
+      where: { user: { id: userId }, lesson: { id: lessonId } },
       relations: ['user', 'lesson'],
     });
 
     if (!progress) {
       progress = this.repository.create({
-        user: { id: userId } as any,
-        lesson: { id: lessonId } as any,
+        user: { id: userId },
+        lesson: { id: lessonId },
         completedAt: new Date(),
         isCompleted: true,
       });
@@ -53,17 +59,20 @@ export class ProgressEntityService {
   }
 
   async visitResource(userId: string, resourceId: string) {
-    const resource = await this.resourceRepository.findOne({ where: { id: resourceId } });
-    if (!resource) throw new NotFoundException(`Resource "${resourceId}" not found.`);
+    const resource = await this.resourceRepository.findOne({
+      where: { id: resourceId },
+    });
+    if (!resource)
+      throw new NotFoundException(`Resource "${resourceId}" not found.`);
 
     let visit = await this.visitRepository.findOne({
-      where: { user: { id: userId }, resource: { id: resourceId } } as any,
+      where: { user: { id: userId }, resource: { id: resourceId } },
     });
 
     if (!visit) {
       visit = this.visitRepository.create({
-        user: { id: userId } as any,
-        resource: { id: resourceId } as any,
+        user: { id: userId },
+        resource: { id: resourceId },
         visitedAt: new Date(),
       });
     } else {
@@ -75,7 +84,7 @@ export class ProgressEntityService {
 
   async findForUser(userId: string) {
     return await this.repository.find({
-      where: { user: { id: userId } } as any,
+      where: { user: { id: userId } },
       relations: ['lesson', 'lesson.module'],
       order: { completedAt: 'DESC' },
     });
@@ -83,7 +92,7 @@ export class ProgressEntityService {
 
   async findVisitsForUser(userId: string) {
     return await this.visitRepository.find({
-      where: { user: { id: userId } } as any,
+      where: { user: { id: userId } },
       relations: ['resource'],
       order: { visitedAt: 'DESC' },
     });
@@ -98,58 +107,104 @@ export class ProgressEntityService {
         user: { id: userId },
         isCompleted: true,
         completedAt: Not(IsNull()),
-      } as any,
+      },
       relations: ['lesson', 'lesson.module', 'lesson.module.learningPath'],
     });
+
+    const enrolledPathIds = new Set<string>();
+    if (learningPathId) {
+      enrolledPathIds.add(learningPathId);
+    } else {
+      const allPaths = await this.pathRepository.find();
+      allPaths.forEach((p) => {
+        if (p.assignedToTraineeIds && p.assignedToTraineeIds.includes(userId)) {
+          enrolledPathIds.add(p.id);
+        }
+      });
+      const enrollments = await this.datasource
+        .getRepository('EnrollmentEntity')
+        .find({
+          where: { user: { id: userId }, status: 'active' },
+          relations: ['learningPath'],
+        });
+      enrollments.forEach((e) => {
+        if ((e as any).learningPath?.id)
+          enrolledPathIds.add((e as any).learningPath.id);
+      });
+    }
 
     let lessonScope = await this.lessonRepository.find({
       relations: ['module', 'module.learningPath'],
     });
-    if (learningPathId) {
+    if (enrolledPathIds.size > 0) {
       lessonScope = lessonScope.filter(
         (l) =>
-          l.module?.learningPath?.id === learningPathId ||
-          (l as any).learningPathId === learningPathId,
+          (l.module?.learningPath?.id &&
+            enrolledPathIds.has(l.module.learningPath.id)) ||
+          ((l as any).learningPathId &&
+            enrolledPathIds.has((l as any).learningPathId)),
       );
+    } else {
+      lessonScope = [];
     }
 
     const lessonIds = new Set(lessonScope.map((l) => l.id));
-    const completedLessons = completedRows.filter((r) => lessonIds.has(r.lesson?.id)).length;
+    const completedLessons = completedRows.filter((r) =>
+      lessonIds.has(r.lesson?.id),
+    ).length;
     const totalLessons = lessonScope.length;
 
     const visits = await this.findVisitsForUser(userId);
     let resources = await this.resourceRepository.find({
-      relations: ['module', 'module.learningPath', 'lesson', 'lesson.module', 'lesson.module.learningPath'],
+      relations: [
+        'module',
+        'module.learningPath',
+        'lesson',
+        'lesson.module',
+        'lesson.module.learningPath',
+      ],
     });
-    if (learningPathId) {
+    if (enrolledPathIds.size > 0) {
       resources = resources.filter((r) => {
         const pathId =
           r.module?.learningPath?.id ||
           r.lesson?.module?.learningPath?.id ||
           (r.module as any)?.learningPathId;
-        return pathId === learningPathId;
+        return pathId && enrolledPathIds.has(pathId);
       });
+    } else {
+      resources = [];
     }
     const resourceIds = new Set(resources.map((r) => r.id));
-    const visitedResources = visits.filter((v) => resourceIds.has(v.resource?.id)).length;
+    const visitedResources = visits.filter((v) =>
+      resourceIds.has(v.resource?.id),
+    ).length;
     const totalResources = resources.length;
 
     // Assignments in scope
     const allAssignments = await this.assignmentRepository.find({
-      relations: ['lesson', 'lesson.module', 'lesson.module.learningPath', 'module', 'module.learningPath', 'learningPath'],
+      relations: [
+        'lesson',
+        'lesson.module',
+        'lesson.module.learningPath',
+        'module',
+        'module.learningPath',
+        'learningPath',
+      ],
     });
     const scopedAssignments = allAssignments.filter((a) => {
-      if ((a.assignedToTraineeIds || []).includes(userId)) return true;
-      if (!learningPathId) return true;
-      const pathId =
-        a.learningPath?.id ||
-        a.module?.learningPath?.id ||
-        a.lesson?.module?.learningPath?.id;
-      return pathId === learningPathId;
+      if (enrolledPathIds.size > 0) {
+        const pathId =
+          a.learningPath?.id ||
+          a.module?.learningPath?.id ||
+          a.lesson?.module?.learningPath?.id;
+        return pathId && enrolledPathIds.has(pathId);
+      }
+      return false; // If no paths, no assignments
     });
 
     const submissions = await this.submissionRepository.find({
-      where: { trainee: { id: userId } } as any,
+      where: { trainee: { id: userId } },
       relations: ['assignment'],
     });
     const subByAssign = new Map(submissions.map((s) => [s.assignment?.id, s]));
@@ -160,29 +215,64 @@ export class ProgressEntityService {
     let scoreSum = 0;
     let scoreCount = 0;
 
+    let maxScoreSum = 0;
+
     for (const a of scopedAssignments) {
       const sub = subByAssign.get(a.id);
       if (!sub) continue;
-      if (['Submitted', 'Accepted', 'Rejected', 'Evaluated'].includes(sub.status)) {
+      if (
+        ['Submitted', 'Accepted', 'Rejected', 'Evaluated'].includes(sub.status)
+      ) {
         tasksSubmitted++;
       }
-      if (sub.status === 'Accepted' || sub.status === 'Evaluated') tasksAccepted++;
+      if (sub.status === 'Accepted' || sub.status === 'Evaluated')
+        tasksAccepted++;
       if (sub.status === 'Rejected') tasksRejected++;
       if (typeof sub.score === 'number') {
         scoreSum += sub.score;
+        maxScoreSum += Number(a.maxScore || 100);
         scoreCount++;
       }
     }
 
-    const lessonPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
-    const resourcePct = totalResources > 0 ? Math.round((visitedResources / totalResources) * 100) : 100;
+    const lessonPct =
+      totalLessons > 0
+        ? Math.round((completedLessons / totalLessons) * 100)
+        : 0;
+    const resourcePct =
+      totalResources > 0
+        ? Math.round((visitedResources / totalResources) * 100)
+        : 100;
     const taskPct =
       scopedAssignments.length > 0
         ? Math.round((tasksAccepted / scopedAssignments.length) * 100)
         : 0;
 
-    // Weighted overall: lessons 40%, resources 20%, tasks 40%
-    const completionPercent = Math.round(lessonPct * 0.4 + resourcePct * 0.2 + taskPct * 0.4);
+    // Weighted overall: lessons 40%, resources 20%, tasks 40% (REPLACED WITH: Overall Progress % = lesson percentage)
+    const completionPercent = lessonPct;
+
+    const completedLessonIds = completedRows
+      .map((r) => r.lesson?.id)
+      .filter(Boolean);
+    const completedLessonIdsSet = new Set(completedLessonIds);
+    const lessonsByModule = new Map<string, string[]>();
+    lessonScope.forEach((l) => {
+      const mid = l.module?.id;
+      if (mid) {
+        if (!lessonsByModule.has(mid)) lessonsByModule.set(mid, []);
+        lessonsByModule.get(mid)!.push(l.id);
+      }
+    });
+
+    const completedModuleIds: string[] = [];
+    lessonsByModule.forEach((lIds, mid) => {
+      if (
+        lIds.length > 0 &&
+        lIds.every((id) => completedLessonIdsSet.has(id))
+      ) {
+        completedModuleIds.push(mid);
+      }
+    });
 
     return {
       completedLessons,
@@ -194,13 +284,17 @@ export class ProgressEntityService {
       tasksAccepted,
       tasksRejected,
       tasksPending: Math.max(0, scopedAssignments.length - tasksSubmitted),
-      averageScore: scoreCount > 0 ? Math.round(scoreSum / scoreCount) : 0,
+      averageScore:
+        maxScoreSum > 0
+          ? Math.min(100, Math.round((scoreSum / maxScoreSum) * 100))
+          : 0,
       completionPercent,
       lessonProgressPercent: lessonPct,
       resourceProgressPercent: resourcePct,
       taskProgressPercent: taskPct,
-      completedLessonIds: completedRows.map((r) => r.lesson?.id).filter(Boolean),
+      completedLessonIds,
       visitedResourceIds: visits.map((v) => v.resource?.id).filter(Boolean),
+      completedModuleIds,
     };
   }
 
@@ -210,11 +304,17 @@ export class ProgressEntityService {
   async cohortOverview(trainerId?: string) {
     const paths = await this.pathRepository.find();
     const assignedTraineeIds = new Set<string>();
-    paths.forEach((p) => (p.assignedToTraineeIds || []).forEach((id) => assignedTraineeIds.add(id)));
+    paths.forEach((p) =>
+      (p.assignedToTraineeIds || []).forEach((id) =>
+        assignedTraineeIds.add(id),
+      ),
+    );
 
     const externalAssignments = await this.assignmentRepository.find();
     externalAssignments.forEach((a) =>
-      (a.assignedToTraineeIds || []).forEach((id) => assignedTraineeIds.add(id)),
+      (a.assignedToTraineeIds || []).forEach((id) =>
+        assignedTraineeIds.add(id),
+      ),
     );
 
     const traineeIds = Array.from(assignedTraineeIds);
@@ -252,14 +352,27 @@ export class ProgressEntityService {
       relations: ['module', 'module.learningPath'],
     });
     const allResources = await this.resourceRepository.find({
-      relations: ['module', 'module.learningPath', 'lesson', 'lesson.module', 'lesson.module.learningPath'],
+      relations: [
+        'module',
+        'module.learningPath',
+        'lesson',
+        'lesson.module',
+        'lesson.module.learningPath',
+      ],
     });
     const allAssignments = await this.assignmentRepository.find({
-      relations: ['lesson', 'lesson.module', 'lesson.module.learningPath', 'module', 'module.learningPath', 'learningPath'],
+      relations: [
+        'lesson',
+        'lesson.module',
+        'lesson.module.learningPath',
+        'module',
+        'module.learningPath',
+        'learningPath',
+      ],
     });
 
     const allLessonProgress = await this.repository.find({
-      where: { isCompleted: true, completedAt: Not(IsNull()) } as any,
+      where: { isCompleted: true, completedAt: Not(IsNull()) },
       relations: ['user', 'lesson'],
     });
 
@@ -280,6 +393,7 @@ export class ProgressEntityService {
         totalLessons: number;
         totalAssignments: number;
         totalResources: number;
+        traineeProgressMap: Record<string, number>;
       }
     > = {};
 
@@ -289,7 +403,9 @@ export class ProgressEntityService {
 
       // Path scope items
       const pathLessons = allLessons.filter(
-        (l) => l.module?.learningPath?.id === pathId || (l as any).learningPathId === pathId,
+        (l) =>
+          l.module?.learningPath?.id === pathId ||
+          (l as any).learningPathId === pathId,
       );
       const pathLessonIds = new Set(pathLessons.map((l) => l.id));
 
@@ -311,18 +427,23 @@ export class ProgressEntityService {
       });
       const pathAssignmentIds = new Set(pathAssignments.map((a) => a.id));
 
-      const totalItems = pathLessonIds.size + pathAssignmentIds.size + pathResourceIds.size;
+      const totalItems =
+        pathLessonIds.size + pathAssignmentIds.size + pathResourceIds.size;
 
       // Helper function to calculate a single user's progress % on this path
       const calcUserProgress = (uid: string): number => {
         if (!uid || totalItems === 0) return 0;
 
         const watchedLessons = allLessonProgress.filter(
-          (lp) => String(lp.user?.id) === String(uid) && pathLessonIds.has(lp.lesson?.id),
+          (lp) =>
+            String(lp.user?.id) === String(uid) &&
+            pathLessonIds.has(lp.lesson?.id),
         ).length;
 
         const visitedRes = allResourceVisits.filter(
-          (rv) => String(rv.user?.id) === String(uid) && pathResourceIds.has(rv.resource?.id),
+          (rv) =>
+            String(rv.user?.id) === String(uid) &&
+            pathResourceIds.has(rv.resource?.id),
         ).length;
 
         const submittedTasks = allSubmissions.filter(
@@ -341,8 +462,15 @@ export class ProgressEntityService {
 
       // 2. Cohort average progress for assigned trainees
       let cohortProgressPercent = 0;
+      const traineeProgressMap: Record<string, number> = {};
+
       if (enrolledTraineeIds.length > 0) {
-        const sum = enrolledTraineeIds.reduce((acc, tid) => acc + calcUserProgress(tid), 0);
+        let sum = 0;
+        for (const tid of enrolledTraineeIds) {
+          const progress = calcUserProgress(tid);
+          traineeProgressMap[tid] = progress;
+          sum += progress;
+        }
         cohortProgressPercent = Math.round(sum / enrolledTraineeIds.length);
       }
 
@@ -353,6 +481,7 @@ export class ProgressEntityService {
         totalLessons: pathLessonIds.size,
         totalAssignments: pathAssignmentIds.size,
         totalResources: pathResourceIds.size,
+        traineeProgressMap,
       };
     }
 

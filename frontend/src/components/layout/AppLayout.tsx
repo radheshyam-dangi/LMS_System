@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Zap,
   Bell,
+  Trash2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
@@ -82,6 +83,19 @@ const initialsFor = (user: SessionUser) => {
   return `${first}${last}`.toUpperCase();
 };
 
+const timeAgo = (dateStr: string) => {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '';
+  const seconds = Math.floor((new Date().getTime() - d.getTime()) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+};
+
 export function AppLayout({
   activeRole,
   activeSection,
@@ -93,13 +107,14 @@ export function AppLayout({
 }: AppLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { notifications, markAsRead, markAllRead, unreadCount } = useNotifications();
+  const { notifications, markAsRead, markAllRead, unreadCount, deleteNotification } = useNotifications();
   const { searchQuery, setSearchQuery } = useSearch();
   const [panelOpen, setPanelOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const count = Math.max(notificationCount, unreadCount);
 
   useEffect(() => {
+    // Keep panel open on hover, but still allow click outside if click-opened
     const onDocClick = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         setPanelOpen(false);
@@ -259,7 +274,12 @@ export function AppLayout({
               </div>
             )}
 
-            <div ref={panelRef} style={{ position: 'relative' }}>
+            <div 
+              ref={panelRef} 
+              style={{ position: 'relative' }}
+              onMouseEnter={() => setPanelOpen(true)}
+              onMouseLeave={() => setPanelOpen(false)}
+            >
               <button
                 className="icon-badge-button"
                 type="button"
@@ -307,14 +327,16 @@ export function AppLayout({
                     position: 'absolute',
                     right: 0,
                     top: '110%',
-                    width: 340,
-                    maxHeight: 420,
+                    width: 360,
+                    maxHeight: 450,
                     overflowY: 'auto',
                     background: '#fff',
                     border: '1px solid #e2e8f0',
                     borderRadius: 12,
                     boxShadow: '0 12px 40px rgba(15,23,42,0.12)',
                     zIndex: 50,
+                    display: 'flex',
+                    flexDirection: 'column'
                   }}
                 >
                   <div
@@ -344,45 +366,114 @@ export function AppLayout({
                       </button>
                     )}
                   </div>
-                  {notifications.length === 0 && (
-                    <div style={{ padding: 16, color: '#94a3b8', fontSize: 13 }}>
-                      No notifications yet.
+                  {notifications.filter(n => !n.isRead).length === 0 && (
+                    <div style={{ padding: '24px 16px', color: '#64748b', fontSize: 14, textAlign: 'center' }}>
+                      You're all caught up!
                     </div>
                   )}
-                  {notifications.slice(0, 20).map((n) => (
-                    <button
+                  {notifications.filter(n => !n.isRead).slice(0, 20).map((n) => (
+                    <div
                       key={n.id}
-                      type="button"
+                      title={n.message || n.title}
                       onClick={() => {
                         void markAsRead(n.id);
                         if (n.link) navigate(n.link);
                         setPanelOpen(false);
                       }}
                       style={{
-                        display: 'block',
+                        position: 'relative',
+                        display: 'flex',
+                        alignItems: 'flex-start',
                         width: '100%',
                         textAlign: 'left',
                         padding: '12px 14px',
-                        border: 'none',
                         borderBottom: '1px solid #f8fafc',
-                        background: n.isRead ? '#fff' : '#f5f3ff',
+                        background: n.isRead ? '#fff' : '#f0f9ff',
                         cursor: 'pointer',
+                        transition: 'background 0.2s',
+                        gap: '12px'
                       }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = n.isRead ? '#f8fafc' : '#e0f2fe')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = n.isRead ? '#fff' : '#f0f9ff')}
                     >
-                      <div
-                        style={{
-                          fontSize: 13,
-                          fontWeight: n.isRead ? 500 : 700,
-                          color: '#0f172a',
-                        }}
-                      >
-                        {n.title}
+                      <div style={{ flex: 1 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: n.isRead ? 400 : 700,
+                            color: n.isRead ? '#475569' : '#0f172a',
+                            lineHeight: 1.4
+                          }}
+                        >
+                          {n.title}
+                        </div>
+                        {n.message && (
+                          <div style={{ 
+                            fontSize: 12, 
+                            color: n.isRead ? '#94a3b8' : '#64748b', 
+                            marginTop: 4,
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden'
+                          }}>
+                            {n.message}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
+                          {timeAgo(n.createdAt)}
+                        </div>
                       </div>
-                      {n.message && (
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{n.message}</div>
-                      )}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deleteNotification(n.id);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#cbd5e1',
+                          cursor: 'pointer',
+                          padding: '4px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = '#cbd5e1')}
+                        title="Delete notification"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   ))}
+                  
+                  {notifications.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate('/dashboard?section=Notifications');
+                        setPanelOpen(false);
+                      }}
+                      style={{
+                        padding: '12px',
+                        background: '#f8fafc',
+                        border: 'none',
+                        borderTop: '1px solid #e2e8f0',
+                        color: '#4f46e5',
+                        fontSize: 13,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        width: '100%',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = '#f8fafc')}
+                    >
+                      View all notifications
+                    </button>
+                  )}
                 </div>
               )}
             </div>

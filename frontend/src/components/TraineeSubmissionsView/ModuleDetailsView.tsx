@@ -82,13 +82,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     const s = subByAssignment.get(t.id);
     return s && typeof s.score === 'number';
   });
-  const avgScore =
-    tasksScored.length > 0
-      ? Math.round(
-          tasksScored.reduce((sum: number, t: any) => sum + (subByAssignment.get(t.id)?.score || 0), 0) /
-            tasksScored.length,
-        )
-      : 0;
+  const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
+  const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
   const lessonPct = lessons.length ? Math.round((completedLessons / lessons.length) * 100) : 0;
   const resourcePct = resources.length
@@ -213,7 +208,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
             { icon: '⏱️', label: 'Duration', value: moduleData.durationLabel || `${moduleData.durationWeeks || 2} weeks` },
             { icon: '📖', label: 'Lessons', value: `${completedLessons}/${lessons.length} done` },
             { icon: '🎯', label: 'Tasks', value: `${tasksSubmitted}/${tasks.length} submitted` },
-            { icon: '🏆', label: 'Avg. Score', value: `${avgScore}/100` },
+            { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
           ].map((m) => (
             <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <span style={{ fontSize: 20 }}>{m.icon}</span>
@@ -394,7 +389,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                           padding: '4px 10px',
                           borderRadius: 999,
                           background:
-                            status === 'Accepted'
+                            status === 'Approved'
                               ? '#dcfce7'
                               : status === 'Rejected'
                                 ? '#fee2e2'
@@ -402,7 +397,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                                   ? '#fef3c7'
                                   : '#f1f5f9',
                           color:
-                            status === 'Accepted'
+                            status === 'Approved'
                               ? '#166534'
                               : status === 'Rejected'
                                 ? '#b91c1c'
@@ -411,10 +406,10 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                                   : '#475569',
                         }}
                       >
-                        {status === 'Accepted' ? 'Approved' : status}
+                        {status === 'Approved' ? 'Approved' : status}
                         {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
                       </span>
-                      {isTrainee && status !== 'Accepted' && (
+                      {isTrainee && status !== 'Approved' && (
                         <button
                           type="button"
                           onClick={() => {
@@ -478,7 +473,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
 
         {activeTab === 'Assessments' && (
           <div style={{ padding: 24, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', color: '#64748b', fontSize: 14 }}>
-            Assessments are the scored tasks in this module. Submitted: {tasksSubmitted} · Average score after evaluation: {avgScore}/100.
+            Assessments are the scored tasks in this module. Submitted: {tasksSubmitted}.
           </div>
         )}
       </div>

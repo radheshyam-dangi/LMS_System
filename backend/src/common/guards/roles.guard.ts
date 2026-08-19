@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 @Injectable()
@@ -31,8 +37,10 @@ export class RolesGuard implements CanActivate {
         userRoles.push(roleItem.toLowerCase());
       } else if (roleItem && typeof roleItem === 'object') {
         if (roleItem.name) userRoles.push(String(roleItem.name).toLowerCase());
-        if (roleItem.roleName) userRoles.push(String(roleItem.roleName).toLowerCase());
-        if (roleItem.title) userRoles.push(String(roleItem.title).toLowerCase());
+        if (roleItem.roleName)
+          userRoles.push(String(roleItem.roleName).toLowerCase());
+        if (roleItem.title)
+          userRoles.push(String(roleItem.title).toLowerCase());
       }
     };
 
@@ -44,12 +52,12 @@ export class RolesGuard implements CanActivate {
     }
 
     const hasRole = requiredRoles.some((requiredRole) =>
-      userRoles.includes(requiredRole.toLowerCase())
+      userRoles.includes(requiredRole.toLowerCase()),
     );
 
     if (!hasRole) {
       throw new ForbiddenException(
-        `Access denied: Your token role (${userRoles.join(', ') || 'None'}) does not have permission to perform this action.`
+        `Access denied: Your token role (${userRoles.join(', ') || 'None'}) does not have permission to perform this action.`,
       );
     }
 

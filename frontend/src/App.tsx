@@ -63,31 +63,44 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? '');
+  const [accessToken, setAccessToken] = useState('');
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [activeRole, setActiveRole] = useState<RoleName>('Trainer');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem(TOKEN_KEY) || localStorage.getItem('token');
-
-    if (savedToken) {
-      const tokenUser = userFromToken(savedToken);
-      if (tokenUser) {
-        localStorage.setItem(TOKEN_KEY, savedToken);
-        setAccessToken(savedToken);
+    // We now use httpOnly cookies for API auth. 
+    // The frontend only keeps the non-sensitive user metadata in localStorage for UX continuity across reloads.
+    const savedUserStr = localStorage.getItem('skillforge_user');
+    
+    if (savedUserStr) {
+      try {
+        const tokenUser = JSON.parse(savedUserStr);
         setCurrentUser(tokenUser);
+        
+        const savedToken = localStorage.getItem(TOKEN_KEY);
+        if (savedToken) {
+          setAccessToken(savedToken);
+        }
+
         const roles = tokenUser.roles?.length ? tokenUser.roles : [tokenUser.primaryRole];
         const startRole = roles.includes(tokenUser.primaryRole)
           ? tokenUser.primaryRole
           : roles[0];
         setActiveRole(startRole);
-      } else {
+      } catch (e) {
+        localStorage.removeItem('skillforge_user');
         localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem('token');
       }
     }
     setLoading(false);
+
+    const handleTokenRefreshed = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      setAccessToken(customEvent.detail);
+    };
+    window.addEventListener('token_refreshed', handleTokenRefreshed);
+    return () => window.removeEventListener('token_refreshed', handleTokenRefreshed);
   }, []);
 
   useEffect(() => {
@@ -100,25 +113,29 @@ function App() {
 
   const handleLogin = (data: LoginResponse) => {
     const normalizedUser = normalizeUser(data.user);
-    localStorage.setItem(TOKEN_KEY, data.accessToken);
-    localStorage.setItem('token', data.accessToken);
-    setAccessToken(data.accessToken);
+    localStorage.setItem('skillforge_user', JSON.stringify(normalizedUser));
+    if (data.accessToken) {
+      localStorage.setItem(TOKEN_KEY, data.accessToken);
+      setAccessToken(data.accessToken);
+    }
     setCurrentUser(normalizedUser);
     const roles = normalizedUser.roles?.length
       ? normalizedUser.roles
       : [normalizedUser.primaryRole];
     setActiveRole(
-      roles.includes(normalizedUser.primaryRole) ? normalizedUser.primaryRole : roles[0],
+      roles.includes(normalizedUser.primaryRole)
+        ? normalizedUser.primaryRole
+        : roles[0]
     );
     navigate('/dashboard', { replace: true });
   };
 
   const handleLogout = () => {
+    // A proper logout would also hit a backend endpoint to clear the httpOnly cookie
+    localStorage.removeItem('skillforge_user');
     localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem('token');
-    localStorage.removeItem('skillforge_access_token');
-    setAccessToken('');
     setCurrentUser(null);
+    setAccessToken('');
     setActiveRole('Trainee');
     navigate('/login', { replace: true });
   };
@@ -168,7 +185,7 @@ function App() {
       <Route
         path="/"
         element={
-          currentUser ? (
+          currentUser && accessToken ? (
             <Navigate to="/dashboard" replace />
           ) : (
             <HomePage onLoginClick={() => navigate('/login')} />
@@ -178,7 +195,7 @@ function App() {
       <Route
         path="/login"
         element={
-          currentUser ? (
+          currentUser && accessToken ? (
             <Navigate to="/dashboard" replace />
           ) : (
             <LoginPage onBackHome={() => navigate('/')} onLogin={handleLogin} />
