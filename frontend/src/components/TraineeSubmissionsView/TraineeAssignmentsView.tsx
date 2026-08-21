@@ -614,7 +614,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser }: Props) {
         let parsedAnswers: any = {};
         let rawText = submission.submissionText || '';
         try {
-          if (rawText.startsWith('{') && rawText.includes('"answers"')) {
+          if (rawText.trim().startsWith('{')) {
             parsedAnswers = JSON.parse(rawText);
           }
         } catch(e) {}
@@ -632,14 +632,10 @@ export function TraineeAssignmentsView({ accessToken, currentUser }: Props) {
               </div>
 
               <div style={{ padding: '22px 26px', overflowY: 'auto', flex: 1 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                   <div>
                     <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Submitted By</div>
                     <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 500, marginTop: '4px' }}>{traineeName}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Assigned By</div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 500, marginTop: '4px' }}>{assignerName}</div>
                   </div>
                   <div>
                     <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Evaluated By</div>
@@ -659,15 +655,16 @@ export function TraineeAssignmentsView({ accessToken, currentUser }: Props) {
                 {questions.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {questions.map((q: any, idx: number) => {
-                      const ansObj = parsedAnswers.answers || {};
-                      const textAnsObj = parsedAnswers.textAnswers || {};
+                      const ansObj = parsedAnswers.answers || parsedAnswers || {};
+                      const textAnsObj = parsedAnswers.textAnswers || parsedAnswers || {};
                       
                       let userAnswer = '';
                       if (isMcq) {
                         const optIdx = ansObj[idx];
                         userAnswer = typeof optIdx === 'number' && q.options ? q.options[optIdx] : 'No answer provided';
                       } else {
-                        userAnswer = textAnsObj[idx] || 'No answer provided';
+                        const extractedAns = textAnsObj[idx] || ansObj[idx] || parsedAnswers[idx];
+                        userAnswer = (extractedAns && typeof extractedAns === 'string') ? extractedAns : (parsedAnswers.raw ? parsedAnswers.raw : rawText) || 'No answer provided';
                       }
                       
                       const qPoints = q.maxPoints || q.points || 10;

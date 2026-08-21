@@ -16,6 +16,9 @@ export class DashboardController {
     @GetUser() user: any,
     @Query('range') rangeStr: string,
     @Query('role') role: string,
+    @Query('filter') filter: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
   ) {
     const range = parseInt(rangeStr, 10) || 30;
     return await this.analyticsService.getDailyChartData(
@@ -23,6 +26,9 @@ export class DashboardController {
       range,
       role,
       'progress',
+      filter,
+      startDate,
+      endDate
     );
   }
 
@@ -32,6 +38,9 @@ export class DashboardController {
     @GetUser() user: any,
     @Query('range') rangeStr: string,
     @Query('role') role: string,
+    @Query('filter') filter: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
   ) {
     const range = parseInt(rangeStr, 10) || 30;
     return await this.analyticsService.getDailyChartData(
@@ -39,6 +48,9 @@ export class DashboardController {
       range,
       role,
       'score',
+      filter,
+      startDate,
+      endDate
     );
   }
 }

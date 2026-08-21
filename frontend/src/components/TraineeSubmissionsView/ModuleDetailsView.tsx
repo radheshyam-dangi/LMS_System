@@ -33,7 +33,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     try {
       const [resolved, progress, subs] = await Promise.all([
         curriculumService.fetchModuleById(moduleId, accessToken),
-        progressService.fetchMyStats(accessToken).catch(() => null),
+        progressService.fetchModuleStats(moduleId, accessToken).catch(() => null),
         isTrainee
           ? assignmentService.fetchMySubmissions(accessToken).catch(() => [])
           : Promise.resolve([]),
@@ -73,11 +73,22 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     const fromLessons = (lessons || []).flatMap((l: any) =>
       (l.assignments || []).map((a: any) => ({ ...a, lessonTitle: l.title })),
     );
-    return fromLessons;
-  }, [lessons]);
+    const fromModule = (moduleData?.assignments || []).map((a: any) => ({ ...a, lessonTitle: 'Module Task' }));
+    return [...fromLessons, ...fromModule];
+  }, [lessons, moduleData]);
 
   const completedLessons = lessons.filter((l: any) => completedLessonIds.has(String(l.id))).length;
+
+  const visitedResourcesCount = resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
+
+  const passedTasks = tasks.filter((t: any) => {
+    const s = subByAssignment.get(t.id);
+    return s && (s.status === 'Accepted' || s.status === 'Evaluated' || s.status === 'Approved');
+  });
+
+  const tasksPassedCount = passedTasks.length;
   const tasksSubmitted = tasks.filter((t: any) => subByAssignment.has(t.id)).length;
+
   const tasksScored = tasks.filter((t: any) => {
     const s = subByAssignment.get(t.id);
     return s && typeof s.score === 'number';
@@ -85,15 +96,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
   const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
-  const lessonPct = lessons.length ? Math.round((completedLessons / lessons.length) * 100) : 0;
-  const resourcePct = resources.length
-    ? Math.round(
-        (resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length / resources.length) *
-          100,
-      )
-    : 100;
-  const taskPct = tasks.length ? Math.round((tasksSubmitted / tasks.length) * 100) : 0;
-  const progressPercent = Math.round(lessonPct * 0.45 + resourcePct * 0.15 + taskPct * 0.4);
+  // Weighted progress is now safely calculated by the backend!
+  const progressPercent = stats?.completionPercent ?? 0;
 
   const objectives: string[] =
     Array.isArray(moduleData?.objectives) && moduleData.objectives.length
@@ -207,7 +211,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           {[
             { icon: '⏱️', label: 'Duration', value: moduleData.durationLabel || `${moduleData.durationWeeks || 2} weeks` },
             { icon: '📖', label: 'Lessons', value: `${completedLessons}/${lessons.length} done` },
-            { icon: '🎯', label: 'Tasks', value: `${tasksSubmitted}/${tasks.length} submitted` },
+            { icon: '🎯', label: 'Tasks', value: `${tasksPassedCount}/${tasks.length} passed` },
             { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
           ].map((m) => (
             <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -248,9 +252,9 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           {(
             [
               ['Lessons', `Lessons (${completedLessons}/${lessons.length})`],
-              ['Tasks', `Tasks (${tasksSubmitted}/${tasks.length})`],
-              ['Resources', `Resources (${resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length}/${resources.length || 0})`],
-              ['Assessments', 'Assessments'],
+              ['Tasks', `Tasks (${tasksPassedCount}/${tasks.length})`],
+              ['Resources', `Resources (${visitedResourcesCount}/${resources.length || 0})`],
+              ['Assessments', `Assessments (${tasks.filter((t: any) => t.assignmentType === 'MCQ').length})`],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -352,12 +356,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
 
         {activeTab === 'Tasks' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {tasks.length === 0 ? (
+            {tasks.filter((t: any) => t.assignmentType !== 'MCQ').length === 0 ? (
               <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 8 }}>
                 No tasks assigned yet.
               </div>
             ) : (
-              tasks.map((task: any) => {
+              tasks.filter((t: any) => t.assignmentType !== 'MCQ').map((task: any) => {
                 const sub = subByAssignment.get(task.id);
                 const status = sub?.status || 'Pending';
                 return (
@@ -472,8 +476,83 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
         )}
 
         {activeTab === 'Assessments' && (
-          <div style={{ padding: 24, background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', color: '#64748b', fontSize: 14 }}>
-            Assessments are the scored tasks in this module. Submitted: {tasksSubmitted}.
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {tasks.filter((t: any) => t.assignmentType === 'MCQ').length === 0 ? (
+              <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 8 }}>
+                No assessments assigned yet.
+              </div>
+            ) : (
+              tasks.filter((t: any) => t.assignmentType === 'MCQ').map((task: any) => {
+                const sub = subByAssignment.get(task.id);
+                const status = sub?.status || 'Pending';
+                return (
+                  <div
+                    key={task.id}
+                    style={{
+                      padding: '16px 20px',
+                      background: '#fff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 8,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <div>
+                      <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>{task.title}</h4>
+                      <span style={{ fontSize: 12, color: '#64748b' }}>
+                        {task.assignmentType} · {task.lessonTitle || 'Module task'} · Due{' '}
+                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'N/A'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          padding: '4px 10px',
+                          borderRadius: 999,
+                          background:
+                            status === 'Approved'
+                              ? '#dcfce7'
+                              : status === 'Rejected'
+                                ? '#fee2e2'
+                                : status === 'Submitted'
+                                  ? '#fef3c7'
+                                  : '#f1f5f9',
+                          color:
+                            status === 'Approved'
+                              ? '#166534'
+                              : status === 'Rejected'
+                                ? '#b91c1c'
+                                : status === 'Submitted'
+                                  ? '#b45309'
+                                  : '#475569',
+                        }}
+                      >
+                        {status === 'Approved' ? 'Passed' : status}
+                        {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
+                      </span>
+                      {isTrainee && status !== 'Approved' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubmitTask(task);
+                            setSubmissionText('');
+                            setAnswers({});
+                            setMcqAnswers({});
+                          }}
+                          style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {sub ? 'Resubmit' : 'Attempt'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>

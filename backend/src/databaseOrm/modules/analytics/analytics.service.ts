@@ -1221,6 +1221,9 @@ export class AnalyticsEntityService {
     range: number,
     role: string,
     type: 'progress' | 'score',
+    filter?: string,
+    customStartDate?: string,
+    customEndDate?: string
   ) {
     const submissionRepo = this.datasource.getRepository(
       AssignmentSubmissionEntity,
@@ -1278,52 +1281,99 @@ export class AnalyticsEntityService {
       }
     }
 
-    const endDate = new Date();
-    endDate.setHours(23, 59, 59, 999);
+    let finalStartDate = new Date();
+    let finalEndDate = new Date();
+    let bucketType: 'hour' | 'day' | 'month' = 'day';
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - range + 1);
-    startDate.setHours(0, 0, 0, 0);
-
-    // Create buckets for the range
-    const days: {
-      [key: string]: {
-        date: string;
-        name: string;
-        submissions: number;
-        completions: number;
-        traineeScores: {
-          [traineeId: string]: { scoreSum: number; maxScoreSum: number };
-        };
-        activitySets: {
-          lessons: Set<string>;
-          tasks: Set<string>;
-          resources: Set<string>;
-        };
-      };
-    } = {};
-    for (let i = 0; i < range; i++) {
-      const d = new Date(startDate);
-      d.setDate(d.getDate() + i);
-      const isoDate = d.toISOString().split('T')[0];
-      days[isoDate] = {
-        date: isoDate,
-        name: d.toLocaleString('en', { month: 'short', day: 'numeric' }),
-        submissions: 0,
-        completions: 0,
-        traineeScores: {},
-        activitySets: {
-          lessons: new Set<string>(),
-          tasks: new Set<string>(),
-          resources: new Set<string>(),
-        }
-      };
+    if (filter === 'today') {
+      finalStartDate.setHours(0, 0, 0, 0);
+      finalEndDate.setHours(23, 59, 59, 999);
+      bucketType = 'hour';
+    } else if (filter === 'week') {
+      finalStartDate.setDate(finalStartDate.getDate() - 6);
+      finalStartDate.setHours(0, 0, 0, 0);
+      finalEndDate.setHours(23, 59, 59, 999);
+      bucketType = 'day';
+    } else if (filter === 'month') {
+      finalStartDate.setDate(1);
+      finalStartDate.setHours(0, 0, 0, 0);
+      finalEndDate.setHours(23, 59, 59, 999);
+      bucketType = 'day';
+    } else if (filter === 'year') {
+      finalStartDate.setMonth(finalStartDate.getMonth() - 11);
+      finalStartDate.setDate(1);
+      finalStartDate.setHours(0, 0, 0, 0);
+      // to end of current month
+      finalEndDate.setMonth(finalEndDate.getMonth() + 1);
+      finalEndDate.setDate(0);
+      finalEndDate.setHours(23, 59, 59, 999);
+      bucketType = 'month';
+    } else if (filter === 'custom' && customStartDate && customEndDate) {
+      finalStartDate = new Date(customStartDate);
+      finalStartDate.setHours(0, 0, 0, 0);
+      finalEndDate = new Date(customEndDate);
+      finalEndDate.setHours(23, 59, 59, 999);
+      bucketType = 'day';
+    } else {
+      finalStartDate.setDate(finalStartDate.getDate() - range + 1);
+      finalStartDate.setHours(0, 0, 0, 0);
+      finalEndDate.setHours(23, 59, 59, 999);
+      bucketType = 'day';
     }
 
-    const w1 = 10; // lessons_visited
-    const w2 = 20; // tasks_worked
-    const w3 = 5;  // resources_viewed
-    const DailyTargetPoints = 50;
+    const startDate = finalStartDate;
+    const endDate = finalEndDate;
+
+    const createBucket = (iso: string, name: string) => ({
+      date: iso,
+      name: name,
+      submissions: 0,
+      completions: 0,
+      traineeScores: {} as { [traineeId: string]: { scoreSum: number; maxScoreSum: number } },
+      activitySets: {
+        lessons: new Set<string>(),
+        tasks: new Set<string>(),
+        resources: new Set<string>(),
+      }
+    });
+
+    const days: { [key: string]: ReturnType<typeof createBucket> } = {};
+
+    if (bucketType === 'hour') {
+      for (let i = 0; i < 24; i++) {
+        const iso = `${i.toString().padStart(2, '0')}:00`;
+        days[iso] = createBucket(iso, iso);
+      }
+    } else if (bucketType === 'day') {
+      const msPerDay = 24 * 60 * 60 * 1000;
+      const daysCount = Math.round((endDate.getTime() - startDate.getTime()) / msPerDay);
+      for (let i = 0; i <= daysCount; i++) {
+        const d = new Date(startDate);
+        d.setDate(d.getDate() + i);
+        if (d > endDate) break;
+        const iso = d.toISOString().split('T')[0];
+        const name = d.toLocaleString('en', { month: 'short', day: 'numeric' });
+        days[iso] = createBucket(iso, name);
+      }
+    } else if (bucketType === 'month') {
+      for (let i = 0; i <= 12; i++) {
+        const d = new Date(startDate);
+        d.setMonth(d.getMonth() + i);
+        if (d > endDate) break;
+        const iso = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+        const name = d.toLocaleString('en', { month: 'short', year: '2-digit' });
+        days[iso] = createBucket(iso, name);
+      }
+    }
+
+    const getIsoKey = (date: Date) => {
+      if (bucketType === 'hour') {
+        return `${date.getHours().toString().padStart(2, '0')}:00`;
+      } else if (bucketType === 'month') {
+        return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+      }
+      return date.toISOString().split('T')[0];
+    };
 
     let progressRows: any[] = [];
     let visitRows: any[] = [];
@@ -1342,16 +1392,16 @@ export class AnalyticsEntityService {
       for (const p of progressRows) {
         const d = new Date(p.updatedAt || p.createdAt);
         if (d >= startDate && d <= endDate) {
-          const isoDate = d.toISOString().split('T')[0];
-          if (days[isoDate] && p.lesson?.id) days[isoDate].activitySets.lessons.add(p.lesson.id);
+          const isoKey = getIsoKey(d);
+          if (days[isoKey] && p.lesson?.id) days[isoKey].activitySets.lessons.add(p.lesson.id);
         }
       }
 
       for (const v of visitRows) {
         const d = new Date(v.visitedAt || v.createdAt);
         if (d >= startDate && d <= endDate) {
-          const isoDate = d.toISOString().split('T')[0];
-          if (days[isoDate] && v.resource?.id) days[isoDate].activitySets.resources.add(v.resource.id);
+          const isoKey = getIsoKey(d);
+          if (days[isoKey] && v.resource?.id) days[isoKey].activitySets.resources.add(v.resource.id);
         }
       }
     }
@@ -1366,28 +1416,28 @@ export class AnalyticsEntityService {
       if (!dateVal) continue;
       const subDate = new Date(dateVal);
       if (subDate >= startDate && subDate <= endDate) {
-        const isoDate = subDate.toISOString().split('T')[0];
-        if (days[isoDate]) {
-          days[isoDate].submissions += 1;
+        const isoKey = getIsoKey(subDate);
+        if (days[isoKey]) {
+          days[isoKey].submissions += 1;
 
           if (role.toLowerCase() === 'trainee' && type === 'score' && sub.assignment?.id) {
-            days[isoDate].activitySets.tasks.add(sub.assignment.id);
+            days[isoKey].activitySets.tasks.add(sub.assignment.id);
           }
 
           if (['Accepted', 'Evaluated'].includes(String(sub.status))) {
-            days[isoDate].completions += 1;
+            days[isoKey].completions += 1;
             const score = Number(sub.score);
             const maxScore = Number(sub.assignment?.maxScore || 100);
             const tId = sub.trainee?.id || (sub as any).traineeId || 'unknown';
             if (Number.isFinite(score)) {
-              if (!days[isoDate].traineeScores[tId]) {
-                days[isoDate].traineeScores[tId] = {
+              if (!days[isoKey].traineeScores[tId]) {
+                days[isoKey].traineeScores[tId] = {
                   scoreSum: 0,
                   maxScoreSum: 0,
                 };
               }
-              days[isoDate].traineeScores[tId].scoreSum += score;
-              days[isoDate].traineeScores[tId].maxScoreSum += maxScore;
+              days[isoKey].traineeScores[tId].scoreSum += score;
+              days[isoKey].traineeScores[tId].maxScoreSum += maxScore;
             }
           }
         }
@@ -1396,14 +1446,16 @@ export class AnalyticsEntityService {
 
     const data = Object.values(days).map((d) => {
       let dailyScore: number | null = null;
+      let lessons = 0;
+      let tasks = 0;
+      let resources = 0;
       
       if (role.toLowerCase() === 'trainee' && type === 'score') {
-        const lessonsVisited = d.activitySets.lessons.size;
-        const tasksWorked = d.activitySets.tasks.size;
-        const resourcesViewed = d.activitySets.resources.size;
+        lessons = d.activitySets.lessons.size;
+        tasks = d.activitySets.tasks.size;
+        resources = d.activitySets.resources.size;
         
-        const rawPoints = (w1 * lessonsVisited) + (w2 * tasksWorked) + (w3 * resourcesViewed);
-        dailyScore = Math.min(100, Math.round((rawPoints / DailyTargetPoints) * 100));
+        dailyScore = lessons + tasks + resources;
       } else {
         const traineeIds = Object.keys(d.traineeScores);
         if (traineeIds.length > 0) {
@@ -1415,6 +1467,8 @@ export class AnalyticsEntityService {
             }
           }
           dailyScore = Math.round((sumTraineePct / traineeIds.length) * 10) / 10;
+        } else {
+          dailyScore = 0;
         }
       }
 
@@ -1424,6 +1478,9 @@ export class AnalyticsEntityService {
         submissions: d.submissions,
         completions: d.completions,
         score: dailyScore,
+        lessons,
+        tasks,
+        resources
       };
     });
 

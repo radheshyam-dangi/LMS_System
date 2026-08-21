@@ -743,22 +743,17 @@ const firstName = currentUser.firstName || currentUser.name?.split(' ')[0] || 'U
 
 if (isTrainee) {
   const currentPathTitle = traineePath?.title || traineePath?.name || 'No path assigned';
-  const totalModules = traineePath?.modules?.length || 0;
+
   // Use exact lessons completion % as overall progress
   const progressPercent = progressStats.totalLessons > 0 ? Math.round((progressStats.completedLessons / progressStats.totalLessons) * 100) : 0;
-  const completedModules = Math.min(
-    totalModules,
-    progressStats.completedLessons > 0 && totalModules > 0
-      ? Math.max(1, Math.round((progressPercent / 100) * totalModules))
-      : 0,
-  );
+
   
   const combinedTimestamps = [
     ...(dbData.activityTimestamps || []),
     ...mySubmissions.map(s => s.submittedAt || s.createdAt)
   ];
   const { streak: currentStreak, activeToday } = calculateStreak(combinedTimestamps);
-  const traineeAvgScore = progressStats.averageScore || 0;
+
 
   return (
     <div className="dashboard-content" style={{ padding: '24px 32px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -770,23 +765,9 @@ if (isTrainee) {
       </header>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>📖</div>
-          <div style={{ fontSize: '20px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>{currentPathTitle}</div>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>Current Path</div>
-          <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 600, marginTop: '4px' }}>
-            Module {completedModules} of {totalModules}
-          </div>
-        </div>
 
-        <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-          <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7c3aed' }}>🎯</div>
-          <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>{dbData.totalTasks}</div>
-          <div style={{ fontSize: '12px', color: '#64748b' }}>Tasks Assigned</div>
-          <div style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 600, marginTop: '4px' }}>
-            {upcomingTasks.length} upcoming
-          </div>
-        </div>
+
+
 
         <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ea580c' }}>⭐</div>
@@ -807,78 +788,7 @@ if (isTrainee) {
         />
       </section>
 
-      <section style={{ display: 'grid', gridTemplateColumns: '1.2fr 2.5fr', gap: '20px' }}>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', position: 'relative' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Learning Path Progress</h3>
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '16px 0' }}>
-              {traineePath ? (
-                <div style={{ position: 'relative', width: '130px', height: '130px', cursor: 'pointer' }}>
-                  <TraineeProgressRing
-                    progressPercent={progressPercent}
-                    completedLessons={progressStats.completedLessons}
-                    totalLessons={progressStats.totalLessons}
-                    currentPathTitle={currentPathTitle}
-                    onPathClick={() => {
-                      if (traineePath) {
-                        navigate(`/paths/${traineePath.id}`);
-                      }
-                    }}
-                  />
-                </div>
-              ) : (
-                <div style={{ color: '#94a3b8', fontSize: 14, textAlign: 'center', margin: '30px 0' }}>
-                  No learning path assigned yet.
-                </div>
-              )}
-            </div>
-
-            {traineePath && (
-              <div style={{ fontSize: '13px', color: '#475569', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {(traineePath.modules || []).slice(0, 5).map((m: any, idx: number) => {
-                  let isCompleted = false;
-                  if (progressStats?.completedModuleIds && progressStats.completedModuleIds.length > 0) {
-                    isCompleted = progressStats.completedModuleIds.includes(m.id);
-                  } else if (m.lessons && m.lessons.length > 0) {
-                    isCompleted = m.lessons.every((l: any) => progressStats?.completedLessonIds?.includes(l.id));
-                  }
-                  
-                  return (
-                  <div key={m.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px', borderRadius: 6, background: '#fafafa' }}>
-                    <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 500 }}>
-                      <span style={{ color: isCompleted ? '#16a34a' : '#94a3b8', fontWeight: 700, marginRight: 6 }}>
-                        {isCompleted ? '✓' : '○'}
-                      </span>
-                      {m.title || `Module ${idx + 1}`}
-                    </span>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: isCompleted ? '#dcfce7' : '#f1f5f9', color: isCompleted ? '#166534' : '#64748b' }}>
-                      {isCompleted ? 'Completed' : 'Pending'}
-                    </span>
-                  </div>
-                  );
-                })}
-                {(!traineePath.modules || traineePath.modules.length === 0) && (
-                  <div style={{ color: '#94a3b8', fontSize: 12 }}>No modules assigned yet.</div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '12px', color: '#64748b' }}>Latest Feedback</strong>
-              <span style={{ fontSize: 10, fontWeight: 700, color: traineeAvgScore >= 75 ? '#16a34a' : '#ea580c', background: traineeAvgScore >= 75 ? '#dcfce7' : '#fff7ed', padding: '2px 6px', borderRadius: 4 }}>
-                {traineeAvgScore >= 75 ? 'Excellent' : 'Needs Focus'}
-              </span>
-            </div>
-            <p style={{ fontSize: '13px', color: '#334155', margin: '6px 0 0 0', fontStyle: 'italic' }}>
-              {traineeAvgScore > 0
-                ? `Overall average evaluation score: ${traineeAvgScore}/100`
-                : 'No evaluation feedback in database yet.'}
-            </p>
-          </div>
-        </div>
+      <section style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', flex: 1, display: 'flex', flexDirection: 'column' }}>

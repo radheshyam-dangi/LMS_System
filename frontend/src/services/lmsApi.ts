@@ -151,8 +151,21 @@ export const progressService = {
       lessonProgressPercent: data?.lessonProgressPercent ?? 0,
       resourceProgressPercent: data?.resourceProgressPercent ?? 0,
       taskProgressPercent: data?.taskProgressPercent ?? 0,
-      completedLessonIds: Array.isArray(data?.completedLessonIds) ? data.completedLessonIds : [],
-      visitedResourceIds: Array.isArray(data?.visitedResourceIds) ? data.visitedResourceIds : [],
+      completedLessonIds: data?.completedLessonIds ?? [],
+      visitedResourceIds: data?.visitedResourceIds ?? [],
+      completedModuleIds: data?.completedModuleIds ?? [],
+    };
+  },
+  fetchModuleStats: async (moduleId: string, token: string) => {
+    const { data } = await axios.get(`${API_BASE_URL}/progress/module/${moduleId}/stats`, auth(token));
+    return {
+      completionPercent: data?.completionPercent ?? 0,
+      completedLessons: data?.completedLessons ?? 0,
+      totalLessons: data?.totalLessons ?? 0,
+      visitedResources: data?.visitedResources ?? 0,
+      totalResources: data?.totalResources ?? 0,
+      tasksAccepted: data?.tasksAccepted ?? 0,
+      totalAssignments: data?.totalAssignments ?? 0,
     };
   },
   fetchMyProgress: async (token: string) => {

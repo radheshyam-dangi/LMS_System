@@ -5,6 +5,30 @@ import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, B
 import { DashboardCharts } from '../DashboardCharts/DashboardCharts';
 import { MultiLineProgressChart, type SeriesConfig } from '../MultiLineProgressChart/MultiLineProgressChart';
 
+const truncateLabel = (name: string, maxLen = 14) => {
+  if (!name) return '';
+  return name.length > maxLen ? name.slice(0, maxLen).trim() + "…" : name;
+};
+
+const CustomXAxisTick = ({ x, y, payload }: any) => {
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{payload.value}</title>
+      <text
+        x={0}
+        y={0}
+        dy={16}
+        textAnchor="end"
+        fill="#64748b"
+        fontSize={12}
+        transform="rotate(-25)"
+      >
+        {truncateLabel(payload.value, 15)}
+      </text>
+    </g>
+  );
+};
+
 type ProgressAnalyticsProps = {
   currentUser: SessionUser;
   activeRole: RoleName;
@@ -43,6 +67,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
     pathPerformance: [],
   });
   const [showTraineeModal, setShowTraineeModal] = useState(false);
+  const [selectedLpTitle, setSelectedLpTitle] = useState<string | null>(null);
 
   const displayName =
     [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') ||
@@ -94,6 +119,25 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
       mounted = false;
     };
   }, [accessToken]);
+
+  useEffect(() => {
+    if (charts.moduleCompletion.length > 0 && !selectedLpTitle) {
+      const lps = Array.from(new Set(charts.moduleCompletion.map((mc: any) => mc.pathTitle).filter(Boolean)));
+      const inProgress = charts.moduleCompletion.find((mc: any) => mc.percent > 0 && mc.percent < 100)?.pathTitle;
+      setSelectedLpTitle(inProgress || (lps[0] as string));
+    }
+  }, [charts.moduleCompletion, selectedLpTitle]);
+
+  const availableLps = Array.from(new Set([
+    ...charts.pathPerformance.map((p: any) => p.title),
+    ...charts.moduleCompletion.map((mc: any) => mc.pathTitle)
+  ].filter(Boolean)));
+  
+  let filteredModuleCompletion = charts.moduleCompletion.filter((mc: any) => !selectedLpTitle || mc.pathTitle === selectedLpTitle);
+  
+  if (filteredModuleCompletion.length === 0 && selectedLpTitle) {
+    filteredModuleCompletion = [{ title: 'No modules yet', percent: 0, pathTitle: selectedLpTitle }];
+  }
 
   const velocity = `${stats.learningVelocity} items/wk`;
 
@@ -364,14 +408,39 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
 
       {!isReports && (
         <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', marginTop: '24px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>Trainee Learning Journey - Module Completion</h3>
-          <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 16px 0' }}>{distinctPaths.length > 0 ? distinctPaths.join(', ') : 'All Paths'}</p>
-          <div style={{ width: '100%', height: 650 }}>
-            {charts.moduleCompletion.length > 0 ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>Trainee Learning Journey - Module Completion</h3>
+              <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>
+                {availableLps.length > 0 ? 'Select a Learning Path to view modules' : 'No Paths'}
+              </p>
+            </div>
+            {availableLps.length > 0 && (
+              <select
+                value={selectedLpTitle || ''}
+                onChange={(e) => setSelectedLpTitle(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '13px',
+                  outline: 'none',
+                  background: '#f8fafc',
+                  cursor: 'pointer'
+                }}
+              >
+                {availableLps.map((lp: any) => (
+                  <option key={lp} value={lp}>{lp}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div style={{ width: '100%', height: 450 }}>
+            {filteredModuleCompletion.length > 0 ? (
               <ResponsiveContainer>
-                <BarChart data={charts.moduleCompletion} margin={{ top: 20, right: 30, left: 0, bottom: 350 }}>
+                <BarChart data={filteredModuleCompletion} margin={{ top: 20, right: 30, left: 0, bottom: 120 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="title" axisLine={false} tickLine={false} interval={0} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} angle={-45} textAnchor="end" />
+                  <XAxis dataKey="title" axisLine={false} tickLine={false} interval={0} tick={<CustomXAxisTick />} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} tickFormatter={(val) => `${val}%`} />
                   <RechartsTooltip
                     cursor={{ fill: '#f8fafc' }}

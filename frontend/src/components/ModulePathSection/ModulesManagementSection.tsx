@@ -269,10 +269,22 @@ export function ModulesManagementSection({
     const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
     const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
-    const calculatedProgress = lessons.length
-      ? Math.round((completedLessons / lessons.length) * 100)
-      : 0;
-    const progressPercent = calculatedProgress;
+    const visitedResourcesCount = resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
+    
+    // Dynamic Weighted Progress Calculation
+    const W_L = 40; const W_T = 50; const W_R = 10;
+    const current_W_L = lessons.length > 0 ? W_L : 0;
+    const current_W_T = tasks.length > 0 ? W_T : 0;
+    const current_W_R = resources.length > 0 ? W_R : 0;
+    const total_weight = current_W_L + current_W_T + current_W_R;
+
+    let progressPercent = 0;
+    if (total_weight > 0) {
+      const ratio_L = lessons.length > 0 ? (completedLessons / lessons.length) : 0;
+      const ratio_T = tasks.length > 0 ? (tasksSubmitted / tasks.length) : 0;
+      const ratio_R = resources.length > 0 ? (visitedResourcesCount / resources.length) : 0;
+      progressPercent = Math.round(((ratio_L * current_W_L) + (ratio_T * current_W_T) + (ratio_R * current_W_R)) / total_weight * 100);
+    }
 
     const rawObj = openModuleData?.objectives;
     const objectives: string[] = Array.isArray(rawObj) && rawObj.length
@@ -298,11 +310,10 @@ export function ModulesManagementSection({
             'Document APIs using OpenAPI / Swagger',
           ];
 
-    const tabLabels: Array<['Lessons' | 'Tasks' | 'Resources' | 'Assessments', string]> = [
+    const tabLabels: Array<['Lessons' | 'Tasks' | 'Resources', string]> = [
       ['Lessons', `Lessons (${completedLessons}/${lessons.length})`],
       ['Tasks', `Tasks (${tasksSubmitted}/${tasks.length})`],
-      ['Resources', `Resources (${resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length}/${resources.length})`],
-      ['Assessments', 'Assessments'],
+      ['Resources', `Resources (${visitedResourcesCount}/${resources.length})`],
     ];
 
     return (

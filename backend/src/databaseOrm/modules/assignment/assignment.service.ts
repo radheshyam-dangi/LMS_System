@@ -694,23 +694,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const userId = currentUser?.id || currentUser?.sub;
 
     if (isTrainer) {
-      const enrollments = await this.enrollmentRepository.find({
-        where: { assignedBy: { id: userId } },
-        relations: ['learningPath']
-      });
-      const assignedPathIds = new Set(enrollments.map(e => e.learningPath?.id).filter(Boolean));
-
-      const externalMappings = await this.traineeAssignmentRepository.find({
-        where: { assignedBy: { id: userId } },
-        relations: ['assignment']
-      });
-      const assignedExternalIds = new Set(externalMappings.map(m => m.assignment?.id).filter(Boolean));
-
-      return enriched.filter(a => {
-        if (assignedExternalIds.has(a.id)) return true;
-        const pathId = a.learningPath?.id || (a as any).learningPathId || a.module?.learningPath?.id || a.lesson?.module?.learningPath?.id;
-        if (pathId && assignedPathIds.has(pathId)) return true;
-        return false;
+      return enriched.filter((a: any) => {
+        // Must have at least one submission assigned to this trainer
+        return a.submissions && a.submissions.length > 0;
       });
     }
 
@@ -825,16 +811,10 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const all = await this.getAllAssignmentsEnriched();
 
     const enrolledPaths = await this.enrollmentRepository.find({
-      where: { user: { id: traineeId } },
+      where: { user: { id: traineeId }, status: 'active' },
       relations: ['learningPath']
     });
     const enrolledPathIds = new Set(enrolledPaths.map((e) => e.learningPath?.id).filter(Boolean));
-
-    // Also fallback to assignedToTraineeIds on paths
-    const paths = await this.learningPathRepository.find();
-    paths.forEach((p) => {
-      if ((p.assignedToTraineeIds || []).includes(traineeId)) enrolledPathIds.add(p.id);
-    });
 
     const directMappings = await this.traineeAssignmentRepository.find({
       where: { trainee: { id: traineeId } },
@@ -843,16 +823,21 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const directAssignedIds = new Set(directMappings.map((m) => m.assignment?.id).filter(Boolean));
 
     return all.filter((a) => {
-      const assignedDirectFallback = (a.assignedToTraineeIds || []).includes(traineeId);
-      if (assignedDirectFallback || directAssignedIds.has(a.id)) return true;
+      const isExternal =
+        String(a.assignmentType || '').toLowerCase() === 'external' ||
+        (!a.lesson && !a.module && !a.learningPath);
+
+      if (isExternal) {
+        const assignedDirectFallback = (a.assignedToTraineeIds || []).includes(traineeId);
+        return assignedDirectFallback || directAssignedIds.has(a.id);
+      }
 
       const pathId =
         a.learningPath?.id ||
         (a as any).learningPathId ||
         a.module?.learningPath?.id ||
         a.lesson?.module?.learningPath?.id;
-      if (pathId && enrolledPathIds.has(pathId)) return true;
-      return false;
+      return pathId && enrolledPathIds.has(pathId);
     });
   }
 

@@ -23,25 +23,24 @@ type DashboardChartsProps = {
 };
 
 export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitle, role, type, accessToken }) => {
-  const [dayRange, setDayRange] = useState<number>(() => {
-    const saved = localStorage.getItem(`dashboardChartRange_${type}`);
-    return saved ? parseInt(saved, 10) : 30;
-  });
+  const [filter, setFilter] = useState<'today'|'week'|'month'|'year'|'custom'>('month');
+  const [customStart, setCustomStart] = useState<string>('');
+  const [customEnd, setCustomEnd] = useState<string>('');
   
   const [data, setData] = useState<ChartData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    localStorage.setItem(`dashboardChartRange_${type}`, dayRange.toString());
-  }, [dayRange, type]);
 
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
     
     const endpoint = type === 'progress' ? 'progress-trends' : 'evaluation-score';
+    let url = `${API_BASE_URL}/dashboard/${endpoint}?role=${role}&filter=${filter}`;
+    if (filter === 'custom' && customStart && customEnd) {
+      url += `&startDate=${customStart}&endDate=${customEnd}`;
+    }
     
-    axios.get(`${API_BASE_URL}/dashboard/${endpoint}?range=${dayRange}&role=${role}`, {
+    axios.get(url, {
       headers: {
         'Authorization': accessToken ? `Bearer ${accessToken}` : '',
         'Content-Type': 'application/json',
@@ -62,7 +61,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
       });
       
     return () => { cancelled = true; };
-  }, [dayRange, role, type, accessToken]);
+  }, [filter, customStart, customEnd, role, type, accessToken]);
 
   const isEmpty = data.length === 0 || data.every(d => 
     (type === 'progress' ? (d.submissions === 0 && d.completions === 0) : d.score === 0)
@@ -70,6 +69,24 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      if (role === 'trainee' && type === 'score') {
+        const dataPoint = payload[0].payload;
+        return (
+          <div style={{ background: '#fff', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+            <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{dataPoint.date} ({dataPoint.name})</p>
+            <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+              Total Items Submitted / Visited: {dataPoint.score || 0}
+            </div>
+            <div style={{ fontSize: '12px', color: '#475569' }}>
+              <div style={{ marginBottom: '4px' }}>Breakdown:</div>
+              <div>- Tasks: {dataPoint.tasks || 0}</div>
+              <div>- Lessons: {dataPoint.lessons || 0}</div>
+              <div>- Resources: {dataPoint.resources || 0}</div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div style={{ background: '#fff', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
           <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{label}</p>
@@ -94,12 +111,12 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
           <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>{title}</h3>
           <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>{subtitle}</p>
         </div>
-        <div style={{ display: 'flex', gap: '4px', background: '#f8fafc', padding: '4px', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
-          {[30, 50, 90, 120, 140, 365].map((range) => (
+        <div style={{ display: 'flex', gap: '4px', background: '#f8fafc', padding: '4px', borderRadius: '20px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+          {['today', 'week', 'month', 'year', 'custom'].map((f) => (
             <button
-              key={range}
+              key={f}
               type="button"
-              onClick={() => setDayRange(range)}
+              onClick={() => setFilter(f as any)}
               style={{
                 padding: '4px 12px',
                 borderRadius: '16px',
@@ -107,16 +124,35 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                background: dayRange === range ? '#4f46e5' : 'transparent',
-                color: dayRange === range ? '#fff' : '#64748b',
+                background: filter === f ? '#4f46e5' : 'transparent',
+                color: filter === f ? '#fff' : '#64748b',
                 transition: 'all 0.2s',
+                textTransform: 'capitalize'
               }}
             >
-              {range}D
+              {f}
             </button>
           ))}
         </div>
       </div>
+
+      {filter === 'custom' && (
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'center' }}>
+          <input 
+            type="date" 
+            value={customStart} 
+            onChange={(e) => setCustomStart(e.target.value)} 
+            style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '12px' }}
+          />
+          <span style={{ fontSize: '12px', color: '#64748b' }}>to</span>
+          <input 
+            type="date" 
+            value={customEnd} 
+            onChange={(e) => setCustomEnd(e.target.value)} 
+            style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '12px' }}
+          />
+        </div>
+      )}
       
       {/* Metric Callout */}
       {type === 'progress' && data.length > 0 && (
@@ -171,11 +207,18 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} minTickGap={20} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} domain={[0, 100]} />
+              <YAxis 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 12, fill: '#64748b' }} 
+                dx={-10} 
+                allowDecimals={false}
+                domain={role === 'trainee' && type === 'score' ? [0, (dataMax: number) => Math.max(20, dataMax)] : [0, 100]} 
+              />
               <Tooltip content={<CustomTooltip />} />
               <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
-              <Area connectNulls={true} type="monotone" isAnimationActive={true} animationDuration={500} dataKey="score" name="Avg Score" stroke="#16a34a" strokeWidth={3} fillOpacity={1} fill="url(#colorScoreGreen)" dot={{ r: 4, fill: '#16a34a', strokeWidth: 0 }} activeDot={{ r: 6 }} />
-              <Line type="monotone" isAnimationActive={true} animationDuration={500} dataKey="target" name="Target Baseline" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+              <Area connectNulls={true} type="monotone" isAnimationActive={true} animationDuration={500} dataKey="score" name={role === 'trainee' ? 'Total Activity' : 'Avg Score'} stroke="#16a34a" strokeWidth={3} fillOpacity={1} fill="url(#colorScoreGreen)" dot={{ r: 4, fill: '#16a34a', strokeWidth: 0 }} activeDot={{ r: 6 }} />
+              {role !== 'trainee' && <Line type="monotone" isAnimationActive={true} animationDuration={500} dataKey="target" name="Target Baseline" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} />}
             </ComposedChart>
           )}
         </ResponsiveContainer>

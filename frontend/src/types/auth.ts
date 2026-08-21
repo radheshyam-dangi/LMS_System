@@ -20,6 +20,7 @@ export interface LearningPath {
   overallProgress: number;
   skillsTags: string[];
   assignedToTraineeIds?: string[]; // Used to strictly filter for Trainee views
+  traineeAssigners?: Record<string, { firstName?: string; lastName?: string; email?: string }>;
 }
 
 export type UserRole = {

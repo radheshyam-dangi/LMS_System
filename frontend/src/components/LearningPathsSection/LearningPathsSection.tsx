@@ -33,6 +33,58 @@ interface TraineeUser {
   primaryRole?: any;
 }
 
+const ExpandableDescription = ({ description }: { description: string }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const textRef = React.useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (el) {
+      if (el.scrollHeight > el.clientHeight) {
+        setIsOverflowing(true);
+      } else {
+        setIsOverflowing(false);
+      }
+    }
+  }, [description]);
+
+  const toggleExpand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isExpanded) {
+      if (textRef.current) {
+        textRef.current.scrollTop = 0;
+      }
+      setIsExpanded(false);
+    } else {
+      setIsExpanded(true);
+    }
+  };
+
+  return (
+    <div className="expandable-description-container" onClick={(e) => e.stopPropagation()}>
+      <p
+        ref={textRef}
+        className={`card-description-string ${isExpanded ? "expanded" : ""}`}
+        style={{ WebkitBoxOrient: "vertical" }}
+      >
+        {description || "No description provided."}
+      </p>
+      {isOverflowing && !isExpanded && (
+        <button className="expand-toggle-btn" onClick={toggleExpand}>
+          Read more
+        </button>
+      )}
+      {isExpanded && (
+        <button className="expand-toggle-btn" onClick={toggleExpand}>
+          Show Less
+        </button>
+      )}
+    </div>
+  );
+};
+
+
 export function LearningPathsSection({
   currentUser,
   accessToken,
@@ -329,16 +381,28 @@ export function LearningPathsSection({
     return paths.filter((path) => {
       if (isTrainee && !path.assignedToTraineeIds?.includes(currentUser.id))
         return false;
-      const matchesTab =
-        activeTabFilter === "All" ||
-        path.status?.toLowerCase() === activeTabFilter.toLowerCase();
+        
       const pathDisplayName = path.title || path.name || "";
+      if (!pathDisplayName.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return false;
+      }
+
+      if (isTrainee) {
+        const progress = progressSummary[path.id]?.userProgressPercent || 0;
+
+        if (activeTabFilter === "All") return true;
+        if (activeTabFilter === "Completed") return progress === 100;
+        if (activeTabFilter === "Active") return progress < 100 && path.status?.toLowerCase() !== "upcoming";
+        
+        return false;
+      }
+
       return (
-        matchesTab &&
-        pathDisplayName.toLowerCase().includes(searchQuery.toLowerCase())
+        activeTabFilter === "All" ||
+        path.status?.toLowerCase() === activeTabFilter.toLowerCase()
       );
     });
-  }, [paths, activeTabFilter, searchQuery, isTrainee, currentUser.id]);
+  }, [paths, activeTabFilter, searchQuery, isTrainee, currentUser.id, progressSummary]);
 
   const handleCreatePathSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -407,7 +471,14 @@ export function LearningPathsSection({
       {/* SEARCH AND FILTER CONTROL STRIP */}
       <section className="learning-paths-control-strip">
         <div className="filter-tabs-cluster">
-          {(["All", "Active", "Upcoming", "Completed"] as const).map((tab) => (
+          {(["All", "Active", "Upcoming", "Completed"] as const)
+            .filter((tab) => {
+              // Role-Based Button Visibility
+              if (tab === "Upcoming" && isTrainee) return false;
+              if (tab === "Completed" && !isTrainee) return false;
+              return true;
+            })
+            .map((tab) => (
             <button
               key={tab}
               type="button"
@@ -506,9 +577,7 @@ export function LearningPathsSection({
                   </div>
 
                   <h2 className="card-title-string">{currentTitle}</h2>
-                  <p className="card-description-string">
-                    {path.description || "No description provided."}
-                  </p>
+                  <ExpandableDescription description={path.description || ""} />
 
                   {/* SKILLS TAGS CLOUD ROW */}
                   {currentTags.length > 0 && (
@@ -544,9 +613,7 @@ export function LearningPathsSection({
                   <div className="card-counters-flex-strip">
                     <span>⏱️ {path.duration || "12 weeks"}</span>
                     <span>📦 {path.modules?.length || 0} modules</span>
-                    <span>
-                      👥 Enrolled: {path.assignedToTraineeIds?.length || 0}
-                    </span>
+            
                   </div>
                   {/* 🌟 DYNAMIC REAL-TIME PROGRESS BAR (TRAINEE vs TRAINER COHORT RULES) */}
                   {(() => {
@@ -629,8 +696,8 @@ export function LearningPathsSection({
 
                     {/* Secondary Action Buttons Group */}
                     <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-                      {/* ASSIGN BUTTON: Visible ONLY when status is Active */}
-                      {(isAdmin || isTrainer) && isPathActive && (
+                      {/* ASSIGN BUTTON: Visible ONLY when status is Active AND has modules */}
+                      {(isAdmin || isTrainer) && isPathActive && path.modules && path.modules.length > 0 && (
                         <button
                           type="button"
                           className="btn-card-action-assign"

@@ -140,6 +140,7 @@
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
+  height: 420px;
 }
 
 .learning-path-card-item::before {
@@ -233,12 +234,48 @@
   margin: 0 0 8px 0;
 }
 
+.expandable-description-container {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  margin-bottom: 16px;
+}
+
 .card-description-string {
   font-size: 14px;
   color: #64748b;
-  line-height: 1.5;
-  margin-bottom: 16px;
-  flex-grow: 1;
+  line-height: 2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+  transition: all 0.4s ease-in-out;
+}
+
+.card-description-string.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow-y: auto;
+  max-height: 150px;
+}
+
+.expand-toggle-btn {
+  background: none;
+  border: none;
+  color: #4f46e5;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  display: inline-block;
+  width: fit-content;
+}
+
+.expand-toggle-btn:hover {
+  text-decoration: underline;
 }
 
 .card-tags-cloud-row {

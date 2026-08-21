@@ -57,6 +57,16 @@ export class ProgressController {
     return await this.progressService.statsForUser(userId, learningPathId);
   }
 
+  @Get('module/:moduleId/stats')
+  @Roles('Trainee', 'Trainer', 'Admin')
+  async moduleStats(
+    @Param('moduleId') moduleId: string,
+    @GetUser() currentUser: any,
+  ) {
+    const userId = currentUser?.id || currentUser?.sub;
+    return await this.progressService.getModuleProgress(userId, moduleId);
+  }
+
   @Get('cohort')
   @Roles('Admin', 'Trainer')
   async cohort(@GetUser() currentUser: any) {

@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, Repository, IsNull, Not } from 'typeorm';
+import { DataSource, Repository, IsNull, Not, In } from 'typeorm';
 import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
 import { UserResourceVisitEntity } from '../../entities/userResourceVisit.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
@@ -248,8 +248,11 @@ export class ProgressEntityService {
         ? Math.round((tasksAccepted / scopedAssignments.length) * 100)
         : 0;
 
-    // Weighted overall: lessons 40%, resources 20%, tasks 40% (REPLACED WITH: Overall Progress % = lesson percentage)
-    const completionPercent = lessonPct;
+    const totalItems = totalLessons + totalResources + scopedAssignments.length;
+    const completedItems = completedLessons + visitedResources + tasksAccepted;
+    const completionPercent = totalItems > 0 
+      ? (completedItems === totalItems ? 100 : Math.round((completedItems / totalItems) * 100))
+      : 0;
 
     const completedLessonIds = completedRows
       .map((r) => r.lesson?.id)
@@ -342,12 +345,117 @@ export class ProgressEntityService {
   }
 
   /**
+   * Calculates dynamic real-time progress for a specific module using proportional (weighted) calculation.
+   * W_L (Lessons) = 40%, W_T (Tasks) = 50%, W_R (Resources) = 10%.
+   */
+  async getModuleProgress(userId: string, moduleId: string) {
+    if (!userId || !moduleId) {
+      return { completionPercent: 0 };
+    }
+
+    // 1. Fetch total items for the module
+    const module = await this.datasource.getRepository('ModuleEntity').findOne({
+      where: { id: moduleId },
+      relations: ['lessons', 'resources', 'lessons.assignments'],
+    });
+
+    if (!module) return { completionPercent: 0 };
+
+    const totalLessons = (module.lessons || []).length;
+    const totalResources = (module.resources || []).length;
+    
+    // Tasks can be directly on the module or inside lessons
+    const fromLessons = (module.lessons || []).flatMap((l: any) => l.assignments || []);
+    
+    // Fetch assignments attached directly to the module
+    const fromModule = await this.datasource.getRepository('AssignmentEntity').find({
+      where: { module: { id: moduleId } } as any,
+    });
+    
+    const allAssignments = [...fromLessons, ...fromModule];
+    const totalTasks = allAssignments.length;
+
+    if (totalLessons === 0 && totalResources === 0 && totalTasks === 0) {
+      return { completionPercent: 0 };
+    }
+
+    // 2. Fetch completed items for the user
+    const lessonIds = (module.lessons || []).map((l: any) => l.id);
+    const resourceIds = (module.resources || []).map((r: any) => r.id);
+    const assignmentIds = allAssignments.map((a: any) => a.id);
+
+    let completedLessons = 0;
+    if (lessonIds.length > 0) {
+      completedLessons = await this.repository.count({
+        where: {
+          user: { id: userId },
+          isCompleted: true,
+          lesson: { id: In(lessonIds) },
+        } as any,
+      });
+    }
+
+    let completedResources = 0;
+    if (resourceIds.length > 0) {
+      completedResources = await this.datasource.getRepository('UserResourceVisitEntity').count({
+        where: {
+          user: { id: userId },
+          resource: { id: In(resourceIds) },
+        } as any,
+      });
+    }
+
+    let completedTasks = 0;
+    if (assignmentIds.length > 0) {
+      completedTasks = await this.submissionRepository.count({
+        where: {
+          trainee: { id: userId },
+          assignment: { id: In(assignmentIds) },
+          status: In(['Submitted', 'Accepted', 'Evaluated', 'Approved']),
+        } as any,
+      });
+    }
+
+    // 3. Proportional Weights Calculation
+    const W_L = 40;
+    const W_T = 50;
+    const W_R = 10;
+
+    const current_W_L = totalLessons > 0 ? W_L : 0;
+    const current_W_T = totalTasks > 0 ? W_T : 0;
+    const current_W_R = totalResources > 0 ? W_R : 0;
+
+    const total_weight = current_W_L + current_W_T + current_W_R;
+    
+    if (total_weight === 0) {
+      return { completionPercent: 0 };
+    }
+
+    const ratio_L = totalLessons > 0 ? (completedLessons / totalLessons) : 0;
+    const ratio_T = totalTasks > 0 ? (completedTasks / totalTasks) : 0;
+    const ratio_R = totalResources > 0 ? (completedResources / totalResources) : 0;
+
+    const finalProgress = ((ratio_L * current_W_L) + (ratio_T * current_W_T) + (ratio_R * current_W_R)) / total_weight * 100;
+    
+    return {
+      completionPercent: Math.round(finalProgress),
+      completedLessons,
+      totalLessons,
+      visitedResources: completedResources,
+      totalResources,
+      tasksAccepted: completedTasks,
+      totalAssignments: totalTasks,
+    };
+  }
+
+  /**
    * Calculates dynamic real-time progress for all Learning Paths.
    * For Trainees: Computes user progress based on watched lessons, accepted/submitted tasks, and visited resources.
    * For Trainers/Admins: Computes cohort progress as the average progress of all enrolled trainees.
    */
   async getPathProgressSummary(currentUserId: string) {
     const paths = await this.pathRepository.find();
+    const allModules = await this.datasource.getRepository('ModuleEntity').find({ relations: ['learningPath'] });
     const allLessons = await this.lessonRepository.find({
       relations: ['module', 'module.learningPath'],
     });
@@ -401,15 +509,25 @@ export class ProgressEntityService {
       const pathId = path.id;
       const enrolledTraineeIds: string[] = path.assignedToTraineeIds || [];
 
+      const pathModules = allModules.filter(m => {
+        const s = (m.status || '').toLowerCase();
+        if (['draft', 'archived', 'deleted', 'upcoming'].includes(s)) return false;
+        return m.learningPath?.id === pathId || (m as any).learningPathId === pathId;
+      });
+
       // Path scope items
       const pathLessons = allLessons.filter(
-        (l) =>
-          l.module?.learningPath?.id === pathId ||
-          (l as any).learningPathId === pathId,
+        (l) => {
+          const s = (l.module?.status || '').toLowerCase();
+          if (['draft', 'archived', 'deleted', 'upcoming'].includes(s)) return false;
+          return l.module?.learningPath?.id === pathId || (l as any).learningPathId === pathId;
+        }
       );
       const pathLessonIds = new Set(pathLessons.map((l) => l.id));
 
       const pathResources = allResources.filter((r) => {
+        const s = (r.module?.status || r.lesson?.module?.status || '').toLowerCase();
+        if (['draft', 'archived', 'deleted', 'upcoming'].includes(s)) return false;
         const lpId =
           r.module?.learningPath?.id ||
           r.lesson?.module?.learningPath?.id ||
@@ -419,6 +537,8 @@ export class ProgressEntityService {
       const pathResourceIds = new Set(pathResources.map((r) => r.id));
 
       const pathAssignments = allAssignments.filter((a) => {
+        const s = (a.module?.status || a.lesson?.module?.status || '').toLowerCase();
+        if (['draft', 'archived', 'deleted', 'upcoming'].includes(s)) return false;
         const lpId =
           a.learningPath?.id ||
           a.module?.learningPath?.id ||
@@ -427,34 +547,59 @@ export class ProgressEntityService {
       });
       const pathAssignmentIds = new Set(pathAssignments.map((a) => a.id));
 
-      const totalItems =
-        pathLessonIds.size + pathAssignmentIds.size + pathResourceIds.size;
+      const modulesData = pathModules.map(mod => {
+        const mLessons = pathLessons.filter(l => l.module?.id === mod.id);
+        const mResources = pathResources.filter(r => r.module?.id === mod.id || r.lesson?.module?.id === mod.id);
+        const mAssignments = pathAssignments.filter(a => a.module?.id === mod.id || a.lesson?.module?.id === mod.id);
+        
+        return {
+          id: mod.id,
+          lessonIds: new Set(mLessons.map(l => l.id)),
+          resourceIds: new Set(mResources.map(r => r.id)),
+          assignmentIds: new Set(mAssignments.map(a => a.id)),
+          totalLessons: mLessons.length,
+          totalResources: mResources.length,
+          totalAssignments: mAssignments.length,
+        };
+      });
 
       // Helper function to calculate a single user's progress % on this path
       const calcUserProgress = (uid: string): number => {
-        if (!uid || totalItems === 0) return 0;
+        if (!uid || pathModules.length === 0) return 0;
 
-        const watchedLessons = allLessonProgress.filter(
-          (lp) =>
-            String(lp.user?.id) === String(uid) &&
-            pathLessonIds.has(lp.lesson?.id),
-        ).length;
-
-        const visitedRes = allResourceVisits.filter(
-          (rv) =>
-            String(rv.user?.id) === String(uid) &&
-            pathResourceIds.has(rv.resource?.id),
-        ).length;
-
-        const submittedTasks = allSubmissions.filter(
-          (sub) =>
-            String(sub.trainee?.id) === String(uid) &&
-            pathAssignmentIds.has(sub.assignment?.id) &&
-            ['Submitted', 'Accepted', 'Evaluated'].includes(sub.status),
-        ).length;
-
-        const completedItems = watchedLessons + visitedRes + submittedTasks;
-        return Math.min(100, Math.round((completedItems / totalItems) * 100));
+        let totalModProgress = 0;
+        
+        for (const modData of modulesData) {
+          const watchedLessons = allLessonProgress.filter(
+            (lp) => String(lp.user?.id) === String(uid) && modData.lessonIds.has(lp.lesson?.id)
+          ).length;
+          
+          const visitedRes = allResourceVisits.filter(
+            (rv) => String(rv.user?.id) === String(uid) && modData.resourceIds.has(rv.resource?.id)
+          ).length;
+          
+          const submittedTasks = allSubmissions.filter(
+            (sub) => String(sub.trainee?.id) === String(uid) && modData.assignmentIds.has(sub.assignment?.id) && ['Submitted', 'Accepted', 'Evaluated', 'Approved'].includes(sub.status)
+          ).length;
+          
+          const W_L = 40; const W_T = 50; const W_R = 10;
+          const current_W_L = modData.totalLessons > 0 ? W_L : 0;
+          const current_W_T = modData.totalAssignments > 0 ? W_T : 0;
+          const current_W_R = modData.totalResources > 0 ? W_R : 0;
+          
+          const total_weight = current_W_L + current_W_T + current_W_R;
+          
+          if (total_weight > 0) {
+            const ratio_L = modData.totalLessons > 0 ? (watchedLessons / modData.totalLessons) : 0;
+            const ratio_T = modData.totalAssignments > 0 ? (submittedTasks / modData.totalAssignments) : 0;
+            const ratio_R = modData.totalResources > 0 ? (visitedRes / modData.totalResources) : 0;
+            
+            const modProg = ((ratio_L * current_W_L) + (ratio_T * current_W_T) + (ratio_R * current_W_R)) / total_weight * 100;
+            totalModProgress += modProg;
+          }
+        }
+        
+        return Math.round(totalModProgress / pathModules.length);
       };
 
       // 1. Logged-in user's progress
