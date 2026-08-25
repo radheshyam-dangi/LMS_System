@@ -26,6 +26,12 @@ export class AssignmentSubmissionEntity extends BaseEntity {
   @Column({ type: 'timestamp', name: 'submitted_at', nullable: true })
   submittedAt: Date;
 
+  @Column({ type: 'timestamp', name: 'started_at', nullable: true })
+  startedAt: Date;
+
+  @Column({ type: 'timestamp', name: 'deadline_at', nullable: true })
+  deadlineAt: Date;
+
   @Column({ type: 'timestamp', name: 'evaluated_at', nullable: true })
   evaluatedAt: Date;
 

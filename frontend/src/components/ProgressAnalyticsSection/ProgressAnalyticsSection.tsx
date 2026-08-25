@@ -136,7 +136,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
   let filteredModuleCompletion = charts.moduleCompletion.filter((mc: any) => !selectedLpTitle || mc.pathTitle === selectedLpTitle);
   
   if (filteredModuleCompletion.length === 0 && selectedLpTitle) {
-    filteredModuleCompletion = [{ title: 'No modules yet', percent: 0, pathTitle: selectedLpTitle }];
+    filteredModuleCompletion = [{ id: 'dummy', title: 'No modules yet', percent: 0, pathTitle: selectedLpTitle, completed: 0, total: 0, averageScore: 0 }];
   }
 
   const velocity = `${stats.learningVelocity} items/wk`;

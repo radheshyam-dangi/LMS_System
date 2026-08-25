@@ -128,6 +128,8 @@ export function LearningPathsSection({
   const [formImageUrl, setFormImageUrl] = useState("");
   const [formDescription, setFormDescription] = useState("");
   const [formTags, setFormTags] = useState("");
+  const [formDefaultLessonLocking, setFormDefaultLessonLocking] = useState<boolean>(false);
+  const [formDefaultTaskLocking, setFormDefaultTaskLocking] = useState<boolean>(false);
 
   const isAdmin = currentUser.role === "Admin";
   const isTrainer = currentUser.role === "Trainer";
@@ -209,11 +211,12 @@ export function LearningPathsSection({
   const handleOpenEditModal = (path: LearningPath) => {
     setEditingPathId(path.id);
     setFormName(path.title || path.name || "");
-    setFormDescription(path.description || "");
     setFormDifficulty(path.difficulty || "Intermediate");
     setFormStatus(path.status || "Active");
     setFormDuration(path.duration || "12 weeks");
     setFormImageUrl(path.imageUrl || "");
+    setFormDefaultLessonLocking(path.lockLessons !== false);
+    setFormDefaultTaskLocking(path.lockTasks !== false);
 
     let currentTags = "";
     if (Array.isArray(path.skillsTags)) {
@@ -246,6 +249,8 @@ export function LearningPathsSection({
         duration: formDuration,
         imageUrl: formImageUrl.trim() || undefined,
         skillsTags: tagsArray,
+        lockLessons: formDefaultLessonLocking,
+        lockTasks: formDefaultTaskLocking,
       };
 
       const updatedPath = await learningPathService.updatePath(
@@ -424,6 +429,8 @@ export function LearningPathsSection({
         duration: formDuration,
         imageUrl: formImageUrl.trim() || undefined,
         skillsTags: tagsArray.length > 0 ? tagsArray : ["General"],
+        lockLessons: formDefaultLessonLocking,
+        lockTasks: formDefaultTaskLocking,
       };
 
       const savedPath = await learningPathService.createPath(
@@ -436,6 +443,8 @@ export function LearningPathsSection({
       setFormDescription("");
       setFormImageUrl("");
       setFormTags("");
+      setFormDefaultLessonLocking(false);
+      setFormDefaultTaskLocking(false);
       setIsCreateModalOpen(false);
     } catch (err: any) {
       alert(err.message ?? "Failed to create learning path.");
@@ -1083,6 +1092,16 @@ export function LearningPathsSection({
                   />
                 </div>
               </div>
+              <div style={{ display: 'flex', gap: 24, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                  <input type="checkbox" checked={formDefaultLessonLocking} onChange={e => setFormDefaultLessonLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
+                  Default Lesson Locking
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                  <input type="checkbox" checked={formDefaultTaskLocking} onChange={e => setFormDefaultTaskLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
+                  Default Task Locking
+                </label>
+              </div>
 
               <div className="invite-form-field">
                 <label>Description</label>
@@ -1232,6 +1251,17 @@ export function LearningPathsSection({
                     onChange={(e) => setFormImageUrl(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 24, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                  <input type="checkbox" checked={formDefaultLessonLocking} onChange={e => setFormDefaultLessonLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
+                  Default Lesson Locking
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                  <input type="checkbox" checked={formDefaultTaskLocking} onChange={e => setFormDefaultTaskLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
+                  Default Task Locking
+                </label>
               </div>
 
               <div className="invite-form-field">

@@ -42,8 +42,10 @@ export function CurriculumManager({
   const [formDurationMinutes, setFormDurationMinutes] = useState<number>(15);
   const [formObjectives, setFormObjectives] = useState('');
   const [formOutcomes, setFormOutcomes] = useState('');
-  const [formDurationWeeks, setFormDurationWeeks] = useState(2);
-  const [formResourceUrl, setFormResourceUrl] = useState('');
+  const [formDurationWeeks, setFormDurationWeeks] = useState<number>(2);
+  const [formResourceUrl, setFormResourceUrl] = useState<string>('');
+  const [formModuleLessonLocking, setFormModuleLessonLocking] = useState<boolean>(false);
+  const [formModuleTaskLocking, setFormModuleTaskLocking] = useState<boolean>(false);
 
   // Task Form State
   const [formAssignmentType, setFormAssignmentType] = useState<'Subjective' | 'MCQ' | 'External'>('Subjective');
@@ -51,6 +53,9 @@ export function CurriculumManager({
   const [formDueDate, setFormDueDate] = useState('');
   const [formExternalUrl, setFormExternalUrl] = useState('');
   const [formAssignedTraineeId, setFormAssignedTraineeId] = useState<string>('');
+  const [formTaskDurationDays, setFormTaskDurationDays] = useState<number>(0);
+  const [formTaskDurationHours, setFormTaskDurationHours] = useState<number>(0);
+  const [formTaskDurationMinutes, setFormTaskDurationMinutes] = useState<number>(0);
 
   // Dynamic Questions State
   const [subjectiveQuestions, setSubjectiveQuestions] = useState<any[]>([
@@ -118,6 +123,9 @@ export function CurriculumManager({
     setFormDueDate('');
     setFormExternalUrl('');
     setFormAssignedTraineeId('');
+    setFormTaskDurationDays(0);
+    setFormTaskDurationHours(0);
+    setFormTaskDurationMinutes(0);
     setSubjectiveQuestions([{ id: 'sub-1', questionText: '', maxPoints: 10 }]);
     setMcqQuestions([{ id: 'mcq-1', questionText: '', options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'], correctIndex: 0, points: 10 }]);
     setActiveModal(null);
@@ -125,6 +133,8 @@ export function CurriculumManager({
     setInspectItem(null);
     setTargetModuleId(null);
     setTargetLessonId(null);
+    setFormModuleLessonLocking(false);
+    setFormModuleTaskLocking(false);
   };
 
   const openInspector = (type: 'MODULE' | 'LESSON' | 'TASK', data: any) => {
@@ -143,6 +153,8 @@ export function CurriculumManager({
     setFormOutcomes(out);
     setFormDurationWeeks(module.durationWeeks || 2);
     setFormResourceUrl(module.resources?.[0]?.url || '');
+    setFormModuleLessonLocking(module.lessonLocking || false);
+    setFormModuleTaskLocking(module.taskLocking || false);
     setActiveModal('EDIT_MODULE');
   };
 
@@ -157,18 +169,22 @@ export function CurriculumManager({
     setActiveModal('EDIT_LESSON');
   };
 
-  const openEditTaskModal = (task: any) => {
+  const openEditTaskModal = (task: any, parentModuleId?: string, parentLessonId?: string) => {
     if (!isOwnerOrAdmin) return;
     setEditingItemId(task.id);
     setFormTitle(task.title || '');
     setFormInstructions(task.instructions || '');
     setFormAssignmentType(task.assignmentType || 'Subjective');
-    setFormDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : '');
+    setFormDueDate(''); // Due Date removed
     setFormExternalUrl(task.externalUrl || '');
     setFormAssignedTraineeId(task.assignedToId || task.traineeId || '');
+    setFormTaskDurationDays(task.durationDays || 0);
+    setFormTaskDurationHours(task.durationHours || 0);
+    setFormTaskDurationMinutes(task.durationMinutes || 0);
     
-    setTargetModuleId(task.moduleId || task.module?.id || "");
-    setTargetLessonId(task.lessonId || task.lesson?.id || null);
+    const modId = parentModuleId || task.moduleId || task.module?.id || task.lesson?.moduleId || task.lesson?.module?.id || "";
+    setTargetModuleId(String(modId));
+    setTargetLessonId(parentLessonId || task.lessonId || task.lesson?.id || null);
 
     const questions = task.mcqConfig?.questions || [];
 
@@ -245,6 +261,8 @@ export function CurriculumManager({
           outcomes: formOutcomes,
           durationWeeks: formDurationWeeks,
           durationLabel: `${formDurationWeeks} weeks`,
+          lessonLocking: formModuleLessonLocking,
+          taskLocking: formModuleTaskLocking,
           resources,
         }, accessToken);
       } else if (activeModal === 'EDIT_MODULE' && editingItemId) {
@@ -256,6 +274,8 @@ export function CurriculumManager({
           outcomes: formOutcomes,
           durationWeeks: formDurationWeeks,
           durationLabel: `${formDurationWeeks} weeks`,
+          lessonLocking: formModuleLessonLocking,
+          taskLocking: formModuleTaskLocking,
           resources,
         }, accessToken);
       } else if (activeModal === 'LESSON') {
@@ -309,6 +329,9 @@ export function CurriculumManager({
           externalUrl: isExternal ? formExternalUrl : undefined,
           maxScore: calculatedMaxScore,
           dueDate: formDueDate || undefined,
+          durationDays: formTaskDurationDays,
+          durationHours: formTaskDurationHours,
+          durationMinutes: formTaskDurationMinutes,
           traineeIds: formAssignedTraineeId ? [formAssignedTraineeId] : [],
           mcqConfig: isExternal
             ? undefined
@@ -363,9 +386,6 @@ export function CurriculumManager({
 
         {isOwnerOrAdmin && (
           <div style={{ display: 'flex', gap: '10px' }}>
-            <button type="button" onClick={() => { resetFormFields(); setTargetLessonId(null); setTargetModuleId(""); setActiveModal('TASK'); }} style={{ padding: '10px 18px', backgroundColor: '#e2e8f0', color: '#1e293b', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
-              + Module Assignment
-            </button>
             <button type="button" onClick={() => { resetFormFields(); setActiveModal('MODULE'); }} style={{ padding: '10px 18px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
               + Create Module
             </button>
@@ -432,7 +452,7 @@ export function CurriculumManager({
                       </button>
                       {isOwnerOrAdmin && (
                         <>
-                          <button type="button" onClick={() => openEditTaskModal(task)} style={{ padding: '3px 8px', background: '#e0e7ff', color: '#3730a3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                          <button type="button" onClick={() => openEditTaskModal(task, module.id)} style={{ padding: '3px 8px', background: '#e0e7ff', color: '#3730a3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
                             ✏️ Edit
                           </button>
                           <button type="button" onClick={() => handleDeleteTask(task.id)} style={{ padding: '3px 8px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
@@ -491,7 +511,7 @@ export function CurriculumManager({
                         </button>
                         {isOwnerOrAdmin && (
                           <>
-                            <button type="button" onClick={() => openEditTaskModal(task)} style={{ padding: '3px 8px', background: '#e0e7ff', color: '#3730a3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                            <button type="button" onClick={() => openEditTaskModal(task, module.id, lesson.id)} style={{ padding: '3px 8px', background: '#e0e7ff', color: '#3730a3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
                               ✏️ Edit Task
                             </button>
                             <button type="button" onClick={() => handleDeleteTask(task.id)} style={{ padding: '3px 8px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
@@ -536,7 +556,7 @@ export function CurriculumManager({
                   >
                     <option value="" disabled>-- Select the mandatory module for this assignment --</option>
                     {modules.map((m) => (
-                      <option key={m.id} value={m.id}>{m.title}</option>
+                      <option key={m.id} value={String(m.id)}>{m.title}</option>
                     ))}
                   </select>
                 </div>
@@ -589,11 +609,32 @@ export function CurriculumManager({
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Weeks)</label>
                       <input type="number" min={1} max={52} value={formDurationWeeks} onChange={(e) => setFormDurationWeeks(Number(e.target.value) || 2)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                     </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Resource URL</label>
-                      <input type="url" value={formResourceUrl} onChange={(e) => setFormResourceUrl(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
                   </div>
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Resource URL</label>
+                    <input type="url" value={formResourceUrl} onChange={(e) => setFormResourceUrl(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                  </div>
+                  {(() => {
+                    const lpLessonLock = pathDetails?.lockLessons === true;
+                    const lpTaskLock = pathDetails?.lockTasks === true;
+                    if (lpLessonLock && lpTaskLock) return null;
+                    return (
+                      <div style={{ display: 'flex', gap: '24px', padding: '12px 16px', background: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                        {!lpLessonLock && (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                            <input type="checkbox" checked={formModuleLessonLocking} onChange={e => setFormModuleLessonLocking(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#4f46e5' }} />
+                            Lock Lessons (Sequential unlock)
+                          </label>
+                        )}
+                        {!lpTaskLock && (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#334155' }}>
+                            <input type="checkbox" checked={formModuleTaskLocking} onChange={e => setFormModuleTaskLocking(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#4f46e5' }} />
+                            Lock Tasks (Require all lessons)
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               )}
 
@@ -636,10 +677,9 @@ export function CurriculumManager({
                 <>
                   <div>
                     <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Evaluation Mode</label>
-                    <select value={formAssignmentType} onChange={(e) => setFormAssignmentType(e.target.value as 'Subjective' | 'MCQ' | 'External')} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                    <select value={formAssignmentType} onChange={(e) => setFormAssignmentType(e.target.value as 'Subjective' | 'MCQ')} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
                       <option value="Subjective">📝 Subjective Questions</option>
                       <option value="MCQ">🔘 Multiple Choice Quiz (MCQ)</option>
-                      <option value="External">🔗 External Assignment (no Learning Path)</option>
                     </select>
                   </div>
 
@@ -767,9 +807,21 @@ export function CurriculumManager({
                       <input type="url" value={formExternalUrl} onChange={(e) => setFormExternalUrl(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                     </div>
                   )}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Due Date</label>
-                    <input type="date" value={formDueDate} onChange={(e) => setFormDueDate(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                  {/* Due Date explicitly removed for LP Tasks */}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Days)</label>
+                      <input type="number" min={0} value={formTaskDurationDays} onChange={(e) => setFormTaskDurationDays(Number(e.target.value) || 0)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Hours)</label>
+                      <input type="number" min={0} value={formTaskDurationHours} onChange={(e) => setFormTaskDurationHours(Number(e.target.value) || 0)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Mins)</label>
+                      <input type="number" min={0} value={formTaskDurationMinutes} onChange={(e) => setFormTaskDurationMinutes(Number(e.target.value) || 0)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                    </div>
                   </div>
                 </>
               )}

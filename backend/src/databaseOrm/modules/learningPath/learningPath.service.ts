@@ -126,6 +126,8 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       skillsTags,
       imageUrl,
       status,
+      lockLessons,
+      lockTasks,
     } = dto;
 
     const pathTitle = name || title;
@@ -158,6 +160,8 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
         createdBy: creator,
         assignedToTraineeIds: [],
         overallProgress: 0,
+        lockLessons: lockLessons === undefined ? true : (lockLessons === true || lockLessons === 'true'),
+        lockTasks: lockTasks === undefined ? true : (lockTasks === true || lockTasks === 'true'),
       });
 
       return await this.repository.save(newPath);

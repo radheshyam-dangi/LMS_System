@@ -41,12 +41,7 @@ type NavItem = {
 const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> = {
   Admin: {
     main: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
-      { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
-      { name: 'Assignments', path: '/assignments', icon: ClipboardList },
-      { name: 'Evaluations', path: '/evaluations', icon: Star },
       { name: 'Users', path: '/users', icon: Users },
-      { name: 'Progress', path: '/progress', icon: TrendingUp },
     ],
     tools: [
       { name: 'Settings', path: '/settings', icon: Settings },

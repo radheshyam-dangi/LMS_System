@@ -11,6 +11,7 @@ import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { UserEntity } from '../../entities/user.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { ModuleKeyPointEntity } from '../../entities/moduleKeyPoint.entity';
+import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
 
 @Injectable()
 export class ModuleEntityService extends BaseService<ModuleEntity> {
@@ -19,6 +20,7 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
   private userRepository: Repository<UserEntity>;
   private lessonRepository: Repository<LessonEntity>;
   private keyPointRepository: Repository<ModuleKeyPointEntity>;
+  private userLessonProgressRepo: Repository<UserLessonProgressEntity>;
 
   constructor(private readonly datasource: DataSource) {
     super();
@@ -30,6 +32,8 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
       this.datasource.getRepository<LessonEntity>(LessonEntity);
     this.keyPointRepository =
       this.datasource.getRepository<ModuleKeyPointEntity>(ModuleKeyPointEntity);
+    this.userLessonProgressRepo =
+      this.datasource.getRepository<UserLessonProgressEntity>(UserLessonProgressEntity);
   }
 
   /**
@@ -77,6 +81,8 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
       durationLabel,
       durationWeeks,
       difficultyLevel,
+      lessonLocking,
+      taskLocking,
     } = dto;
 
     if (!learningPathId) {
@@ -139,6 +145,8 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
         resources: resources ?? null,
         learningPath,
         createdBy: creator,
+        lessonLocking: lessonLocking ?? learningPath.lockLessons ?? true,
+        taskLocking: taskLocking ?? learningPath.lockTasks ?? true,
       });
 
       const savedModule = await this.repository.save(newModule);
@@ -293,7 +301,7 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
   /**
    * 6. FETCH MODULE WITH FULL DETAILS
    */
-  async findModuleWithDetails(id: string): Promise<ModuleEntity> {
+  async findModuleWithDetails(id: string, userId?: string): Promise<ModuleEntity> {
     const result = await this.repository.findOne({
       where: { id },
       relations: [
@@ -315,6 +323,58 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
       });
       (result as any).keyPoints = keyPoints;
     } catch {}
+
+    // Compute locking
+    if (result.lessons) {
+      result.lessons.sort((a, b) => {
+        const orderDiff = (a.displayOrder || 0) - (b.displayOrder || 0);
+        if (orderDiff !== 0) return orderDiff;
+        const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return timeA - timeB;
+      });
+      const lpLockLessons = result.learningPath ? result.learningPath.lockLessons !== false : true;
+      const modLockLessons = result.lessonLocking === true;
+      const lockLessons = lpLockLessons || modLockLessons;
+
+      const lpLockTasks = result.learningPath ? result.learningPath.lockTasks !== false : true;
+      const modLockTasks = result.taskLocking === true;
+      const lockTasks = lpLockTasks || modLockTasks;
+      let allLessonsCompleted = true;
+      let previousCompleted = true; // First lesson in sequence is always unlocked
+      
+      for (const lesson of result.lessons) {
+        let isCompleted = false;
+        if (userId) {
+          const progress = await this.userLessonProgressRepo.findOne({
+            where: { user: { id: userId }, lesson: { id: lesson.id } }
+          });
+          isCompleted = progress?.isCompleted || false;
+        }
+        
+        if (lockLessons) {
+          (lesson as any).isLocked = !previousCompleted;
+        } else {
+          (lesson as any).isLocked = false;
+        }
+        
+        previousCompleted = isCompleted;
+        if (!isCompleted) allLessonsCompleted = false;
+      }
+      
+      // Apply task locking to assignments attached directly to lessons
+      for (const lesson of result.lessons) {
+        if (lesson.assignments) {
+          for (const task of lesson.assignments) {
+            if (lockTasks) {
+              (task as any).isLocked = !allLessonsCompleted;
+            } else {
+              (task as any).isLocked = false;
+            }
+          }
+        }
+      }
+    }
 
     return result;
   }

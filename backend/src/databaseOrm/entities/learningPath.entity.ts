@@ -38,6 +38,13 @@ export class LearningPathEntity extends BaseEntity {
   @Column({ type: 'jsonb', nullable: true, default: [] })
   assignedToTraineeIds: string[];
 
+  // 🌟 Gating/Locking (LP Level)
+  @Column({ type: 'boolean', name: 'lock_lessons', default: true })
+  lockLessons: boolean;
+
+  @Column({ type: 'boolean', name: 'lock_tasks', default: true })
+  lockTasks: boolean;
+
   // 🌟 Creator / Owner Relation (Used to verify write permissions)
   @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'createdById' })

@@ -21,6 +21,8 @@ export interface LearningPath {
   skillsTags: string[];
   assignedToTraineeIds?: string[]; // Used to strictly filter for Trainee views
   traineeAssigners?: Record<string, { firstName?: string; lastName?: string; email?: string }>;
+  lockLessons?: boolean;
+  lockTasks?: boolean;
 }
 
 export type UserRole = {

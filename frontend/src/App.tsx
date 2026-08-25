@@ -162,6 +162,10 @@ function App() {
     if (activeRole === 'Trainee' && traineeBlocked.includes(section)) {
       return <Navigate to="/dashboard" replace />;
     }
+    const adminBlocked = ['Dashboard', 'Learning Paths', 'Module Details', 'Modules', 'Assignments', 'Evaluations', 'Progress'];
+    if (activeRole === 'Admin' && adminBlocked.includes(section)) {
+      return <Navigate to="/users" replace />;
+    }
     if (activeRole !== 'Admin' && section === 'Users') {
       return <Navigate to="/dashboard" replace />;
     }
@@ -186,7 +190,7 @@ function App() {
         path="/"
         element={
           currentUser && accessToken ? (
-            <Navigate to="/dashboard" replace />
+            <Navigate to={activeRole === 'Admin' ? "/users" : "/dashboard"} replace />
           ) : (
             <HomePage onLoginClick={() => navigate('/login')} />
           )
@@ -196,7 +200,7 @@ function App() {
         path="/login"
         element={
           currentUser && accessToken ? (
-            <Navigate to="/dashboard" replace />
+            <Navigate to={activeRole === 'Admin' ? "/users" : "/dashboard"} replace />
           ) : (
             <LoginPage onBackHome={() => navigate('/')} onLogin={handleLogin} />
           )
@@ -219,7 +223,7 @@ function App() {
       <Route path="/analytics" element={<ProtectedLayout section="Analytics" />} />
       <Route path="/settings" element={<ProtectedLayout section="Settings" />} />
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<Navigate to={activeRole === 'Admin' ? "/users" : "/dashboard"} replace />} />
     </Routes>
   );
 }

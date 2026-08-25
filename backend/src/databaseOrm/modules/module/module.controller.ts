@@ -32,8 +32,9 @@ export class ModuleController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return await this.moduleService.findModuleWithDetails(id);
+  async findOne(@Param('id') id: string, @GetUser() currentUser?: any) {
+    const userId = currentUser ? (currentUser.id || currentUser.sub) : undefined;
+    return await this.moduleService.findModuleWithDetails(id, userId);
   }
 
   @Post()

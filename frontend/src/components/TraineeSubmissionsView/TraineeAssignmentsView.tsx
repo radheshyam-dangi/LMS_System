@@ -5,13 +5,14 @@ import { useNotifications } from '../../context/NotificationContext';
 type Props = {
   accessToken: string;
   currentUser?: any;
+  activeRole: string;
 };
 
 /**
  * Trainee Assignments: shows path-linked + external assignments assigned to the trainee.
  * Submitting increases the trainer's notification bell without a page reload.
  */
-export function TraineeAssignmentsView({ accessToken, currentUser }: Props) {
+export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }: Props) {
   const { refresh: refreshNotifications } = useNotifications();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -29,8 +30,8 @@ export function TraineeAssignmentsView({ accessToken, currentUser }: Props) {
     setLoading(true);
     try {
       const [mine, mySubs] = await Promise.all([
-        assignmentService.fetchMyAssignments(accessToken).catch(() => []),
-        assignmentService.fetchMySubmissions(accessToken).catch(() => []),
+        assignmentService.fetchMyAssignments(accessToken, activeRole).catch(() => []),
+        assignmentService.fetchMySubmissions(accessToken, activeRole).catch(() => []),
       ]);
       setAssignments(Array.isArray(mine) ? mine : []);
       setSubmissions(Array.isArray(mySubs) ? mySubs : []);
@@ -41,7 +42,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser }: Props) {
 
   useEffect(() => {
     void load();
-  }, [accessToken]);
+  }, [accessToken, activeRole]);
 
   const submissionByAssignment = new Map(
     submissions.map((s) => [s.assignment?.id || s.assignmentId, s]),

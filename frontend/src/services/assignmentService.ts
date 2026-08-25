@@ -4,10 +4,11 @@ import { API_BASE_URL } from '../api';
 /**
  * Helper to construct Bearer Authorization headers
  */
-const getAuthHeaders = (token: string) => ({
+const getAuthHeaders = (token: string, activeRole?: string) => ({
   headers: {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
+    ...(activeRole ? { 'x-active-role': activeRole } : {}),
   },
 });
 
@@ -73,10 +74,10 @@ export const assignmentService = {
   /**
    * 6. FETCH ALL ASSIGNMENTS (Trainer/Admin)
    */
-  fetchAllAssignments: async (token: string) => {
+  fetchAllAssignments: async (token: string, activeRole?: string) => {
     const response = await axios.get(
       `${API_BASE_URL}/assignments`,
-      getAuthHeaders(token)
+      getAuthHeaders(token, activeRole)
     );
     return Array.isArray(response.data) ? response.data : (response.data?.data || response.data?.assignments || []);
   },
@@ -107,10 +108,10 @@ export const assignmentService = {
   /**
    * 8b. Trainee: my assigned tasks (external + path-linked)
    */
-  fetchMyAssignments: async (token: string) => {
+  fetchMyAssignments: async (token: string, activeRole?: string) => {
     const response = await axios.get(
       `${API_BASE_URL}/assignments/my-assignments`,
-      getAuthHeaders(token)
+      getAuthHeaders(token, activeRole)
     );
     return Array.isArray(response.data) ? response.data : [];
   },
@@ -153,10 +154,10 @@ export const assignmentService = {
   /**
    * 10. FETCH MY SUBMISSIONS & SCORES (Trainee View)
    */
-  fetchMySubmissions: async (token: string) => {
+  fetchMySubmissions: async (token: string, activeRole?: string) => {
     const response = await axios.get(
       `${API_BASE_URL}/assignments/my-submissions`,
-      getAuthHeaders(token)
+      getAuthHeaders(token, activeRole)
     );
     return response.data;
   },
@@ -164,10 +165,10 @@ export const assignmentService = {
   /**
    * 11. FETCH PENDING SUBMISSIONS FOR REVIEW (Trainer / Admin Dashboard Queue)
    */
-  fetchPendingSubmissions: async (token: string) => {
+  fetchPendingSubmissions: async (token: string, activeRole?: string) => {
     const response = await axios.get(
       `${API_BASE_URL}/assignments/submissions/pending`,
-      getAuthHeaders(token)
+      getAuthHeaders(token, activeRole)
     );
     return response.data;
   },

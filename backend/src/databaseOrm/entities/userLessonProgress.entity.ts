@@ -18,6 +18,13 @@ export class UserLessonProgressEntity extends BaseEntity {
   @Column({ type: 'boolean', default: true })
   isCompleted: boolean;
 
+  @Column({
+    type: 'enum',
+    enum: ['locked', 'pending', 'in_progress', 'completed'],
+    default: 'locked',
+  })
+  status: string;
+
   @ManyToOne(() => UserEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: ForeignKeys.UserLessonProgress.UserId })
   user: UserEntity;

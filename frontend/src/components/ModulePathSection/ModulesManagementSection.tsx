@@ -55,14 +55,22 @@ export function ModulesManagementSection({
   const [moduleObjectives, setModuleObjectives] = useState('');
   const [moduleOutcomes, setModuleOutcomes] = useState('');
   const [moduleKeyPoints, setModuleKeyPoints] = useState('');
-  const [moduleDurationWeeks, setModuleDurationWeeks] = useState(2);
+  const [moduleDurationWeeks, setModuleDurationWeeks] = useState<number>(2);
+  const [moduleLessonLocking, setModuleLessonLocking] = useState<boolean>(false);
+  const [moduleTaskLocking, setModuleTaskLocking] = useState<boolean>(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [subjectiveAnswers, setSubjectiveAnswers] = useState<{ [key: number]: string }>({});
+  const [mcqAnswers, setMcqAnswers] = useState<{ [key: number]: number }>({});
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // ── Task submission modal (Trainee only) ──────────────────────────────────
   const [submitTask, setSubmitTask] = useState<any | null>(null);
   const [submissionText, setSubmissionText] = useState('');
-  const [subjectiveAnswers, setSubjectiveAnswers] = useState<Record<number, string>>({});
-  const [mcqAnswers, setMcqAnswers] = useState<Record<number, number>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // ── Load all paths ────────────────────────────────────────────────────────
@@ -168,6 +176,8 @@ export function ModulesManagementSection({
           keyPoints: moduleKeyPoints,
           durationWeeks: moduleDurationWeeks,
           durationLabel: `${moduleDurationWeeks} weeks`,
+          lessonLocking: moduleLessonLocking,
+          taskLocking: moduleTaskLocking,
           resources,
         },
         accessToken
@@ -175,12 +185,45 @@ export function ModulesManagementSection({
       setShowNewModuleModal(false);
       setModuleTitle(''); setModuleDescription(''); setModuleResourceUrl(''); setModuleLevel('Beginner');
       setModuleObjectives(''); setModuleOutcomes(''); setModuleKeyPoints(''); setModuleDurationWeeks(2);
+      setModuleLessonLocking(false); setModuleTaskLocking(false);
       const data = await curriculumService.fetchModulesByPath(selectedPathId, accessToken);
       setModules(Array.isArray(data) ? data : []);
     } catch (err: any) {
       alert(err.message || 'Failed to create module.');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const loadAssignments = async () => {
+      if (openModuleId) await openModule(openModuleId);
+  }
+
+  const handleStartTask = async (taskId: string) => {
+    if (!accessToken) return;
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/assignments/${taskId}/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      await loadAssignments();
+    } catch (err: any) {
+      alert(err.message || 'Failed to start task');
+    }
+  };
+
+  const handleRestartTask = async (taskId: string) => {
+    if (!accessToken) return;
+    if (!window.confirm('Are you sure you want to restart? This will clear all your answers and reset the timer.')) return;
+    try {
+      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000'}/assignments/${taskId}/restart`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      setSubmitTask(null);
+      await loadAssignments();
+    } catch (err: any) {
+      alert(err.message || 'Failed to restart task');
     }
   };
 
@@ -565,12 +608,13 @@ export function ModulesManagementSection({
                           border: isDone ? 'none' : '2px solid #cbd5e1',
                           background: isDone ? '#10b981' : '#f8fafc',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0, cursor: isTrainee && !isDone ? 'pointer' : 'default',
+                          flexShrink: 0, cursor: isTrainee && !isDone && !lesson.isLocked ? 'pointer' : 'default',
                           boxShadow: isDone ? '0 0 0 4px rgba(16,185,129,0.15)' : 'inset 0 2px 4px rgba(0,0,0,0.02)',
                           transition: 'all 0.2s',
+                          opacity: lesson.isLocked ? 0.5 : 1
                         }}
-                        onClick={() => isTrainee && !isDone ? void markLessonWatched(lesson.id) : undefined}
-                        title={isTrainee && !isDone ? 'Click to mark as watched' : isDone ? 'Completed' : 'Not completed'}
+                        onClick={() => isTrainee && !isDone && !lesson.isLocked ? void markLessonWatched(lesson.id) : undefined}
+                        title={lesson.isLocked ? lesson.lockReason : (isTrainee && !isDone ? 'Click to mark as watched' : isDone ? 'Completed' : 'Not completed')}
                       >
                         {isDone && (
                           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -613,19 +657,19 @@ export function ModulesManagementSection({
 
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                       {lesson.videoUrl && (
-                        <a href={lesson.videoUrl} target="_blank" rel="noreferrer"
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: '#e0e7ff', borderRadius: 8, transition: 'background 0.2s' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#c7d2fe'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = '#e0e7ff'}
+                        <a href={lesson.isLocked ? undefined : lesson.videoUrl} target={lesson.isLocked ? undefined : "_blank"} rel="noreferrer"
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: lesson.isLocked ? '#f1f5f9' : '#e0e7ff', borderRadius: 8, transition: 'background 0.2s', pointerEvents: lesson.isLocked ? 'none' : 'auto', opacity: lesson.isLocked ? 0.5 : 1 }}
+                          onMouseEnter={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#c7d2fe')}
+                          onMouseLeave={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#e0e7ff')}
                         >
                           <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Video
                         </a>
                       )}
                       {lesson.articleUrl && (
-                        <a href={lesson.articleUrl} target="_blank" rel="noreferrer"
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: '#e0e7ff', borderRadius: 8, transition: 'background 0.2s' }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = '#c7d2fe'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = '#e0e7ff'}
+                        <a href={lesson.isLocked ? undefined : lesson.articleUrl} target={lesson.isLocked ? undefined : "_blank"} rel="noreferrer"
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: lesson.isLocked ? '#f1f5f9' : '#e0e7ff', borderRadius: 8, transition: 'background 0.2s', pointerEvents: lesson.isLocked ? 'none' : 'auto', opacity: lesson.isLocked ? 0.5 : 1 }}
+                          onMouseEnter={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#c7d2fe')}
+                          onMouseLeave={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#e0e7ff')}
                         >
                           <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg> Article
                         </a>
@@ -637,6 +681,10 @@ export function ModulesManagementSection({
                           <span style={{ fontSize: 13, color: '#166534', fontWeight: 800, padding: '8px 16px', background: '#dcfce7', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                             <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg> Done
                           </span>
+                        ) : lesson.isLocked ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#94a3b8', fontWeight: 700, padding: '8px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }} title={lesson.lockReason}>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> Locked
+                          </div>
                         ) : (
                           <button
                             type="button"
@@ -718,12 +766,29 @@ export function ModulesManagementSection({
                         {isTrainee && status !== 'Approved' && (
                           <button
                             type="button"
-                            onClick={() => { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
-                            style={{ padding: '9px 20px', background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.3)', transition: 'all 0.2s' }}
-                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(79,70,229,0.4)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(79,70,229,0.3)'; }}
+                            disabled={task.isLocked}
+                            onClick={() => { if (!task.isLocked) { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); } }}
+                            style={{ 
+                              padding: '9px 20px', 
+                              background: task.isLocked ? '#f1f5f9' : 'linear-gradient(135deg,#6366f1,#4f46e5)', 
+                              color: task.isLocked ? '#94a3b8' : '#fff', 
+                              border: task.isLocked ? '1px solid #e2e8f0' : 'none', 
+                              borderRadius: 10, 
+                              fontSize: 14, 
+                              fontWeight: 800, 
+                              cursor: task.isLocked ? 'not-allowed' : 'pointer', 
+                              boxShadow: task.isLocked ? 'none' : '0 4px 12px rgba(79,70,229,0.3)', 
+                              transition: 'all 0.2s',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8
+                            }}
+                            title={task.isLocked ? task.lockReason || 'Complete all lessons in this module to unlock tasks.' : ''}
+                            onMouseEnter={(e) => { if (!task.isLocked) { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(79,70,229,0.4)'; } }}
+                            onMouseLeave={(e) => { if (!task.isLocked) { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(79,70,229,0.3)'; } }}
                           >
-                            {sub ? 'Resubmit' : 'Submit Task'}
+                            {task.isLocked && <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>}
+                            {task.isLocked ? 'Locked' : (sub ? 'Resubmit' : 'Submit Task')}
                           </button>
                         )}
                       </div>
@@ -797,11 +862,51 @@ export function ModulesManagementSection({
                   </p>
                   {tasks.map((task: any) => {
                     const sub = subByAssignment.get(task.id);
+                    const isLocked = task.isLocked;
+                    
+                    let timeLeftStr = '';
+                    let isOverdue = false;
+                    const status = task.status || (sub ? sub.status : 'not_started');
+                    
+                    if (status === 'started' && task.deadlineAt) {
+                      const deadline = new Date(task.deadlineAt);
+                      const diff = deadline.getTime() - currentTime.getTime();
+                      if (diff <= 0) {
+                        isOverdue = true;
+                        timeLeftStr = 'Time is up!';
+                      } else {
+                        const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+                        const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                        const m = Math.floor((diff / 1000 / 60) % 60);
+                        const s = Math.floor((diff / 1000) % 60);
+                        timeLeftStr = `${d}d ${h}h ${m}m ${s}s left`;
+                      }
+                    }
+
+                    const hasDuration = (task.durationDays || 0) > 0 || (task.durationHours || 0) > 0 || (task.durationMinutes || 0) > 0;
+                    const canSubmit = !hasDuration || status === 'started' || status === 'Submitted' || status === 'Approved' || status === 'Rejected' || status === 'Overdue';
+
                     return (
-                      <div key={task.id} style={{ padding: '14px 18px', background: '#f8fafc', borderRadius: 10, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div key={task.id} style={{ padding: '14px 18px', background: isLocked ? '#f1f5f9' : '#f8fafc', borderRadius: 10, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isLocked ? 0.6 : 1 }}>
                         <div>
-                          <strong style={{ fontSize: 14 }}>{task.title}</strong>
+                          <strong style={{ fontSize: 14 }}>
+                            {isLocked && <span style={{ marginRight: 6 }}>🔒</span>}
+                            {task.title}
+                          </strong>
                           <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{task.assignmentType}</div>
+                          {isLocked && task.lockReason && (
+                            <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{task.lockReason}</div>
+                          )}
+                          {!isLocked && status === 'started' && (
+                            <div style={{ fontSize: 13, color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 600, marginTop: 6 }}>
+                              ⏳ {timeLeftStr}
+                            </div>
+                          )}
+                          {!isLocked && status === 'Overdue' && (
+                            <div style={{ fontSize: 13, color: '#ef4444', fontWeight: 600, marginTop: 6 }}>
+                              ⚠️ Overdue
+                            </div>
+                          )}
                         </div>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                           {typeof sub?.score === 'number' && (
@@ -809,14 +914,30 @@ export function ModulesManagementSection({
                               {sub.score}/{task.maxScore || 100}
                             </span>
                           )}
-                          {isTrainee && (!sub || sub.status !== 'Approved') && (
-                            <button
-                              type="button"
-                              onClick={() => { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
-                              style={{ padding: '6px 14px', background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-                            >
-                              {sub ? 'Resubmit' : 'Submit'}
-                            </button>
+                          
+                          {isTrainee && !isLocked && (
+                            <>
+                              {!canSubmit && status !== 'started' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartTask(task.id)}
+                                  style={{ padding: '6px 14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                  Now I will do task
+                                </button>
+                              )}
+
+                              {canSubmit && (!sub || (sub.status !== 'Approved' && sub.status !== 'Evaluated')) && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
+                                  disabled={isOverdue || status === 'Overdue'}
+                                  style={{ padding: '6px 14px', background: isOverdue || status === 'Overdue' ? '#cbd5e1' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: isOverdue || status === 'Overdue' ? 'not-allowed' : 'pointer' }}
+                                >
+                                  {sub ? 'Resubmit' : 'Submit'}
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -830,13 +951,54 @@ export function ModulesManagementSection({
         </div>
 
         {/* ── Task Submission Modal ── */}
-        {submitTask && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-            <form onSubmit={handleSubmit} style={{ width: 580, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 20, padding: '28px 32px', boxShadow: '0 25px 80px rgba(0,0,0,0.2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>{submitTask.title}</h3>
-                <button type="button" onClick={() => setSubmitTask(null)} style={{ border: 'none', background: '#f1f5f9', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 18, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-              </div>
+        {submitTask && (() => {
+          const sub = subByAssignment.get(submitTask.id);
+          const deadlineAt = submitTask.deadlineAt || sub?.deadlineAt;
+          const status = submitTask.status || sub?.status || 'not_started';
+          
+          let timeLeftStr = '';
+          let isOverdue = false;
+          if (status === 'started' && deadlineAt) {
+            const diff = new Date(deadlineAt).getTime() - currentTime.getTime();
+            if (diff <= 0) {
+              isOverdue = true;
+              timeLeftStr = 'Time is up!';
+            } else {
+              const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+              const h = Math.floor((diff / (1000 * 60 * 60)) % 24).toString().padStart(2, '0');
+              const m = Math.floor((diff / 1000 / 60) % 60).toString().padStart(2, '0');
+              const s = Math.floor((diff / 1000) % 60).toString().padStart(2, '0');
+              timeLeftStr = `${d > 0 ? d + 'd ' : ''}${h}:${m}:${s}`;
+            }
+          }
+
+          return (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
+              <form onSubmit={handleSubmit} style={{ width: 580, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 20, padding: '28px 32px', boxShadow: '0 25px 80px rgba(0,0,0,0.2)', position: 'relative' }}>
+                {/* TIMEOUT OVERLAY */}
+                {isOverdue && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.9)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, textAlign: 'center', borderRadius: 20, backdropFilter: 'blur(2px)' }}>
+                    <div style={{ fontSize: 48, marginBottom: 16 }}>⏰</div>
+                    <h2 style={{ margin: '0 0 12px', color: '#0f172a', fontSize: 24, fontWeight: 800 }}>Time is up!</h2>
+                    <p style={{ margin: '0 0 24px', color: '#475569', fontSize: 15, lineHeight: 1.6 }}>You have passed the deadline. Please restart the test to try again.</p>
+                    <div style={{ display: 'flex', gap: 12 }}>
+                      <button type="button" onClick={() => setSubmitTask(null)} style={{ padding: '10px 24px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>Close</button>
+                      <button type="button" onClick={() => handleRestartTask(submitTask.id)} style={{ padding: '10px 24px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(239,68,68,0.3)' }}>Restart Test</button>
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                  <div style={{ flex: 1 }}>
+                    <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: '#0f172a' }}>{submitTask.title}</h3>
+                    {timeLeftStr && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: isOverdue ? '#fee2e2' : '#fef3c7', color: isOverdue ? '#b91c1c' : '#b45309', borderRadius: 6, fontSize: 13, fontWeight: 700 }}>
+                        ⏳ {timeLeftStr}
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => setSubmitTask(null)} style={{ border: 'none', background: '#f1f5f9', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 18, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                </div>
               {submitTask.instructions && (
                 <p style={{ fontSize: 13, color: '#64748b', background: '#f8fafc', padding: 12, borderRadius: 8, marginBottom: 16, lineHeight: 1.6 }}>{submitTask.instructions}</p>
               )}
@@ -887,13 +1049,14 @@ export function ModulesManagementSection({
                 <button type="button" onClick={() => setSubmitTask(null)} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#f1f5f9', fontWeight: 600, fontSize: 13, cursor: 'pointer', color: '#475569' }}>
                   Cancel
                 </button>
-                <button type="submit" disabled={isSubmitting} style={{ padding: '10px 24px', border: 'none', borderRadius: 10, background: isSubmitting ? '#a5b4fc' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: isSubmitting ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.3)' }}>
+                <button type="submit" disabled={isSubmitting || isOverdue} style={{ padding: '10px 24px', border: 'none', borderRadius: 10, background: (isSubmitting || isOverdue) ? '#a5b4fc' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: (isSubmitting || isOverdue) ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.3)' }}>
                   {isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
                 </button>
               </div>
             </form>
           </div>
-        )}
+          );
+        })()}
       </div>
     );
   }
@@ -1123,6 +1286,30 @@ export function ModulesManagementSection({
                 <input type="url" value={moduleResourceUrl} onChange={e => setModuleResourceUrl(e.target.value)} placeholder="https://docs.example.com/module-guide"
                   style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
               </div>
+              {(() => {
+                const currentLP = allPaths.find(p => p.id === selectedPathId);
+                const lpLessonLock = currentLP?.lockLessons === true;
+                const lpTaskLock = currentLP?.lockTasks === true;
+                
+                if (lpLessonLock && lpTaskLock) return null;
+                
+                return (
+                  <div style={{ display: 'flex', gap: 24, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', marginTop: 8 }}>
+                    {!lpLessonLock && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                        <input type="checkbox" checked={moduleLessonLocking} onChange={e => setModuleLessonLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
+                        Lock Lessons (Sequential unlock)
+                      </label>
+                    )}
+                    {!lpTaskLock && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                        <input type="checkbox" checked={moduleTaskLocking} onChange={e => setModuleTaskLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
+                        Lock Tasks (Require all lessons)
+                      </label>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 8, borderTop: '1px solid #f1f5f9' }}>
                 <button type="button" onClick={() => setShowNewModuleModal(false)} style={{ padding: '10px 20px', background: '#f1f5f9', border: 'none', borderRadius: 10, cursor: 'pointer', fontWeight: 600, fontSize: 13, color: '#475569' }}>Cancel</button>
                 <button type="submit" disabled={isCreating} style={{ padding: '10px 20px', background: isCreating ? '#a5b4fc' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 10, cursor: isCreating ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 13, boxShadow: '0 2px 8px rgba(99,102,241,0.3)' }}>

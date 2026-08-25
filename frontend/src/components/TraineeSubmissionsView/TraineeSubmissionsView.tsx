@@ -3,9 +3,10 @@ import { curriculumService } from '../../services/curriculumService';
 
 interface TraineeSubmissionsViewProps {
   accessToken: string;
+  activeRole: string;
 }
 
-export function TraineeSubmissionsView({ accessToken }: TraineeSubmissionsViewProps) {
+export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmissionsViewProps) {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -20,7 +21,7 @@ export function TraineeSubmissionsView({ accessToken }: TraineeSubmissionsViewPr
   const fetchMySubmissions = async () => {
     setIsLoading(true);
     try {
-      const data = await curriculumService.fetchMySubmissions(accessToken);
+      const data = await curriculumService.fetchMySubmissions(accessToken, activeRole);
       setSubmissions(data);
     } catch (err: any) {
       console.error('Failed to fetch trainee submissions:', err);

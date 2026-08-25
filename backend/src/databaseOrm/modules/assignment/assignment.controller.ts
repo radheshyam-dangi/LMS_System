@@ -11,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   ForbiddenException,
+  Headers,
 } from '@nestjs/common';
 import { AssignmentEntityService } from './assignment.service';
 import { GetUser } from '../../../common/decorator/GetUser.decorator';
@@ -29,7 +30,8 @@ export class AssignmentController {
 
   @Get('submissions/pending')
   @Roles('Admin', 'Trainer')
-  async getPendingSubmissions(@GetUser() currentUser: any) {
+  async getPendingSubmissions(@GetUser() currentUser: any, @Headers('x-active-role') activeRole?: string) {
+    if (activeRole?.toLowerCase() === 'admin') return [];
     const trainerId = currentUser?.id || currentUser?.sub;
     const isAdmin = this.assignmentService.isAdminUser(currentUser);
     return await this.assignmentService.findPendingSubmissionsForTrainer(
@@ -86,7 +88,8 @@ export class AssignmentController {
 
   @Get('my-submissions')
   @Roles('Trainee', 'Trainer', 'Admin')
-  async getMySubmissions(@GetUser() currentUser: any) {
+  async getMySubmissions(@GetUser() currentUser: any, @Headers('x-active-role') activeRole?: string) {
+    if (activeRole?.toLowerCase() === 'admin') return [];
     const traineeId = currentUser?.id || currentUser?.sub;
     if (!traineeId) throw new ForbiddenException('User session missing.');
     return await this.assignmentService.findMySubmissions(traineeId);
@@ -95,7 +98,8 @@ export class AssignmentController {
   /** Trainee: list assignments assigned to them (external + path-linked) */
   @Get('my-assignments')
   @Roles('Trainee', 'Trainer', 'Admin')
-  async getMyAssignments(@GetUser() currentUser: any) {
+  async getMyAssignments(@GetUser() currentUser: any, @Headers('x-active-role') activeRole?: string) {
+    if (activeRole?.toLowerCase() === 'admin') return [];
     const traineeId = currentUser?.id || currentUser?.sub;
     if (!traineeId) throw new ForbiddenException('User session missing.');
     return await this.assignmentService.findMyAssignments(traineeId);
@@ -103,7 +107,7 @@ export class AssignmentController {
 
   @Get('external')
   @Roles('Admin', 'Trainer', 'Trainee')
-  async getExternalAssignments(@GetUser() currentUser: any) {
+  async getExternalAssignments(@GetUser() currentUser: any, @Headers('x-active-role') activeRole?: string) {
     const all = await this.assignmentService.findExternalAssignments();
     const roles = [
       currentUser?.role,
@@ -119,6 +123,28 @@ export class AssignmentController {
     const myAssignments = await this.assignmentService.findMyAssignments(traineeId);
     const myAssignmentIds = new Set(myAssignments.map((a) => a.id));
     return all.filter((a) => myAssignmentIds.has(a.id));
+  }
+
+  @Post(':id/start')
+  @Roles('Trainee', 'Trainer', 'Admin')
+  async startAssignment(
+    @Param('id') assignmentId: string,
+    @GetUser() currentUser: any,
+  ) {
+    const traineeId = currentUser?.id || currentUser?.sub;
+    if (!traineeId) throw new ForbiddenException('User session invalid.');
+    return await this.assignmentService.startAssignment(assignmentId, traineeId);
+  }
+
+  @Post(':id/restart')
+  @Roles('Trainee', 'Trainer', 'Admin')
+  async restartAssignment(
+    @Param('id') assignmentId: string,
+    @GetUser() currentUser: any,
+  ) {
+    const traineeId = currentUser?.id || currentUser?.sub;
+    if (!traineeId) throw new ForbiddenException('User session invalid.');
+    return await this.assignmentService.restartAssignment(assignmentId, traineeId);
   }
 
   @Post(':id/submit')
@@ -145,11 +171,27 @@ export class AssignmentController {
     @Body() body: { traineeIds?: string[]; traineeId?: string },
     @GetUser() currentUser: any,
   ) {
-    const task = await this.assignmentService.findOne(id);
+    const userId = currentUser?.id || currentUser?.sub;
+    const task = await this.assignmentService.findOne(id, userId);
     await this.assignmentService.assertCanManageAssignment(task, currentUser);
     const ids = body.traineeIds || (body.traineeId ? [body.traineeId] : []);
     const assignerId = currentUser.id || currentUser.sub;
     return await this.assignmentService.assignToTrainees(id, ids, assignerId);
+  }
+
+  @Delete(':id/unassign')
+  @Roles('Admin', 'Trainer')
+  async unassignTrainees(
+    @Param('id') id: string,
+    @Body() body: { traineeIds?: string[]; traineeId?: string },
+    @GetUser() currentUser: any,
+  ) {
+    const userId = currentUser?.id || currentUser?.sub;
+    const task = await this.assignmentService.findOne(id, userId);
+    await this.assignmentService.assertCanManageAssignment(task, currentUser);
+    const ids = body.traineeIds || (body.traineeId ? [body.traineeId] : []);
+    const unassignerId = currentUser.id || currentUser.sub;
+    return await this.assignmentService.unassignTrainees(id, ids, unassignerId);
   }
 
   @Get()
@@ -159,7 +201,12 @@ export class AssignmentController {
     @Query('learningPathId') learningPathId?: string,
     @Query('externalOnly') externalOnly?: string,
     @GetUser() currentUser?: any,
+    @Headers('x-active-role') activeRole?: string,
   ) {
+    if (activeRole) {
+       if (!currentUser) currentUser = {};
+       currentUser.activeRole = activeRole;
+    }
     if (lessonId) {
       return await this.assignmentService.findByLessonId(lessonId, currentUser);
     }
@@ -186,8 +233,10 @@ export class AssignmentController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return await this.assignmentService.findOne(id);
+  @Roles('Admin', 'Trainer', 'Trainee')
+  async getAssignment(@Param('id') id: string, @GetUser() currentUser: any) {
+    const userId = currentUser?.id || currentUser?.sub;
+    return await this.assignmentService.findOne(id, userId);
   }
 
   @Post()
@@ -230,7 +279,8 @@ export class AssignmentController {
     @Body() dto: any,
     @GetUser() currentUser: any,
   ) {
-    const task = await this.assignmentService.findOne(id);
+    const userId = currentUser?.id || currentUser?.sub;
+    const task = await this.assignmentService.findOne(id, userId);
     await this.assignmentService.assertCanManageAssignment(task, currentUser);
     return await this.assignmentService.updateAssignment(id, dto);
   }
@@ -239,7 +289,8 @@ export class AssignmentController {
   @Roles('Admin', 'Trainer')
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteAssignment(@Param('id') id: string, @GetUser() currentUser: any) {
-    const task = await this.assignmentService.findOne(id);
+    const userId = currentUser?.id || currentUser?.sub;
+    const task = await this.assignmentService.findOne(id, userId);
     await this.assignmentService.assertCanManageAssignment(task, currentUser);
     return await this.assignmentService.deleteAssignment(id);
   }

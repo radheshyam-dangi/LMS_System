@@ -1,18 +1,19 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../api';
 
-const getAuthHeaders = (token: string) => ({
+const getAuthHeaders = (token: string, activeRole?: string) => ({
   headers: {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
+    ...(activeRole ? { 'x-active-role': activeRole } : {}),
   },
 });
 
 export const curriculumService = {
-  fetchMySubmissions: async (token: string) => {
+  fetchMySubmissions: async (token: string, activeRole?: string) => {
     const response = await axios.get(
       `${API_BASE_URL}/assignments/my-submissions`,
-      getAuthHeaders(token)
+      getAuthHeaders(token, activeRole)
     );
     return response.data;
   },
@@ -50,6 +51,8 @@ export const curriculumService = {
       keyPoints?: string[] | string;
       durationWeeks?: number;
       durationLabel?: string;
+      lessonLocking?: boolean;
+      taskLocking?: boolean;
     },
     token: string
   ) => {
@@ -75,6 +78,8 @@ export const curriculumService = {
       keyPoints?: string[] | string;
       durationWeeks?: number;
       durationLabel?: string;
+      lessonLocking?: boolean;
+      taskLocking?: boolean;
     },
     token: string
   ) => {
@@ -223,10 +228,10 @@ export const curriculumService = {
     return response.data;
   },
 
-  fetchPendingSubmissions: async (token: string) => {
+  fetchPendingSubmissions: async (token: string, activeRole?: string) => {
     const response = await axios.get(
       `${API_BASE_URL}/assignments/submissions/pending`,
-      getAuthHeaders(token)
+      getAuthHeaders(token, activeRole)
     );
     return response.data;
   },

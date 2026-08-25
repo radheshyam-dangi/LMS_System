@@ -54,6 +54,13 @@ export class ModuleEntity extends BaseEntity {
   @Column({ type: 'jsonb', nullable: true, default: [] })
   outcomes: string[];
 
+  // 🌟 Gating/Locking Settings
+  @Column({ type: 'boolean', name: 'lesson_locking', default: false })
+  lessonLocking: boolean;
+
+  @Column({ type: 'boolean', name: 'task_locking', default: false })
+  taskLocking: boolean;
+
   @ManyToOne(() => ModuleEntity, (module) => module.children, {
     nullable: true,
     onDelete: 'SET NULL',

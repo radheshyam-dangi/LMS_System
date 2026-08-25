@@ -441,8 +441,8 @@ export function DashboardPage({
           analyticsService.fetchDashboard(accessToken).catch(() => null),
           userService.fetchAllUsers(accessToken).catch(() => []),
           learningPathService.fetchAllPaths(accessToken).catch(() => []),
-          assignmentService.fetchPendingSubmissions(accessToken).catch(() => []),
-          isTrainee ? assignmentService.fetchMySubmissions(accessToken).catch(() => []) : Promise.resolve([]),
+          assignmentService.fetchPendingSubmissions(accessToken, activeRole).catch(() => []),
+          isTrainee ? assignmentService.fetchMySubmissions(accessToken, activeRole).catch(() => []) : Promise.resolve([]),
           progressService.fetchMyStats(accessToken).catch(() => ({
             completedLessons: 0,
             totalLessons: 0,
@@ -627,9 +627,9 @@ export function DashboardPage({
       <div className="dashboard-content">
         {isTrainee ? (
           activeSection === 'Assignments' ? (
-            <TraineeAssignmentsView accessToken={accessToken} currentUser={currentUser} />
+            <TraineeAssignmentsView accessToken={accessToken} currentUser={currentUser} activeRole={activeRole} />
           ) : (
-            <TraineeSubmissionsView accessToken={accessToken} />
+            <TraineeSubmissionsView accessToken={accessToken} activeRole={activeRole} />
           )
         ) : (
           <TrainerEvaluationDashboard accessToken={accessToken} currentUser={currentUser} />

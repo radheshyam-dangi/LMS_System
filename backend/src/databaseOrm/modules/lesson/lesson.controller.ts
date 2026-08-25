@@ -28,17 +28,20 @@ export class LessonController {
   async findAll(
     @Query('moduleId') moduleId?: string,
     @Query('learningPathId') learningPathId?: string,
+    @GetUser() currentUser?: any,
   ) {
+    const userId = currentUser?.id || currentUser?.sub;
     if (moduleId)
-      return await this.lessonService.findLessonsByModuleId(moduleId);
+      return await this.lessonService.findLessonsByModuleId(moduleId, userId);
     if (learningPathId)
-      return await this.lessonService.findLessonsByPathId(learningPathId);
-    return await this.lessonService.findAll();
+      return await this.lessonService.findLessonsByPathId(learningPathId, userId);
+    return await this.lessonService.findAll(userId);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return await this.lessonService.findLessonById(id);
+  async findOne(@Param('id') id: string, @GetUser() currentUser?: any) {
+    const userId = currentUser?.id || currentUser?.sub;
+    return await this.lessonService.findLessonById(id, userId);
   }
 
   // 🔒 CREATE LESSON

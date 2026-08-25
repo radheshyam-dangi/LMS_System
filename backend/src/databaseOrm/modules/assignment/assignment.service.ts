@@ -7,7 +7,7 @@ import {
   forwardRef,
   Optional,
 } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { BaseService } from '../../../common/services/base.service';
 import { AssignmentEntity } from '../../entities/assignment.entity';
 import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
@@ -81,6 +81,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   }
 
   private extractUserRoles(user: any): string[] {
+    if (user?.activeRole) {
+      return [String(user.activeRole).toLowerCase()];
+    }
     const roles: string[] = [];
     const push = (v: any) => {
       if (!v) return;
@@ -89,7 +92,6 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     };
     push(user?.role);
     push(user?.primaryRole);
-    push(user?.activeRole);
     if (Array.isArray(user?.roles)) user.roles.forEach(push);
     return roles;
   }
@@ -189,6 +191,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       externalUrl,
       traineeIds,
       assignedToTraineeIds,
+      durationDays,
+      durationHours,
+      durationMinutes,
     } = dto;
 
     if (!title || !title.trim()) {
@@ -271,6 +276,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       learningPath: external ? undefined : learningPath || undefined,
       createdBy: { id: creatorId },
       assignedToTraineeIds: assignedIds,
+      durationDays: Number(durationDays) || 0,
+      durationHours: Number(durationHours) || 0,
+      durationMinutes: Number(durationMinutes) || 0,
     });
 
     const saved = await this.repository.save(assignment);
@@ -345,6 +353,34 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     return saved;
   }
 
+  async unassignTrainees(
+    assignmentId: string,
+    traineeIds: string[],
+    unassignedById?: string,
+  ): Promise<AssignmentEntity> {
+    const assignment = await this.findOne(assignmentId);
+    const ids = (traineeIds || []).filter((id) => UUID_REGEX.test(id));
+    if (!ids.length)
+      throw new BadRequestException('At least one traineeId is required.');
+
+    const existing = assignment.assignedToTraineeIds || [];
+    const removedIds = ids.filter((id: string) => existing.includes(id));
+    assignment.assignedToTraineeIds = existing.filter((id: string) => !ids.includes(id));
+    
+    const saved = await this.repository.save(assignment);
+
+    if (removedIds.length > 0) {
+      for (const tid of removedIds) {
+        await this.traineeAssignmentRepository.delete({
+          assignment: { id: assignmentId },
+          trainee: { id: tid }
+        });
+      }
+    }
+
+    return saved;
+  }
+
   async updateAssignment(id: string, dto: any): Promise<AssignmentEntity> {
     const assignment = await this.findOne(id);
 
@@ -392,7 +428,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     await this.repository.remove(assignment);
   }
 
-  async findOne(id: string): Promise<AssignmentEntity> {
+  async findOne(id: string, userId?: string): Promise<any> {
     const assignment = await this.repository.findOne({
       where: { id },
       relations: [
@@ -415,7 +451,17 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       );
     }
 
-    return assignment;
+    const [assignmentWithLockState] = await this.attachLockStateToAssignments([assignment], userId);
+    
+    if (assignmentWithLockState.isLocked) {
+      const { ForbiddenException } = require('@nestjs/common');
+      throw new ForbiddenException(JSON.stringify({ 
+        code: 'LOCKED_LESSONS_INCOMPLETE', 
+        message: assignmentWithLockState.lockReason 
+      }));
+    }
+
+    return assignmentWithLockState;
   }
 
   async evaluateSubmission(
@@ -581,21 +627,8 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     submissionText: string,
     attachmentUrl?: string,
   ): Promise<AssignmentSubmissionEntity> {
-    const assignment = await this.repository.findOne({
-      where: { id: assignmentId },
-      relations: [
-        'createdBy',
-        'lesson',
-        'lesson.module',
-        'lesson.module.learningPath',
-        'module',
-        'module.learningPath',
-        'learningPath'
-      ],
-    });
-    if (!assignment)
-      throw new NotFoundException(`Task "${assignmentId}" not found.`);
-
+    const assignment = await this.findOne(assignmentId, traineeId);
+    
     if (assignment.dueDate && new Date() > new Date(assignment.dueDate)) {
       throw new BadRequestException('Task submission deadline has passed.');
     }
@@ -620,11 +653,20 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
 
     if (submission) {
+      if (submission.deadlineAt && new Date() > new Date(submission.deadlineAt)) {
+        throw new BadRequestException('Task submission deadline has passed. This task is overdue.');
+      }
       submission.submissionText = submissionText;
       submission.attachmentUrl = attachmentUrl || submission.attachmentUrl;
       submission.status = 'Submitted';
       submission.submittedAt = new Date();
     } else {
+      // For tasks that don't have timers, they can just be submitted directly.
+      // But if the assignment has a duration set, they MUST be started first.
+      const hasDuration = (assignment.durationDays || 0) > 0 || (assignment.durationHours || 0) > 0 || (assignment.durationMinutes || 0) > 0;
+      if (hasDuration) {
+        throw new BadRequestException('You must start this task before submitting.');
+      }
       submission = this.submissionRepository.create({
         assignment: { id: assignmentId },
         trainee: { id: traineeId },
@@ -659,6 +701,172 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     return saved;
   }
 
+  async startAssignment(assignmentId: string, traineeId: string): Promise<AssignmentSubmissionEntity> {
+    const assignment = await this.findOne(assignmentId, traineeId);
+
+    // Enforce lock explicitly
+    if (assignment.isLocked) {
+      throw new ForbiddenException('Cannot start a locked task.');
+    }
+
+    let submission = await this.submissionRepository.findOne({
+      where: {
+        assignment: { id: assignmentId },
+        trainee: { id: traineeId },
+      },
+    });
+
+    if (submission && submission.startedAt) {
+      throw new BadRequestException('Task has already been started.');
+    }
+
+    const durationDays = assignment.durationDays || 0;
+    const durationHours = assignment.durationHours || 0;
+    const durationMinutes = assignment.durationMinutes || 0;
+
+    const totalMs = (durationDays * 86400 + durationHours * 3600 + durationMinutes * 60) * 1000;
+    if (totalMs <= 0) {
+      throw new BadRequestException('This task does not have a duration set.');
+    }
+
+    const now = new Date();
+    const deadlineAt = new Date(now.getTime() + totalMs);
+
+    if (submission) {
+      submission.status = 'started';
+      submission.startedAt = now;
+      submission.deadlineAt = deadlineAt;
+    } else {
+      submission = this.submissionRepository.create({
+        assignment: { id: assignmentId },
+        trainee: { id: traineeId },
+        status: 'started',
+        startedAt: now,
+        deadlineAt: deadlineAt,
+      });
+    }
+
+    return await this.submissionRepository.save(submission);
+  }
+
+  async restartAssignment(assignmentId: string, traineeId: string): Promise<AssignmentSubmissionEntity> {
+    const assignment = await this.findOne(assignmentId, traineeId);
+
+    // Enforce lock explicitly
+    if (assignment.isLocked) {
+      throw new ForbiddenException('Cannot restart a locked task.');
+    }
+
+    const durationDays = assignment.durationDays || 0;
+    const durationHours = assignment.durationHours || 0;
+    const durationMinutes = assignment.durationMinutes || 0;
+
+    const totalMs = (durationDays * 86400 + durationHours * 3600 + durationMinutes * 60) * 1000;
+    if (totalMs <= 0) {
+      throw new BadRequestException('This task does not have a duration set, restart not required.');
+    }
+
+    const submission = await this.submissionRepository.findOne({
+      where: {
+        assignment: { id: assignmentId },
+        trainee: { id: traineeId },
+      },
+    });
+
+    if (!submission) {
+      throw new BadRequestException('Task has not been started yet.');
+    }
+
+    const now = new Date();
+    const deadlineAt = new Date(now.getTime() + totalMs);
+
+    submission.status = 'started';
+    submission.startedAt = now;
+    submission.deadlineAt = deadlineAt;
+    submission.submissionText = undefined as any;
+    submission.attachmentUrl = undefined as any;
+    submission.submittedAt = undefined as any;
+
+    return await this.submissionRepository.save(submission);
+  }
+
+
+  async attachLockStateToAssignments(assignments: AssignmentEntity[], userId?: string): Promise<any[]> {
+    if (!userId || assignments.length === 0) {
+      return assignments.map(a => ({ ...a, isLocked: false, lockReason: null }));
+    }
+
+    const assignmentsByModuleId = new Map<string, AssignmentEntity[]>();
+    for (const assignment of assignments) {
+      const modId = assignment.module?.id || assignment.lesson?.module?.id;
+      if (modId) {
+        if (!assignmentsByModuleId.has(modId)) assignmentsByModuleId.set(modId, []);
+        assignmentsByModuleId.get(modId)!.push(assignment);
+      }
+    }
+
+    const moduleIds = Array.from(assignmentsByModuleId.keys());
+    if (moduleIds.length === 0) {
+      return assignments.map(a => ({ ...a, isLocked: false, lockReason: null }));
+    }
+
+    // Fetch modules to check taskLocking toggle on parent learning path
+    const modules = await this.moduleRepository.find({
+      where: { id: In(moduleIds) },
+      relations: ['learningPath']
+    });
+    const moduleMap = new Map(modules.map(m => [m.id, m]));
+
+    // Fetch all lessons for these modules to check completion
+    const allModuleLessons = await this.lessonRepository.find({
+      where: moduleIds.map(id => ({ module: { id } })),
+      relations: ['module'],
+    });
+
+    // Fetch user progress for these modules
+    const userProgress = await this.datasource.getRepository('UserLessonProgressEntity').find({
+      where: moduleIds.map(id => ({
+        user: { id: userId },
+        lesson: { module: { id } },
+        isCompleted: true
+      })),
+      relations: ['lesson']
+    });
+    
+    const completedLessonIds = new Set(userProgress.map((p: any) => p.lesson?.id));
+
+    const result = [];
+    for (const assignment of assignments) {
+      const modId = assignment.module?.id || assignment.lesson?.module?.id;
+      const mod = modId ? moduleMap.get(modId) : null;
+      const lp = mod?.learningPath;
+      
+      // 🌟 Check two-tier locking: LP level OR Module level
+      const lpLockEnabled = lp ? (lp.lockTasks !== false) : true;
+      const modLockEnabled = mod ? (mod.taskLocking === true) : false;
+      const isLockEnabled = lpLockEnabled || modLockEnabled;
+      
+      if (!mod || !isLockEnabled) {
+        result.push({ ...assignment, isLocked: false, lockReason: null });
+        continue;
+      }
+
+      const siblingLessons = allModuleLessons.filter(l => l.module?.id === mod.id);
+      
+      const incompleteLessons = siblingLessons.filter(l => !completedLessonIds.has(l.id));
+      if (incompleteLessons.length > 0) {
+        result.push({ 
+          ...assignment, 
+          isLocked: true, 
+          lockReason: `Complete all lessons in this module to unlock tasks.` 
+        });
+      } else {
+        result.push({ ...assignment, isLocked: false, lockReason: null });
+      }
+    }
+    return result;
+  }
+
   async getAllAssignmentsEnriched(currentUser?: any): Promise<AssignmentEntity[]> {
     const assignments = await this.repository.find({
       relations: [
@@ -672,7 +880,8 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       ],
       order: { createdAt: 'DESC' },
     });
-    return await this.enrichAssignmentsWithStatus(assignments, currentUser);
+    const enriched = await this.enrichAssignmentsWithStatus(assignments, currentUser);
+    return await this.attachLockStateToAssignments(enriched, currentUser?.id || currentUser?.sub);
   }
 
   async findAll(currentUser?: any): Promise<AssignmentEntity[]> {
@@ -683,11 +892,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const isAdmin = this.isAdminUser(currentUser);
     if (isAdmin) return enriched;
 
-    const roles = [
-      currentUser?.role,
-      currentUser?.primaryRole,
-      ...(Array.isArray(currentUser?.roles) ? currentUser.roles : []),
-    ].map((r) => (typeof r === 'string' ? r : r?.name || '').toLowerCase());
+    const roles = this.extractUserRoles(currentUser);
     
     const isTrainer = roles.includes('trainer');
     const isTrainee = roles.includes('trainee');
@@ -716,11 +921,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   ): Promise<any[]> {
     if (!assignments.length) return [];
     
-    const roles = [
-      currentUser?.role,
-      currentUser?.primaryRole,
-      ...(Array.isArray(currentUser?.roles) ? currentUser.roles : []),
-    ].map((r) => (typeof r === 'string' ? r : r?.name || '').toLowerCase());
+    const roles = this.extractUserRoles(currentUser);
     
     const isTrainer = !this.isAdminUser(currentUser) && roles.includes('trainer');
     const isTrainee = !this.isAdminUser(currentUser) && roles.includes('trainee');
@@ -780,7 +981,17 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         if (hasSubmitted) status = 'Submitted';
         else if (hasAccepted) status = 'Approved';
         else if (hasRejected) status = 'Rejected';
-        else status = 'In Progress';
+        else {
+          const hasStarted = subs.some((s) => s.status === 'started');
+          status = hasStarted ? 'started' : 'In Progress';
+          
+          if (status === 'started') {
+            const startedSub = subs.find((s) => s.status === 'started');
+            if (startedSub?.deadlineAt && new Date() > new Date(startedSub.deadlineAt)) {
+              status = 'Overdue';
+            }
+          }
+        }
 
         const scored = subs.find((s) => typeof s.score === 'number');
         if (scored) score = scored.score;
@@ -790,6 +1001,8 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         ...a,
         status,
         score,
+        startedAt: latestSubmission?.startedAt || null,
+        deadlineAt: latestSubmission?.deadlineAt || null,
         maxScore: a.maxScore,
         submissions: subs,
         latestSubmission,

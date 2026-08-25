@@ -35,8 +35,30 @@ export class ProgressEntityService {
   async completeLesson(userId: string, lessonId: string) {
     const lesson = await this.lessonRepository.findOne({
       where: { id: lessonId },
+      relations: ['module', 'module.learningPath'],
     });
     if (!lesson) throw new NotFoundException(`Lesson "${lessonId}" not found.`);
+
+    if (lesson.module && lesson.module.learningPath?.lockLessons !== false) {
+      const allModuleLessons = await this.lessonRepository.find({
+        where: { module: { id: lesson.module.id } },
+        order: { displayOrder: 'ASC', createdAt: 'ASC' },
+      });
+      const currentIndex = allModuleLessons.findIndex(l => l.id === lesson.id);
+      const priorLessons = currentIndex > 0 ? allModuleLessons.slice(0, currentIndex) : [];
+      if (priorLessons.length > 0) {
+        const userProgress = await this.repository.find({
+          where: { user: { id: userId }, lesson: { module: { id: lesson.module.id } }, isCompleted: true },
+          relations: ['lesson'],
+        });
+        const completedIds = new Set(userProgress.map(p => p.lesson?.id));
+        const incompletePrior = priorLessons.find(l => !completedIds.has(l.id));
+        if (incompletePrior) {
+          const { ForbiddenException } = require('@nestjs/common');
+          throw new ForbiddenException(`Cannot complete this lesson. Please complete '${incompletePrior.title}' first.`);
+        }
+      }
+    }
 
     let progress = await this.repository.findOne({
       where: { user: { id: userId }, lesson: { id: lessonId } },

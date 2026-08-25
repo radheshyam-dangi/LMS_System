@@ -83,8 +83,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     setIsLoadingAssignments(true);
     try {
       const [subs, allAssign] = await Promise.all([
-        curriculumService.fetchPendingSubmissions(accessToken).catch(() => []),
-        assignmentService.fetchAllAssignments(accessToken).catch(() => []),
+        curriculumService.fetchPendingSubmissions(accessToken, activeRole).catch(() => []),
+        assignmentService.fetchAllAssignments(accessToken, activeRole).catch(() => []),
       ]);
       setPendingSubmissions(Array.isArray(subs) ? subs : []);
       setAssignments(Array.isArray(allAssign) ? allAssign : []);
@@ -96,7 +96,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
   };
 
-  useEffect(() => { loadAll(); }, [accessToken]);
+  useEffect(() => { loadAll(); }, [accessToken, activeRole]);
 
   // ─── Load Trainees when Modal Opens ──────────────────
   useEffect(() => {
@@ -796,13 +796,15 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
               {/* Due Date + Priority */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Due Date</label>
-                  <input
-                    type="date" value={formDueDate} onChange={e => setFormDueDate(e.target.value)}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                  />
-                </div>
+                {formAssignmentType !== 'External' ? (
+                  <div>
+                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Due Date</label>
+                    <input
+                      type="date" value={formDueDate} onChange={e => setFormDueDate(e.target.value)}
+                      style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
+                    />
+                  </div>
+                ) : <div />}
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Priority</label>
                   <select

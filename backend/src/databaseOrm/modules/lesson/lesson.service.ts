@@ -4,7 +4,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { BaseService } from '../../../common/services/base.service';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { ModuleEntity } from '../../entities/module.entity';
@@ -159,9 +159,90 @@ export class LessonEntityService extends BaseService<LessonEntity> {
   }
 
   /**
+   * 🌟 DYNAMIC LOCK STATE ATTACHMENT
+   * Takes a list of lessons and a userId, calculates their lock state, and returns the modified objects.
+   */
+  async attachLockStateToLessons(lessons: LessonEntity[], userId?: string): Promise<any[]> {
+    if (!userId || lessons.length === 0) {
+      return lessons.map(l => ({ ...l, isLocked: false, lockReason: null }));
+    }
+
+    const lessonsByModuleId = new Map<string, LessonEntity[]>();
+    for (const lesson of lessons) {
+      const modId = lesson.module?.id;
+      if (modId) {
+        if (!lessonsByModuleId.has(modId)) lessonsByModuleId.set(modId, []);
+        lessonsByModuleId.get(modId)!.push(lesson);
+      }
+    }
+
+    const moduleIds = Array.from(lessonsByModuleId.keys());
+    if (moduleIds.length === 0) {
+      return lessons.map(l => ({ ...l, isLocked: false, lockReason: null }));
+    }
+
+    const modulesCorrect = await this.moduleRepository.find({
+      where: { id: In(moduleIds) },
+      relations: ['learningPath']
+    });
+    const moduleMap = new Map(modulesCorrect.map(m => [m.id, m]));
+
+    // Fetch all lessons for these modules to determine the true sequence order
+    const allModuleLessons = await this.repository.find({
+      where: moduleIds.map(id => ({ module: { id } })),
+      relations: ['module'],
+      order: { displayOrder: 'ASC' }
+    });
+
+    // Fetch user progress for these modules
+    const userProgress = await this.datasource.getRepository('UserLessonProgressEntity').find({
+      where: moduleIds.map(id => ({
+        user: { id: userId },
+        lesson: { module: { id } },
+        isCompleted: true
+      })),
+      relations: ['lesson']
+    });
+    
+    const completedLessonIds = new Set(userProgress.map((p: any) => p.lesson?.id));
+
+    const result = [];
+    for (const lesson of lessons) {
+      const modId = lesson.module?.id;
+      const mod = modId ? moduleMap.get(modId) : null;
+      const lp = mod?.learningPath;
+      
+      // 🌟 Check two-tier locking: LP level OR Module level
+      const lpLockEnabled = lp ? (lp.lockLessons !== false) : true;
+      const modLockEnabled = mod ? (mod.lessonLocking === true) : false;
+      const isLockEnabled = lpLockEnabled || modLockEnabled;
+      
+      if (!mod || !isLockEnabled) {
+        result.push({ ...lesson, isLocked: false, lockReason: null });
+        continue;
+      }
+
+      const siblingLessons = allModuleLessons.filter(l => l.module?.id === mod.id);
+      const priorLessons = siblingLessons.filter(l => l.displayOrder < lesson.displayOrder);
+      
+      const incompletePrior = priorLessons.find(l => !completedLessonIds.has(l.id));
+      if (incompletePrior) {
+        result.push({ 
+          ...lesson, 
+          isLocked: true, 
+          lockReason: `Complete '${incompletePrior.title}' to unlock this lesson.` 
+        });
+      } else {
+        result.push({ ...lesson, isLocked: false, lockReason: null });
+      }
+    }
+    return result;
+  }
+
+  /**
    * 4. FIND LESSON BY ID WITH DETAILS
    */
-  async findLessonById(id: string): Promise<LessonEntity> {
+  async findLessonById(id: string, userId?: string): Promise<any> {
     const lesson = await this.repository.findOne({
       where: { id },
       relations: [
@@ -177,38 +258,52 @@ export class LessonEntityService extends BaseService<LessonEntity> {
       throw new NotFoundException(`Lesson with ID "${id}" not found.`);
     }
 
-    return lesson;
+    const [lessonWithLockState] = await this.attachLockStateToLessons([lesson], userId);
+    
+    if (lessonWithLockState.isLocked) {
+      // 🚨 Reject direct API access if locked
+      const { ForbiddenException } = require('@nestjs/common');
+      throw new ForbiddenException(JSON.stringify({ 
+        code: 'LOCKED_PREREQUISITE_LESSON_INCOMPLETE', 
+        message: lessonWithLockState.lockReason 
+      }));
+    }
+
+    return lessonWithLockState;
   }
 
   /**
    * 5. FETCH LESSONS BY MODULE ID
    */
-  async findLessonsByModuleId(moduleId: string): Promise<LessonEntity[]> {
-    return await this.repository.find({
+  async findLessonsByModuleId(moduleId: string, userId?: string): Promise<any[]> {
+    const lessons = await this.repository.find({
       where: { module: { id: moduleId } },
-      relations: ['assignments', 'resources', 'createdBy'],
-      order: { createdAt: 'ASC' },
+      relations: ['assignments', 'resources', 'createdBy', 'module'],
+      order: { displayOrder: 'ASC' },
     });
+    return this.attachLockStateToLessons(lessons, userId);
   }
 
   /**
    * 6. FETCH LESSONS BY LEARNING PATH ID
    */
-  async findLessonsByPathId(learningPathId: string): Promise<LessonEntity[]> {
-    return await this.repository.find({
+  async findLessonsByPathId(learningPathId: string, userId?: string): Promise<any[]> {
+    const lessons = await this.repository.find({
       where: { module: { learningPath: { id: learningPathId } } },
       relations: ['assignments', 'resources', 'module', 'createdBy'],
-      order: { createdAt: 'ASC' },
+      order: { displayOrder: 'ASC' },
     });
+    return this.attachLockStateToLessons(lessons, userId);
   }
 
   /**
    * 7. FETCH ALL LESSONS
    */
-  async findAll(): Promise<LessonEntity[]> {
-    return await this.repository.find({
+  async findAll(userId?: string): Promise<any[]> {
+    const lessons = await this.repository.find({
       relations: ['assignments', 'module', 'module.learningPath'],
-      order: { createdAt: 'ASC' },
+      order: { displayOrder: 'ASC' },
     });
+    return this.attachLockStateToLessons(lessons, userId);
   }
 }
