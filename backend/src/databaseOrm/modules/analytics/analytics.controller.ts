@@ -24,7 +24,22 @@ export class AnalyticsController {
 
   @Get('dashboard')
   @Roles('Admin', 'Trainer', 'Trainee')
-  async dashboard(@GetUser() user: any, @Query('role') role?: string) {
-    return await this.analyticsService.getDashboardStats(user, role);
+  async dashboard(@GetUser() user: any, @Query('role') role?: string, @Query('traineeId') traineeId?: string, @Query('trainerId') trainerId?: string) {
+    const isTrainer = role 
+      ? role.toLowerCase() === 'trainer'
+      : user?.roles?.some((r: any) => String(r.name || r).toLowerCase() === 'trainer') || 
+        user?.primaryRole?.name === 'Trainer';
+
+    if (isTrainer) {
+      return await this.analyticsService.getTrainerDashboardSummary(user);
+    }
+    return await this.analyticsService.getDashboardStats(user, role, traineeId, trainerId);
+  }
+
+  @Get('trainer/:trainerId/dashboard-summary')
+  @Roles('Trainer')
+  async getTrainerDashboardSummaryV2(@GetUser() user: any) {
+    // Ensuring the endpoint is authenticated via the guards, we use the user token's identity.
+    return await this.analyticsService.getTrainerDashboardSummaryV2(user);
   }
 }

@@ -3,7 +3,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class SeedDummyLearningContent1782715000001 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      INSERT INTO "LearningPath" (id, title, description, status, "createdBy", created_at, updated_at) VALUES
+      INSERT INTO "LearningPath" (id, title, description, status, "createdById", created_at, updated_at) VALUES
         ('30000000-0000-0000-0000-000000000001', 'Full Stack Engineering', 'Master full stack web and API development.', 'published', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
         ('30000000-0000-0000-0000-000000000002', 'Backend Engineering Foundations', 'Practical NestJS, PostgreSQL, and API design path.', 'published', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
         ('30000000-0000-0000-0000-000000000003', 'Digital Marketing', 'Search engine optimization and modern digital growth strategies.', 'published', '20000000-0000-0000-0000-000000000002', NOW(), NOW())
@@ -11,7 +11,7 @@ export class SeedDummyLearningContent1782715000001 implements MigrationInterface
     `);
 
     await queryRunner.query(`
-      INSERT INTO "Module" (id, title, description, level, difficulty_level, duration_label, duration_weeks, objectives, outcomes, status, "parentId", "learningPathId", "createdBy", created_at, updated_at) VALUES
+      INSERT INTO "Module" (id, title, description, level, difficulty_level, duration_label, duration_weeks, objectives, outcomes, status, "parentId", "learningPathId", "createdById", created_at, updated_at) VALUES
         (
           '40000000-0000-0000-0000-000000000004',
           'Backend API Design',
@@ -113,12 +113,12 @@ export class SeedDummyLearningContent1782715000001 implements MigrationInterface
     `);
 
     await queryRunner.query(`
-      INSERT INTO "Assignment" (id, title, description, instructions, difficulty_level, assignment_type, max_score, due_date, lesson_id, created_by, created_at, updated_at) VALUES
-        ('70000000-0000-0000-0000-000000000010', 'Build a REST API Controller', 'Create a production-grade API with routes, DTO validation, and error handlers.', 'Submit your Express/NestJS controller code.', 'Intermediate', 'Subjective', 100, NOW() + INTERVAL '14 days', '60000000-0000-0000-0000-000000000012', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
-        ('70000000-0000-0000-0000-000000000011', 'JWT Authentication Guard', 'Implement token verification middleware for protected routes.', 'Submit the middleware function and test cases.', 'Intermediate', 'Subjective', 100, NOW() + INTERVAL '21 days', '60000000-0000-0000-0000-000000000014', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
+      INSERT INTO "Assignment" (id, title, description, instructions, difficulty_level, assignment_type, max_score, duration_value, duration_unit, anchor_type, lesson_id, created_by, created_at, updated_at) VALUES
+        ('70000000-0000-0000-0000-000000000010', 'Build a REST API Controller', 'Create a production-grade API with routes, DTO validation, and error handlers.', 'Submit your Express/NestJS controller code.', 'Intermediate', 'Subjective', 100, 14, 'days', 'MODULE_UNLOCK', '60000000-0000-0000-0000-000000000012', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
+        ('70000000-0000-0000-0000-000000000011', 'JWT Authentication Guard', 'Implement token verification middleware for protected routes.', 'Submit the middleware function and test cases.', 'Intermediate', 'Subjective', 100, 21, 'days', 'MODULE_UNLOCK', '60000000-0000-0000-0000-000000000014', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
 
-        ('70000000-0000-0000-0000-000000000001', 'Build a User Module', 'Create a CRUD module for users.', 'Submit a GitHub repository with controller, service, and tests.', 'Beginner', 'Subjective', 100, NOW() + INTERVAL '14 days', '60000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
-        ('70000000-0000-0000-0000-000000000002', 'Model LMS Relations', 'Create entities and migrations for learning content.', 'Submit entity files and a successful migration run log.', 'Intermediate', 'Subjective', 100, NOW() + INTERVAL '21 days', '60000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000002', NOW(), NOW())
+        ('70000000-0000-0000-0000-000000000001', 'Build a User Module', 'Create a CRUD module for users.', 'Submit a GitHub repository with controller, service, and tests.', 'Beginner', 'Subjective', 100, 14, 'days', 'MODULE_UNLOCK', '60000000-0000-0000-0000-000000000001', '20000000-0000-0000-0000-000000000002', NOW(), NOW()),
+        ('70000000-0000-0000-0000-000000000002', 'Model LMS Relations', 'Create entities and migrations for learning content.', 'Submit entity files and a successful migration run log.', 'Intermediate', 'Subjective', 100, 21, 'days', 'MODULE_UNLOCK', '60000000-0000-0000-0000-000000000003', '20000000-0000-0000-0000-000000000002', NOW(), NOW())
       ON CONFLICT (id) DO NOTHING;
     `);
 

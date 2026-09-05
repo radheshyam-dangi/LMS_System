@@ -240,15 +240,48 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
             <h1 className="main-section-title">User Management</h1>
             <p className="sub-heading-text">{metrics.total} total users • {metrics.atRisk} at risk</p>
           </div>
-          <button type="button" className="invite-user-btn" onClick={handleOpenAddUserModal}>
-            + Invite New User 
-          </button>
         </div>
       </div>
+      
+      {/* Floating Action Button (FAB) for Inviting Users */}
+      <button 
+        type="button" 
+        className="invite-user-fab" 
+        onClick={handleOpenAddUserModal}
+        style={{
+          position: 'fixed',
+          bottom: '32px',
+          right: '32px',
+          zIndex: 1000,
+          background: '#4f46e5',
+          color: '#ffffff',
+          border: 'none',
+          borderRadius: '30px',
+          padding: '16px 24px',
+          fontSize: '15px',
+          fontWeight: 700,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          boxShadow: '0 10px 25px -5px rgba(79, 70, 229, 0.4)',
+          cursor: 'pointer',
+          transition: 'transform 0.2s, box-shadow 0.2s'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = 'translateY(-3px)';
+          e.currentTarget.style.boxShadow = '0 15px 30px -5px rgba(79, 70, 229, 0.5)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(79, 70, 229, 0.4)';
+        }}
+      >
+        <span style={{ fontSize: '20px', lineHeight: 1 }}>+</span> Invite User
+      </button>
 
       {/* 2. Top Metric Cards Row */}
       <section className="metrics-grid-row">
-        <div className="metric-panel-card clickable" onClick={() => { setSelectedRoleFilter('All'); setStatusFilter('All'); }}>
+        <div className="metric-panel-card card-primary clickable" onClick={() => { setSelectedRoleFilter('All'); setStatusFilter('All'); }}>
           <div className="card-header-info">
             <h3>{metrics.total}</h3>
             <span className="card-icon">👤</span>
@@ -256,7 +289,7 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
           <p className="card-label">Total Users <span className="fade-text">across all roles</span></p>
         </div>
 
-        <div className="metric-panel-card clickable" onClick={() => { setSelectedRoleFilter('Trainee'); setStatusFilter('All'); }}>
+        <div className="metric-panel-card card-success clickable" onClick={() => { setSelectedRoleFilter('Trainee'); setStatusFilter('All'); }}>
           <div className="card-header-info">
             <h3>{metrics.activeTrainees}</h3>
             <span className="card-icon">🎓</span>
@@ -264,28 +297,12 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
           <p className="card-label">Active Trainees <span className="fade-text">in platform</span></p>
         </div>
 
-        <div className="metric-panel-card clickable" onClick={() => { setSelectedRoleFilter('Trainer'); setStatusFilter('All'); }}>
+        <div className="metric-panel-card card-info clickable" onClick={() => { setSelectedRoleFilter('Trainer'); setStatusFilter('All'); }}>
           <div className="card-header-info">
             <h3>{metrics.activeTrainers}</h3>
             <span className="card-icon">👥</span>
           </div>
           <p className="card-label">Active Trainers <span className="fade-text">in platform</span></p>
-        </div>
-
-        <div className="metric-panel-card">
-          <div className="card-header-info">
-            <h3>{avgProgress}%</h3>
-            <span className="card-icon">📉</span>
-          </div>
-          <p className="card-label">Avg. Trainee Progress <span className="fade-text">across all paths</span></p>
-        </div>
-
-        <div className="metric-panel-card risk-highlight clickable" onClick={() => { setSelectedRoleFilter('All'); setStatusFilter('At Risk'); }}>
-          <div className="card-header-info">
-            <h3 className="risk-text">{metrics.atRisk}</h3>
-            <span className="card-icon risk-icon">⚠️</span>
-          </div>
-          <p className="card-label">At Risk <span className="fade-text">need attention</span></p>
         </div>
       </section>
 

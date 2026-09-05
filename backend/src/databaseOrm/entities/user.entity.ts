@@ -5,6 +5,7 @@ import {
   JoinTable,
   ManyToOne,
   JoinColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { RoleEntity } from './role.entity';
@@ -78,4 +79,7 @@ export class UserEntity extends BaseEntity {
     default: 0,
   })
   lastCelebratedStreak: number;
+
+  @DeleteDateColumn({ name: 'deleted_at', nullable: true })
+  deletedAt: Date;
 }

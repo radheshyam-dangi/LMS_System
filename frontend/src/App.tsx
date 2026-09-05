@@ -83,10 +83,16 @@ function App() {
           setAccessToken(savedToken);
         }
 
+        const savedActiveRole = localStorage.getItem('skillforge_active_role') as RoleName | null;
         const roles = tokenUser.roles?.length ? tokenUser.roles : [tokenUser.primaryRole];
-        const startRole = roles.includes(tokenUser.primaryRole)
-          ? tokenUser.primaryRole
-          : roles[0];
+        let startRole = roles[0];
+        
+        if (savedActiveRole && roles.includes(savedActiveRole)) {
+          startRole = savedActiveRole;
+        } else if (roles.includes(tokenUser.primaryRole)) {
+          startRole = tokenUser.primaryRole;
+        }
+        
         setActiveRole(startRole);
       } catch (e) {
         localStorage.removeItem('skillforge_user');
@@ -99,8 +105,19 @@ function App() {
       const customEvent = e as CustomEvent<string>;
       setAccessToken(customEvent.detail);
     };
+    const handleUserUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<SessionUser>;
+      setCurrentUser(customEvent.detail);
+      localStorage.setItem('skillforge_user', JSON.stringify(customEvent.detail));
+    };
+    
     window.addEventListener('token_refreshed', handleTokenRefreshed);
-    return () => window.removeEventListener('token_refreshed', handleTokenRefreshed);
+    window.addEventListener('user_updated', handleUserUpdated);
+    
+    return () => {
+      window.removeEventListener('token_refreshed', handleTokenRefreshed);
+      window.removeEventListener('user_updated', handleUserUpdated);
+    };
   }, []);
 
   useEffect(() => {
@@ -122,17 +139,20 @@ function App() {
     const roles = normalizedUser.roles?.length
       ? normalizedUser.roles
       : [normalizedUser.primaryRole];
-    setActiveRole(
-      roles.includes(normalizedUser.primaryRole)
+    
+    const startRole = roles.includes(normalizedUser.primaryRole)
         ? normalizedUser.primaryRole
-        : roles[0]
-    );
+        : roles[0];
+        
+    setActiveRole(startRole);
+    localStorage.setItem('skillforge_active_role', startRole);
     navigate('/dashboard', { replace: true });
   };
 
   const handleLogout = () => {
     // A proper logout would also hit a backend endpoint to clear the httpOnly cookie
     localStorage.removeItem('skillforge_user');
+    localStorage.removeItem('skillforge_active_role');
     localStorage.removeItem(TOKEN_KEY);
     setCurrentUser(null);
     setAccessToken('');
@@ -145,6 +165,7 @@ function App() {
     const roles = currentUser.roles?.length ? currentUser.roles : [currentUser.primaryRole];
     if (roles.includes(role)) {
       setActiveRole(role);
+      localStorage.setItem('skillforge_active_role', role);
     }
   };
 
@@ -158,7 +179,7 @@ function App() {
     }
 
     // Role-based route guard
-    const traineeBlocked = ['Users', 'Evaluations', 'Analytics'];
+    const traineeBlocked = ['Users', 'Evaluations', 'Analytics', 'Progress'];
     if (activeRole === 'Trainee' && traineeBlocked.includes(section)) {
       return <Navigate to="/dashboard" replace />;
     }
@@ -167,6 +188,9 @@ function App() {
       return <Navigate to="/users" replace />;
     }
     if (activeRole !== 'Admin' && section === 'Users') {
+      return <Navigate to="/dashboard" replace />;
+    }
+    if (activeRole === 'Trainer' && section === 'Progress') {
       return <Navigate to="/dashboard" replace />;
     }
 
@@ -212,6 +236,7 @@ function App() {
       />
 
       <Route path="/dashboard" element={<ProtectedLayout section="Dashboard" />} />
+      <Route path="/trainer/trainees/:traineeId" element={<ProtectedLayout section="TrainerTraineeDetail" />} />
       <Route path="/learning-paths" element={<ProtectedLayout section="Learning Paths" />} />
       <Route path="/learning-paths/:pathId" element={<ProtectedLayout section="Learning Paths" />} />
       <Route path="/modules" element={<ProtectedLayout section="Modules" />} />

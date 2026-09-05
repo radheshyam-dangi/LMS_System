@@ -345,8 +345,8 @@ export function TraineeCurriculumView({
                                       </div>
                                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                         <span style={{ fontSize: '11px', color: '#94a3b8' }}>Max: {task.maxScore ?? 100} pts</span>
-                                        {task.dueDate && (
-                                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>· Due: {new Date(task.dueDate).toLocaleDateString()}</span>
+                                        {(task.computedDeadline || task.durationValue) && (
+                                          <span style={{ fontSize: '11px', color: '#94a3b8' }}>· {task.computedDeadline ? `Due: ${new Date(task.computedDeadline).toLocaleDateString()}` : `Duration: ${task.durationValue} ${task.durationUnit}`}</span>
                                         )}
                                         {task.assignmentType && (
                                           <span style={{ fontSize: '10px', fontWeight: 700, background: task.assignmentType === 'MCQ' ? '#fef3c7' : '#ede9fe', color: task.assignmentType === 'MCQ' ? '#b45309' : '#6d28d9', padding: '2px 7px', borderRadius: '4px' }}>

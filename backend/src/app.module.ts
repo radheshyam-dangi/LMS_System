@@ -21,6 +21,7 @@ import { ProgressModule } from './databaseOrm/modules/progress/progress.module';
 import { AiModule } from './databaseOrm/modules/ai/ai.module';
 import { AnalyticsModule } from './databaseOrm/modules/analytics/analytics.module';
 import { NotificationModule } from './databaseOrm/modules/notification/notification.module';
+import { SearchModule } from './databaseOrm/modules/search/search.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { HealthModule } from './databaseOrm/modules/health/health.module';
 
@@ -60,6 +61,7 @@ import { HealthModule } from './databaseOrm/modules/health/health.module';
     AiModule,
     AnalyticsModule,
     NotificationModule,
+    SearchModule,
   ],
 })
 export class AppModule {}

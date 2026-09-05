@@ -12,8 +12,11 @@ export class AssignmentSubmissionEntity extends BaseEntity {
   @Column({ type: 'varchar', name: 'attachment_url', nullable: true })
   attachmentUrl: string;
 
-  // 🌟 3. Status tracking (Submitted, Evaluated, Pending, etc.)
-  @Column({ type: 'varchar', default: 'Submitted' })
+  // 🌟 3. Status tracking
+  @Column({ 
+    type: 'varchar',
+    default: 'LOCKED' 
+  })
   status: string;
 
   // 🌟 4. Evaluation feedback and grade score
@@ -26,14 +29,20 @@ export class AssignmentSubmissionEntity extends BaseEntity {
   @Column({ type: 'timestamp', name: 'submitted_at', nullable: true })
   submittedAt: Date;
 
-  @Column({ type: 'timestamp', name: 'started_at', nullable: true })
-  startedAt: Date;
+  @Column({ type: 'timestamp', name: 'lp_assigned_at', nullable: true })
+  lpAssignedAt: Date | null;
 
-  @Column({ type: 'timestamp', name: 'deadline_at', nullable: true })
-  deadlineAt: Date;
+  @Column({ type: 'timestamp', name: 'task_unlocked_at', nullable: true })
+  taskUnlockedAt: Date | null;
+
+  @Column({ type: 'timestamp', name: 'deadline', nullable: true })
+  deadline: Date | null;
+
+  @Column({ type: 'timestamp', name: 'timer_started_at', nullable: true })
+  timerStartedAt: Date | null;
 
   @Column({ type: 'timestamp', name: 'evaluated_at', nullable: true })
-  evaluatedAt: Date;
+  evaluatedAt: Date | null;
 
   // 🌟 5. ManyToOne Relation pointing to AssignmentEntity
   @ManyToOne(() => AssignmentEntity, { onDelete: 'CASCADE' })

@@ -17,6 +17,7 @@ import { AssignmentEntity } from '../../entities/assignment.entity';
 import { UserModel } from '../../../types/models/user.model';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
+import { ProgressEntityService } from '../progress/progress.service';
 
 const SYSTEM_ROLES = ['Admin', 'Trainee', 'Trainer'] as const;
 type SystemRole = (typeof SYSTEM_ROLES)[number];
@@ -26,7 +27,10 @@ export class UserEntityService extends BaseService<UserEntity> {
   protected repository: Repository<UserEntity>;
   protected roleRepository: Repository<RoleEntity>;
 
-  constructor(datasource: DataSource) {
+  constructor(
+    datasource: DataSource,
+    private readonly progressService: ProgressEntityService
+  ) {
     super();
     this.repository = datasource.getRepository<UserEntity>(UserEntity);
     this.roleRepository = datasource.getRepository<RoleEntity>(RoleEntity);
@@ -168,6 +172,46 @@ export class UserEntityService extends BaseService<UserEntity> {
     return role;
   }
 
+
+  async updateUserStatus(id: string, isActive: boolean): Promise<UserEntity> {
+    const user = await this.findOne(id);
+    if (!user) throw new NotFoundException('User not found');
+    user.isActive = isActive;
+    return await this.repository.save(user);
+  }
+
+  async removeUser(id: string, requesterId: string): Promise<any> {
+    if (id === requesterId) {
+      throw new BadRequestException('You cannot delete yourself.');
+    }
+    const user = await this.findOne(id);
+    if (!user) throw new NotFoundException('User not found');
+    
+    if (user.primaryRole?.name === 'Admin') {
+      const adminCount = await this.repository.count({
+        where: { primaryRole: { name: 'Admin' }, isActive: true, deletedAt: null } as any
+      });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Cannot delete the last admin.');
+      }
+    }
+    
+    if (user.primaryRole?.name === 'Trainer') {
+      const em = this.repository.manager;
+      const myAssignments = await em.find(AssignmentEntity, { where: { createdBy: { id } } as any });
+      if (myAssignments.length > 0) {
+        const assignmentIds = myAssignments.map(a => a.id);
+        const pendingEvaluationsCount = await em.count(SubmissionEntity, {
+          where: { assignment: { id: In(assignmentIds) }, status: 'Submitted' } as any,
+        });
+        if (pendingEvaluationsCount > 0) {
+          throw new BadRequestException(`Cannot delete Trainer: They have ${pendingEvaluationsCount} pending evaluations. Reassign them first.`);
+        }
+      }
+    }
+    return await this.repository.softRemove(user);
+  }
+
   async getUserProfileStats(id: string): Promise<any> {
     const user = await this.findOne(id);
     if (!user) throw new NotFoundException('User not found');
@@ -192,15 +236,18 @@ export class UserEntityService extends BaseService<UserEntity> {
       const allProgressCount = await em.count(UserLessonProgressEntity, {
         where: { user: { id }, isCompleted: true },
       });
-      // Calculate a rough progress percentage based on completions
-      const totalActivities = allProgressCount + submissions.length;
-      stats.progress =
-        enrollments.length > 0
-          ? Math.min(
-              100,
-              Math.round((totalActivities / (enrollments.length * 10)) * 100),
-            )
-          : 0;
+      // Calculate accurate progress percentage by averaging all enrolled LPs
+      let totalLPProgress = 0;
+      for (const enrollment of enrollments) {
+        if (enrollment.learningPath?.id) {
+          totalLPProgress += await this.progressService.getLPProgress(id, enrollment.learningPath.id);
+        }
+      }
+      
+      stats.progress = enrollments.length > 0
+        ? Math.round(totalLPProgress / enrollments.length)
+        : 0;
+        
       stats.lpCompleted = enrollments.filter(
         (e) => e.status === 'completed',
       ).length;
@@ -227,6 +274,13 @@ export class UserEntityService extends BaseService<UserEntity> {
         relations: ['lesson', 'lesson.module'],
       });
       stats.currentModule = latestProgress?.lesson?.module?.title || 'None';
+      const daysSinceJoined = (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 3600 * 24);
+      if (daysSinceJoined > 7 && stats.progress < 10) {
+        (user as any).status = 'At Risk';
+      } else {
+        (user as any).status = user.isActive ? 'Active' : 'Inactive';
+      }
+
 
       const allProgress = await em.find(UserLessonProgressEntity, {
         where: { user: { id }, isCompleted: true },
@@ -253,7 +307,7 @@ export class UserEntityService extends BaseService<UserEntity> {
           date: s.submittedAt,
         });
       });
-    } else if (primaryRole === 'Trainer' || primaryRole === 'Admin') {
+        } else if (primaryRole === 'Trainer') {
       const paths = await em.find(LearningPathEntity, {
         where: { createdBy: { id } } as any,
       });
@@ -273,23 +327,27 @@ export class UserEntityService extends BaseService<UserEntity> {
       stats.activeTrainees = activeTrainees.size;
       stats.pathsAssigned = activeTrainees.size; // Alias for UI clarity
 
-      let totalCompletedTasks = 0;
-      if (myAssignments.length > 0 && activeTrainees.size > 0) {
-        const assignmentIds = myAssignments.map((a) => a.id);
-        const submissions = await em.find(SubmissionEntity, {
-          where: {
-            assignment: { id: In(assignmentIds) },
-            status: In(['Accepted', 'Evaluated']),
-          } as any,
+      let sumOfTraineeScores = 0;
+      let traineesWithScoresCount = 0;
+      for (const tid of activeTrainees) {
+        const traineeSubmissions = await em.find(SubmissionEntity, {
+          where: { user: { id: tid } } as any,
+          relations: ['evaluations'],
         });
-        totalCompletedTasks = submissions.length;
+        let tScore = 0;
+        let eCount = 0;
+        traineeSubmissions.forEach((s) => {
+          if (s.evaluations && s.evaluations.length > 0 && s.evaluations[0].overallScore) {
+            tScore += s.evaluations[0].overallScore;
+            eCount++;
+          }
+        });
+        if (eCount > 0) {
+          sumOfTraineeScores += Math.round(tScore / eCount);
+          traineesWithScoresCount++;
+        }
       }
-
-      const totalExpectedTasks = myAssignments.length * activeTrainees.size;
-      stats.avgTraineeScore =
-        totalExpectedTasks > 0
-          ? Math.round((totalCompletedTasks / totalExpectedTasks) * 100)
-          : 0;
+      stats.avgTraineeScore = traineesWithScoresCount > 0 ? Math.round(sumOfTraineeScores / traineesWithScoresCount) : 0;
 
       paths.sort(
         (a: any, b: any) =>
@@ -317,6 +375,17 @@ export class UserEntityService extends BaseService<UserEntity> {
           date: e.createdAt,
         });
       });
+      
+      // Calculate Trainer At Risk
+      const pendingEvals = await em.count(SubmissionEntity, {
+         where: { assignment: { createdBy: { id } }, status: 'Submitted' } as any
+      });
+      if (pendingEvals > 5) (user as any).status = 'At Risk';
+      else (user as any).status = user.isActive ? 'Active' : 'Inactive';
+      
+    } else if (primaryRole === 'Admin') {
+      stats.usersManaged = await em.count(UserEntity, { where: { isActive: true } });
+      (user as any).status = user.isActive ? 'Active' : 'Inactive';
     }
 
     activities.sort(

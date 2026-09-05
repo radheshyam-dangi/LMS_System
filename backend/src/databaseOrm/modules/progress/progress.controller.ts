@@ -52,9 +52,11 @@ export class ProgressController {
   async myStats(
     @GetUser() currentUser: any,
     @Query('learningPathId') learningPathId?: string,
+    @Query('traineeId') traineeId?: string,
+    @Query('trainerId') trainerId?: string,
   ) {
-    const userId = currentUser?.id || currentUser?.sub;
-    return await this.progressService.statsForUser(userId, learningPathId);
+    const userId = traineeId || currentUser?.id || currentUser?.sub;
+    return await this.progressService.statsForUser(userId, learningPathId, trainerId);
   }
 
   @Get('module/:moduleId/stats')

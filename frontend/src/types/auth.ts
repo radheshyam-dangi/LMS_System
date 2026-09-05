@@ -37,6 +37,7 @@ export type AppUser = {
   email: string;
   firstName?: string;
   lastName?: string;
+  avatarUrl?: string;
   roles?: UserRole[];
   primaryRole?: UserRole | RoleName | string;
   status?: UserStatus;
@@ -48,6 +49,7 @@ export type SessionUser = {
   email: string;
   firstName?: string;
   lastName?: string;
+  avatarUrl?: string;
   roles: RoleName[];
   primaryRole: RoleName;
   status?: UserStatus;

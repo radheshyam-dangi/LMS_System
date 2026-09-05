@@ -469,7 +469,7 @@ export function LearningPathsSection({
         {(isAdmin || isTrainer) && (
           <button
             type="button"
-            className="btn-create-learning-path"
+            className={isTrainer ? "fab-trainer-primary" : "btn-create-learning-path"}
             onClick={() => setIsCreateModalOpen(true)}
           >
             + New Learning Path

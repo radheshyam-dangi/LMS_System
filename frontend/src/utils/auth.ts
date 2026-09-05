@@ -57,6 +57,7 @@ export const normalizeUser = (user: AppUser): SessionUser => {
     email: user.email,
     firstName: user.firstName,
     lastName: user.lastName,
+    avatarUrl: user.avatarUrl,
     roles: uniqueRoles,
     primaryRole,
     status: user.status,

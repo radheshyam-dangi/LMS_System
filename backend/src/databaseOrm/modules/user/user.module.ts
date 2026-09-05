@@ -4,11 +4,13 @@ import { UserController } from './user.controller';
 import { UserEntityService } from './user.service';
 import { UserEntity } from '../../entities/user.entity';
 import { RoleEntity } from '../../entities/role.entity';
+import { ProgressModule } from '../progress/progress.module';
 
 @Module({
   imports: [
     // Registers the entity for TypeORM operations inside this scope
     TypeOrmModule.forFeature([UserEntity, RoleEntity]),
+    ProgressModule,
   ],
   controllers: [UserController],
   providers: [UserEntityService],

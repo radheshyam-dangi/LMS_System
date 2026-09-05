@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { assignmentService } from '../../services/assignmentService';
+import { DeadlineDisplay } from '../DeadlineDisplay';
 import { progressService } from '../../services/lmsApi';
 import { useNotifications } from '../../context/NotificationContext';
 
@@ -381,10 +382,10 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                     <div>
                       <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>{task.title}</h4>
                       <span style={{ fontSize: 12, color: '#64748b' }}>
-                        {task.assignmentType} · {task.lessonTitle || 'Module task'} · Due{' '}
-                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'N/A'}
+                        {task.assignmentType} · {task.lessonTitle || 'Module task'}
                       </span>
                     </div>
+                    <DeadlineDisplay task={task} submission={sub} />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span
                         style={{
@@ -502,10 +503,10 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                     <div>
                       <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>{task.title}</h4>
                       <span style={{ fontSize: 12, color: '#64748b' }}>
-                        {task.assignmentType} · {task.lessonTitle || 'Module task'} · Due{' '}
-                        {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'N/A'}
+                        {task.assignmentType} · {task.lessonTitle || 'Module task'}
                       </span>
                     </div>
+                    <DeadlineDisplay task={task} submission={sub} />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span
                         style={{

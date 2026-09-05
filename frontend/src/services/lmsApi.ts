@@ -80,8 +80,10 @@ const emptyCharts = (): ChartBundle => ({
 });
 
 export const analyticsService = {
-  fetchDashboard: async (token: string, role?: string): Promise<DashboardAnalytics> => {
-    const query = role ? `?role=${role.toLowerCase()}` : '';
+  fetchDashboard: async (token: string, role?: string, targetTraineeId?: string, scopedToTrainerId?: string): Promise<DashboardAnalytics> => {
+    let query = role ? `?role=${role.toLowerCase()}` : '?';
+    if (targetTraineeId) query += `&traineeId=${targetTraineeId}`;
+    if (scopedToTrainerId) query += `&trainerId=${scopedToTrainerId}`;
     const { data } = await axios.get(`${API_BASE_URL}/analytics/dashboard${query}`, auth(token));
     return {
       totalUsers: data?.totalUsers ?? 0,
@@ -130,11 +132,17 @@ export const analyticsService = {
     // Return dummy true for now, since it wasn't implemented before
     return true;
   },
+  fetchTrainerDashboardSummary: async (token: string, trainerId: string) => {
+    const { data } = await axios.get(`${API_BASE_URL}/analytics/trainer/${trainerId}/dashboard-summary`, auth(token));
+    return data;
+  },
 };
 
 export const progressService = {
-  fetchMyStats: async (token: string, learningPathId?: string) => {
-    const qs = learningPathId ? `?learningPathId=${learningPathId}` : '';
+  fetchMyStats: async (token: string, targetTraineeId?: string, scopedToTrainerId?: string, learningPathId?: string) => {
+    let qs = learningPathId ? `?learningPathId=${learningPathId}` : '?';
+    if (targetTraineeId) qs += `&traineeId=${targetTraineeId}`;
+    if (scopedToTrainerId) qs += `&trainerId=${scopedToTrainerId}`;
     const { data } = await axios.get(`${API_BASE_URL}/progress/stats/me${qs}`, auth(token));
     return {
       completedLessons: data?.completedLessons ?? 0,

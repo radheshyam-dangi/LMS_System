@@ -30,12 +30,23 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
   const [data, setData] = useState<ChartData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setIsLoading(true);
     
     const endpoint = type === 'progress' ? 'progress-trends' : 'evaluation-score';
-    let url = `${API_BASE_URL}/dashboard/${endpoint}?role=${role}&filter=${filter}`;
+    const rangeMap: Record<string, number> = { today: 1, week: 7, month: 30, year: 365, custom: 0 };
+    const range = rangeMap[filter] || 30;
+    
+    let url = `${API_BASE_URL}/dashboard/${endpoint}?role=${role}&filter=${filter}&range=${range}`;
     if (filter === 'custom' && customStart && customEnd) {
       url += `&startDate=${customStart}&endDate=${customEnd}`;
     }
@@ -111,22 +122,22 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
           <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>{title}</h3>
           <p style={{ fontSize: '12px', color: '#64748b', margin: 0 }}>{subtitle}</p>
         </div>
-        <div style={{ display: 'flex', gap: '4px', background: '#f8fafc', padding: '4px', borderRadius: '20px', border: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
-          {['today', 'week', 'month', 'year', 'custom'].map((f) => (
+        <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', overflowX: 'auto' }}>
+          {(['today', 'week', 'month', 'year', 'custom'] as const).map(f => (
             <button
               key={f}
-              type="button"
-              onClick={() => setFilter(f as any)}
+              onClick={() => setFilter(f)}
+              className={`touch-target hover-effect active-effect ${filter === f ? 'focus-ring' : ''}`}
               style={{
-                padding: '4px 12px',
-                borderRadius: '16px',
+                padding: '6px 12px',
+                background: filter === f ? '#fff' : 'transparent',
+                color: filter === f ? '#0f172a' : '#64748b',
                 border: 'none',
+                borderRadius: '6px',
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                background: filter === f ? '#4f46e5' : 'transparent',
-                color: filter === f ? '#fff' : '#64748b',
-                transition: 'all 0.2s',
+                boxShadow: filter === f ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
                 textTransform: 'capitalize'
               }}
             >
@@ -190,7 +201,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} minTickGap={20} />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} minTickGap={30} />
               <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} allowDecimals={false} />
               <Tooltip content={<CustomTooltip />} />
               <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
@@ -206,7 +217,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} minTickGap={20} />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} minTickGap={30} />
               <YAxis 
                 axisLine={false} 
                 tickLine={false} 

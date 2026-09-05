@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { SessionUser, RoleName } from '../../types/auth';
 import { analyticsService, progressService, type ChartBundle } from '../../services/lmsApi';
-import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, BarChart, Bar, CartesianGrid, XAxis, YAxis } from 'recharts';
 import { DashboardCharts } from '../DashboardCharts/DashboardCharts';
 import { MultiLineProgressChart, type SeriesConfig } from '../MultiLineProgressChart/MultiLineProgressChart';
 
@@ -10,32 +10,33 @@ const truncateLabel = (name: string, maxLen = 14) => {
   return name.length > maxLen ? name.slice(0, maxLen).trim() + "…" : name;
 };
 
+const fmt = (v: number): string => {
+  if (!Number.isFinite(v)) return '0';
+  return String(Math.round(v));
+};
+
 const CustomXAxisTick = ({ x, y, payload }: any) => {
   return (
     <g transform={`translate(${x},${y})`}>
       <title>{payload.value}</title>
-      <text
-        x={0}
-        y={0}
-        dy={16}
-        textAnchor="end"
-        fill="#64748b"
-        fontSize={12}
-        transform="rotate(-25)"
-      >
+      <text x={0} y={0} dy={16} textAnchor="end" fill="#64748b" fontSize={12} transform="rotate(-25)">
         {truncateLabel(payload.value, 15)}
       </text>
     </g>
   );
 };
 
+
+
 type ProgressAnalyticsProps = {
   currentUser: SessionUser;
   activeRole: RoleName;
   accessToken: string;
+  targetTraineeId?: string;
+  scopedToTrainerId?: string;
 };
 
-export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken }: ProgressAnalyticsProps) {
+export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken, targetTraineeId, scopedToTrainerId }: ProgressAnalyticsProps) {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     averageScore: 0,
@@ -66,8 +67,15 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
     moduleCompletion: [],
     pathPerformance: [],
   });
-  const [showTraineeModal, setShowTraineeModal] = useState(false);
   const [selectedLpTitle, setSelectedLpTitle] = useState<string | null>(null);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  const [showTraineeModal, setShowTraineeModal] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const displayName =
     [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') ||
@@ -77,16 +85,16 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
+    const fetchData = async () => {
       setLoading(true);
       try {
         const [analytics, progress] = await Promise.all([
-          analyticsService.fetchDashboard(accessToken, activeRole).catch(() => null),
-          progressService.fetchMyStats(accessToken).catch(() => ({
+          analyticsService.fetchDashboard(accessToken, activeRole, targetTraineeId, scopedToTrainerId).catch((err) => { console.error('[ProgressAnalytics] fetchDashboard error:', err); return null; }),
+          progressService.fetchMyStats(accessToken, targetTraineeId, scopedToTrainerId).catch((err) => { console.error('[ProgressAnalytics] fetchMyStats error:', err); return ({
             completedLessons: 0,
             totalLessons: 0,
             completionPercent: 0,
-          })),
+          }); }),
         ]);
         if (!mounted) return;
         setStats({
@@ -114,17 +122,25 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
       } finally {
         if (mounted) setLoading(false);
       }
-    })();
-    return () => {
-      mounted = false;
     };
-  }, [accessToken]);
+    fetchData();
+    return () => { mounted = false; };
+  }, [accessToken, activeRole, targetTraineeId, scopedToTrainerId]);
 
   useEffect(() => {
-    if (charts.moduleCompletion.length > 0 && !selectedLpTitle) {
+    if (!selectedLpTitle && charts.moduleCompletion && charts.moduleCompletion.length > 0) {
       const lps = Array.from(new Set(charts.moduleCompletion.map((mc: any) => mc.pathTitle).filter(Boolean)));
-      const inProgress = charts.moduleCompletion.find((mc: any) => mc.percent > 0 && mc.percent < 100)?.pathTitle;
-      setSelectedLpTitle(inProgress || (lps[0] as string));
+      if (lps.length === 0) return;
+      let mostRecentLp = '';
+      let maxTimestamp = '';
+      charts.moduleCompletion.forEach((mc: any) => {
+        if (mc.lastActivity && mc.lastActivity > maxTimestamp) {
+           maxTimestamp = mc.lastActivity;
+           mostRecentLp = mc.pathTitle;
+        }
+      });
+      if (!mostRecentLp) mostRecentLp = lps[0] as string;
+      setSelectedLpTitle(mostRecentLp);
     }
   }, [charts.moduleCompletion, selectedLpTitle]);
 
@@ -139,13 +155,21 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
     filteredModuleCompletion = [{ id: 'dummy', title: 'No modules yet', percent: 0, pathTitle: selectedLpTitle, completed: 0, total: 0, averageScore: 0 }];
   }
 
-  const velocity = `${stats.learningVelocity} items/wk`;
+
 
   const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
 
-  const skillData = charts.skillDistribution.length
-    ? charts.skillDistribution
-    : [{ name: 'No data', count: 0, percent: 100 }];
+  // Pad skillData if fewer than 3 axes to prevent collapsed radar
+  let skillData = charts.skillDistribution && charts.skillDistribution.length > 0
+    ? [...charts.skillDistribution]
+    : stats.activeEnrollments === 0
+      ? [{ name: 'No data', count: 0, percent: 0 }]
+      : [{ name: 'No skills configured', count: 0, percent: 0 }];
+  if (skillData.length > 0 && skillData.length < 3 && !skillData.some((s: any) => s.name === 'No data')) {
+    while (skillData.length < 3) {
+      skillData.push({ name: ' ', count: 0, percent: 0 });
+    }
+  }
 
   const traineeProgressList = charts.traineeProgressList || [];
 
@@ -197,7 +221,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
   }));
 
   return (
-    <div style={{ padding: '24px 32px', width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div className="analytics-container" style={{ width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
       <div style={{ marginBottom: '24px' }}>
         <h1 style={{ fontSize: '22px', fontWeight: 700, margin: 0, color: '#0f172a' }}>
           {isReports ? 'Reports Dashboard' : ''}
@@ -209,26 +233,21 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <MetricCard
-          value={loading ? '...' : isReports ? `${stats.trainingEffectiveness}/100` : `${stats.averageScore}%`}
+          value={loading ? '...' : isReports ? `${fmt(stats.trainingEffectiveness)}/100` : (stats.totalMaxScore === 0 ? '0/0' : `${fmt(stats.totalGainedScore)}/${fmt(stats.totalMaxScore)}`)}
           label={isReports ? 'Training Effectiveness (Health)' : 'Avg. Score'}
-          hint={isReports ? `Composite (Score & Completion)` : `${stats.totalGainedScore} / ${stats.totalMaxScore} pts`}
+          hint={isReports ? `Composite (Score & Completion)` : (stats.totalMaxScore === 0 ? "No graded work yet" : `Average: ${fmt(stats.averageScore)}%`)}
         />
         <MetricCard
-          value={loading ? '...' : isReports ? `${stats.completionRate}%` : `${stats.completionRate}%`}
+          value={loading ? '...' : isReports ? `${fmt(stats.completionRate)}%` : (stats.totalAssignments === 0 ? '0/0' : `${stats.tasksCompleted}/${stats.totalAssignments}`)}
           label={isReports ? 'Avg. Completion Rate' : 'Tasks Completed'}
-          hint={isReports ? "From submissions" : `${stats.tasksCompleted} / ${stats.totalAssignments} submitted`}
+          hint={isReports ? "From submissions" : (stats.totalAssignments === 0 ? "No tasks assigned" : `${fmt(stats.totalAssignments > 0 ? (stats.tasksCompleted / stats.totalAssignments) * 100 : 0)}% submitted`)}
         />
         <MetricCard
-          value={loading ? '...' : isReports ? `${stats.averageScore}/100` : velocity}
+          value={loading ? '...' : isReports ? `${fmt(stats.averageScore)}/100` : `${stats.learningVelocity ?? 0} items/wk`}
           label={isReports ? 'Average Score' : 'Learning Velocity'}
-          hint={isReports ? "From evaluations" : "Tasks & Lessons (7d)"}
+          hint={isReports ? "From evaluations" : "Tasks, Lessons & Resources (7d)"}
         />
-        <MetricCard
-          value={loading ? '...' : isReports ? String(stats.totalTrainees || 0) : `${stats.skillGrowth}%`}
-          label={isReports ? 'Total Trainees' : 'Skill Growth'}
-          hint={isReports ? "Assigned on platform" : `Across all assigned paths`}
-        />
-        {isReports && (
+        {isReports && activeRole !== 'Trainer' && (
           <MetricCard
             value={loading ? '...' : String(stats.totalTrainers || 0)}
             label="Total Trainers"
@@ -246,7 +265,8 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isReports ? '2fr 1fr' : '2fr 1fr', gap: '20px', marginBottom: '20px' }}>
+      {activeRole !== 'Trainer' && (
+      <div className="analytics-grid-two-col">
         <DashboardCharts
           title={isReports ? 'Avg. Evaluation Score Trend' : 'Daily Activity Trend'}
           subtitle={isReports ? 'Daily evaluation scores (last 14 days)' : 'Daily activity points (last 30 days)'}
@@ -297,21 +317,73 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
                     <div key={s.name} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: COLORS[idx % COLORS.length], flexShrink: 0 }} />
                       <span style={{ color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.name}>{s.name}</span>
-                      <strong style={{ marginLeft: 'auto' }}>{s.percent || 0}%</strong>
+                      <strong style={{ marginLeft: 'auto' }}>{Math.round(s.percent || 0)}%</strong>
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              <div style={{ width: '100%', height: '100%', minHeight: '160px' }}>
+              <div style={{ width: '100%', height: '100%', minHeight: '200px' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={skillData}>
-                    <PolarGrid stroke="#e2e8f0" />
-                    <PolarAngleAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10 }} />
-                    <Radar name="Performance" dataKey="percent" stroke="#4f46e5" fill="#4f46e5" fillOpacity={0.2} />
+                  <RadarChart cx="50%" cy="50%" outerRadius={windowWidth < 640 ? "50%" : "65%"} data={skillData}>
+                    <PolarGrid stroke="#e2e8f0" gridType="polygon" polarRadius={[20, 40, 60, 80, 100]} />
+                    <PolarAngleAxis
+                      dataKey="name"
+                      tick={({ x, y, payload, textAnchor }: any) => {
+                        if (!payload.value || payload.value === ' ') return <g />;
+                        // Truncate based on window width
+                        const maxLength = windowWidth < 640 ? 8 : (windowWidth < 1024 ? 12 : 15);
+                        const label = payload.value.length > maxLength ? payload.value.substring(0, maxLength) + '...' : payload.value;
+                        return (
+                          <g transform={`translate(${x},${y})`}>
+                            <title>{payload.value}</title>
+                            <text
+                              x={0} y={0} dy={4}
+                              textAnchor={textAnchor || "middle"}
+                              fill="#334155"
+                              fontSize={12}
+                              fontWeight={600}
+                              style={{ cursor: 'pointer' }}
+                            >
+                              {label}
+                            </text>
+                          </g>
+                        );
+                      }}
+                    />
+                    <PolarRadiusAxis
+                      angle={30}
+                      domain={[0, 100]}
+                      tickCount={windowWidth < 640 ? 3 : 6}
+                      tick={{ fontSize: windowWidth < 640 ? 9 : 11, fill: '#64748b', fontWeight: 700 }}
+                      axisLine={false}
+                    />
+                    <Radar 
+                      name="Performance" 
+                      dataKey="percent" 
+                      stroke="#4f46e5" 
+                      fill="#4f46e5" 
+                      fillOpacity={0.25} 
+                      strokeWidth={3} 
+                      dot={{ r: 4, fill: '#4f46e5', strokeWidth: 0 }} 
+                      activeDot={{ r: 7, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2, cursor: 'pointer' }}
+                    />
                     <RechartsTooltip
-                      formatter={(value: any) => [`${value}%`, 'Performance']}
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', fontSize: '12px' }}
+                      cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }}
+                      content={({ active, payload }: any) => {
+                        if (active && payload && payload.length) {
+                          const item = payload[0].payload;
+                          if (!item.name || item.name === ' ') return null;
+                          return (
+                            <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '13px' }}>
+                              <strong style={{ color: '#0f172a', display: 'block', marginBottom: '4px' }}>{item.name}</strong>
+                              <span style={{ color: '#4f46e5', fontWeight: 700, fontSize: '15px' }}>{Math.round(item.percent)}%</span>
+                              {item.count > 0 && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{item.count} graded item{item.count !== 1 ? 's' : ''}</div>}
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
                     />
                   </RadarChart>
                 </ResponsiveContainer>
@@ -320,8 +392,9 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
           </div>
         </div>
       </div>
+      )}
 
-      {isReports && (
+      {isReports && activeRole !== 'Trainer' && (
         <div style={{ position: 'relative' }}>
           <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 10 }}>
             <button
@@ -441,20 +514,22 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
                 <BarChart data={filteredModuleCompletion} margin={{ top: 20, right: 30, left: 0, bottom: 120 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="title" axisLine={false} tickLine={false} interval={0} tick={<CustomXAxisTick />} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} tickFormatter={(val) => `${val}%`} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dx={-10} domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} tickFormatter={(val: any) => `${val}%`} />
                   <RechartsTooltip
                     cursor={{ fill: '#f8fafc' }}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                     itemStyle={{ fontSize: '13px', fontWeight: 600, color: '#4f46e5' }}
                     labelStyle={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}
-                    formatter={(value: any) => [`${value}%`, 'Completion Percentage']}
+                    formatter={(value: any) => {
+                      return [`${fmt(Number(value))}%`, 'Completion Percentage'];
+                    }}
                   />
                   <Bar dataKey="percent" name="Completion Percentage (%)" fill="#4f46e5" radius={[6, 6, 0, 0]} maxBarSize={60} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: '13px' }}>
-                No module progress in database.
+                {stats.activeEnrollments === 0 ? "No Paths" : "No module progress in database."}
               </div>
             )}
           </div>
@@ -466,7 +541,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken 
 
 function MetricCard({ value, label, hint }: { value: string; label: string; hint: string }) {
   return (
-    <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
+    <div className="hover-effect touch-target" style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', width: '100%', boxSizing: 'border-box' }}>
       <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a' }}>{value}</div>
       <div style={{ fontSize: '12px', color: '#64748b' }}>{label}</div>
       <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 600, marginTop: '4px' }}>{hint}</div>

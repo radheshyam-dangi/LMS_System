@@ -265,3 +265,15 @@
   .hero-action-cluster { justify-content: center; }
   .home-features-bento-grid { grid-template-columns: 1fr; }
 }
+
+@media (max-width: 639px) {
+  .home-navbar {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 12px;
+  }
+  .nav-actions {
+    width: 100%;
+    justify-content: center;
+  }
+}

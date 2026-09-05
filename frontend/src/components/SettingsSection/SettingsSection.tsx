@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { SessionUser, RoleName } from '../../types/auth';
 import { userService } from '../../services/userService';
 
@@ -29,17 +29,37 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    setFirstName(currentUser.firstName || '');
+    setLastName(currentUser.lastName || '');
+    setAvatarUrl((currentUser as any).avatarUrl || '');
+  }, [currentUser]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSaving(true);
     try {
       if (accessToken && currentUser.id) {
-        await userService.updateUser(
+        const updatedResponse = await userService.updateUser(
           currentUser.id,
           { firstName, lastName, avatarUrl } as any,
           accessToken,
         );
+        
+        const newFirstName = updatedResponse.firstName || firstName;
+        const newLastName = updatedResponse.lastName || lastName;
+        const newAvatarUrl = updatedResponse.avatarUrl || avatarUrl;
+        
+        const updatedUser = {
+           ...currentUser,
+           firstName: newFirstName,
+           lastName: newLastName,
+           name: [newFirstName, newLastName].filter(Boolean).join(' ') || currentUser.email,
+           avatarUrl: newAvatarUrl
+        };
+        
+        window.dispatchEvent(new CustomEvent('user_updated', { detail: updatedUser }));
       }
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);

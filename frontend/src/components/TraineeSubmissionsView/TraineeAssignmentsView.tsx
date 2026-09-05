@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { assignmentService } from '../../services/assignmentService';
 import { useNotifications } from '../../context/NotificationContext';
+import { DeadlineDisplay } from '../DeadlineDisplay';
 
 type Props = {
   accessToken: string;
@@ -125,141 +126,273 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {[...filtered].sort((a, b) => {
-          const statusA = submissionByAssignment.get(a.id)?.status || 'Pending';
-          const statusB = submissionByAssignment.get(b.id)?.status || 'Pending';
-          const orderMap: Record<string, number> = {
-            'Rejected': 1,
-            'Pending': 2,
-            'Submitted': 3,
-            'Evaluated': 4,
-            'Approved': 4
+        {(() => {
+          const getCardData = (a: any) => {
+            const sub = submissionByAssignment.get(a.id);
+            const rawStatus = (sub?.status || 'Pending').toUpperCase();
+            const deadlineDate = a.computedDeadline ? new Date(a.computedDeadline) : null;
+            const now = new Date();
+            
+            let displayStatus = 'Pending';
+            let isOverdue = false;
+            let priority = 2; // PENDING
+            let isBelowCutoff = false;
+            
+            if (rawStatus === 'LOCKED') {
+              displayStatus = 'Locked';
+              priority = 6;
+            } else if (rawStatus === 'APPROVED' || rawStatus === 'EVALUATED') {
+              const maxScore = a.maxScore || 100;
+              isBelowCutoff = (typeof sub?.score === 'number') && (sub.score / maxScore) * 100 < 40;
+              
+              if (isBelowCutoff) {
+                displayStatus = 'Approved'; // Remains "Approved" but styled differently
+                priority = 1;
+                if (deadlineDate && now > deadlineDate) {
+                  displayStatus = 'Missed/Overdue';
+                  isOverdue = true;
+                  priority = 5;
+                }
+              } else {
+                displayStatus = 'Approved';
+                priority = 4;
+              }
+            } else if (rawStatus === 'REJECTED') {
+              displayStatus = 'Needs Improvement';
+              priority = 1;
+              if (deadlineDate && now > deadlineDate) {
+                displayStatus = 'Missed/Overdue';
+                isOverdue = true;
+                priority = 5;
+              }
+            } else if (rawStatus === 'SUBMITTED') {
+              displayStatus = 'Submitted';
+              priority = 3;
+            } else {
+              displayStatus = 'Pending';
+              priority = 2;
+              if (deadlineDate && now > deadlineDate) {
+                displayStatus = 'Missed/Overdue';
+                isOverdue = true;
+                priority = 5;
+              }
+            }
+            
+            return {
+              a,
+              sub,
+              displayStatus,
+              isOverdue,
+              isBelowCutoff,
+              priority,
+              deadlineDate,
+              submittedAt: sub?.submittedAt ? new Date(sub.submittedAt) : null,
+              evaluatedAt: sub?.evaluatedAt ? new Date(sub.evaluatedAt) : null,
+              rawStatus
+            };
           };
-          return (orderMap[statusA] || 99) - (orderMap[statusB] || 99);
-        }).map((a) => {
-          const isExternal =
-            String(a.assignmentType || '').toLowerCase() === 'external' ||
-            (!a.lesson && !a.module && !a.learningPath);
-          const sub = submissionByAssignment.get(a.id);
-          const status = sub?.status || 'Pending';
-          return (
-            <div
-              key={a.id}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 12,
-                padding: '14px 16px',
-                border: '1px solid #e2e8f0',
-                borderRadius: 12,
-                background: '#fff',
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+
+          const enrichedCards = filtered.map(getCardData);
+          
+          enrichedCards.sort((cardA, cardB) => {
+            if (cardA.priority !== cardB.priority) {
+              return cardA.priority - cardB.priority;
+            }
+            
+            if (cardA.priority === 1 || cardA.priority === 2) {
+              if (!cardA.deadlineDate && !cardB.deadlineDate) return 0;
+              if (!cardA.deadlineDate) return 1;
+              if (!cardB.deadlineDate) return -1;
+              return cardA.deadlineDate.getTime() - cardB.deadlineDate.getTime();
+            }
+            
+            if (cardA.priority === 3) {
+              if (!cardA.submittedAt && !cardB.submittedAt) return 0;
+              if (!cardA.submittedAt) return 1;
+              if (!cardB.submittedAt) return -1;
+              return cardB.submittedAt.getTime() - cardA.submittedAt.getTime();
+            }
+            
+            if (cardA.priority === 4) {
+              if (!cardA.evaluatedAt && !cardB.evaluatedAt) return 0;
+              if (!cardA.evaluatedAt) return 1;
+              if (!cardB.evaluatedAt) return -1;
+              return cardB.evaluatedAt.getTime() - cardA.evaluatedAt.getTime();
+            }
+            
+            return 0;
+          });
+
+          return enrichedCards.map(({ a, sub, displayStatus, isOverdue, isBelowCutoff, deadlineDate, submittedAt, rawStatus }) => {
+            const isExternal =
+              String(a.assignmentType || '').toLowerCase() === 'external' ||
+              (!a.lesson && !a.module && !a.learningPath);
+
+            let bg = '#f1f5f9';
+            let color = '#475569';
+            if (displayStatus === 'Approved') {
+              if (isBelowCutoff) { bg = '#ffedd5'; color = '#c2410c'; } // Orange
+              else { bg = '#dcfce7'; color = '#166534'; } // Green
+            }
+            else if (displayStatus === 'Needs Improvement') { bg = '#fee2e2'; color = '#b91c1c'; }
+            else if (displayStatus === 'Submitted') { bg = '#fef3c7'; color = '#b45309'; }
+            else if (displayStatus === 'Missed/Overdue') { bg = '#fecaca'; color = '#991b1b'; }
+
+            const showDeadline = displayStatus !== 'Locked' || a.anchorType === 'LP_ASSIGNED';
+
+            return (
+              <div
+                key={a.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '14px 16px',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 12,
+                  background: displayStatus === 'Locked' ? '#f8fafc' : '#fff',
+                  opacity: displayStatus === 'Locked' ? 0.7 : 1
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: 999,
+                        background: isExternal ? '#ede9fe' : '#e0f2fe',
+                        color: isExternal ? '#6d28d9' : '#0369a1',
+                      }}
+                    >
+                      {isExternal ? 'External' : (a.learningPath?.title || a.module?.learningPath?.title || a.lesson?.module?.learningPath?.title || 'Learning Path')}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{a.assignmentType || 'Task'}</span>
+                  </div>
+                  <strong style={{ display: 'block', fontSize: 14, color: '#0f172a' }}>
+                    {displayStatus === 'Locked' ? '🔒 ' : ''}{a.title}
+                  </strong>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {showDeadline && (
+                      <DeadlineDisplay task={a} submission={sub} />
+                    )}
+                    
+                    {displayStatus === 'Submitted' && submittedAt && (
+                      <span style={{ color: '#b45309' }}>Submitted on {submittedAt.toLocaleString()}</span>
+                    )}
+
+                    {displayStatus === 'Submitted' && (
+                      <span style={{ color: '#475569', fontWeight: 500 }}>
+                        Assigned by: {a.assignedBy ? (`${a.assignedBy.firstName || ''} ${a.assignedBy.lastName || ''}`.trim() || a.assignedBy.email) : 'Trainer'}
+                      </span>
+                    )}
+
+                    {displayStatus === 'Needs Improvement' && sub?.feedback && (
+                      <span style={{ color: '#b91c1c' }}>Feedback: {sub.feedback}</span>
+                    )}
+
+                    {a.externalUrl && displayStatus !== 'Locked' && (
+                      <span>
+                        <a href={a.externalUrl} target="_blank" rel="noreferrer" style={{ color: '#4f46e5' }}>
+                          Open resource
+                        </a>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span
                     style={{
-                      fontSize: 10,
+                      fontSize: 11,
                       fontWeight: 700,
-                      padding: '2px 8px',
+                      padding: '4px 10px',
                       borderRadius: 999,
-                      background: isExternal ? '#ede9fe' : '#e0f2fe',
-                      color: isExternal ? '#6d28d9' : '#0369a1',
+                      background: bg,
+                      color: color,
                     }}
                   >
-                    {isExternal ? 'External' : 'Learning Path'}
+                    {displayStatus}
+                    {typeof sub?.score === 'number' && (displayStatus === 'Approved' || displayStatus === 'Needs Improvement') ? ` · ${sub.score} marks` : ''}
                   </span>
-                  <span style={{ fontSize: 11, color: '#94a3b8' }}>{a.assignmentType || 'Task'}</span>
-                </div>
-                <strong style={{ display: 'block', fontSize: 14, color: '#0f172a' }}>{a.title}</strong>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                  {a.dueDate ? `Due ${new Date(a.dueDate).toLocaleDateString()}` : 'No due date'}
-                  {a.externalUrl ? (
+                  
+                  {(displayStatus === 'Approved' || displayStatus === 'Needs Improvement' || rawStatus === 'EVALUATED') && sub && (
+                    <button
+                      type="button"
+                      onClick={() => setViewDetailsTarget({ assignment: a, submission: sub })}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 8,
+                        border: '1px solid #e2e8f0',
+                        background: '#fff',
+                        color: '#0f172a',
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      View Details
+                    </button>
+                  )}
+
+                  {!isOverdue && displayStatus !== 'Locked' && (displayStatus !== 'Approved' || isBelowCutoff) && displayStatus !== 'Submitted' && (
                     <>
-                      {' · '}
-                      <a href={a.externalUrl} target="_blank" rel="noreferrer" style={{ color: '#4f46e5' }}>
-                        Open resource
-                      </a>
+                      {rawStatus === 'AVAILABLE' && a.anchorType === 'TASK_START' ? (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!window.confirm('Start this assignment now? The deadline countdown will begin immediately.')) return;
+                            try {
+                              await assignmentService.startAssignment(a.id, accessToken);
+                              await load();
+                            } catch (err: any) {
+                              alert(err?.response?.data?.message || err.message || 'Could not start assignment');
+                            }
+                          }}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: 8,
+                            border: 'none',
+                            background: '#16a34a',
+                            color: '#fff',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Start Assignment
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSubmitTarget(a);
+                            setSubmissionText('');
+                            setAttachmentUrl(a.externalUrl || '');
+                          }}
+                          style={{
+                            padding: '8px 14px',
+                            borderRadius: 8,
+                            border: 'none',
+                            background: '#4f46e5',
+                            color: '#fff',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {displayStatus === 'Needs Improvement' || isBelowCutoff ? 'Resubmit' : 'Submit'}
+                        </button>
+                      )}
                     </>
-                  ) : null}
+                  )}
                 </div>
               </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: '4px 10px',
-                    borderRadius: 999,
-                    background:
-                      status === 'Approved'
-                        ? '#dcfce7'
-                        : status === 'Rejected'
-                          ? '#fee2e2'
-                          : status === 'Submitted'
-                            ? '#fef3c7'
-                            : '#f1f5f9',
-                    color:
-                      status === 'Approved'
-                        ? '#166534'
-                        : status === 'Rejected'
-                          ? '#b91c1c'
-                          : status === 'Submitted'
-                            ? '#b45309'
-                            : '#475569',
-                  }}
-                >
-                  {status}
-                  {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
-                </span>
-                
-                {(status === 'Approved' || status === 'Rejected' || status === 'Evaluated') && sub && (
-                  <button
-                    type="button"
-                    onClick={() => setViewDetailsTarget({ assignment: a, submission: sub })}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0',
-                      background: '#fff',
-                      color: '#0f172a',
-                      fontWeight: 700,
-                      fontSize: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    View Details
-                  </button>
-                )}
-
-                {status !== 'Approved' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSubmitTarget(a);
-                      setSubmissionText('');
-                      setAttachmentUrl(a.externalUrl || '');
-                    }}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 8,
-                      border: 'none',
-                      background: '#4f46e5',
-                      color: '#fff',
-                      fontWeight: 700,
-                      fontSize: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {sub ? 'Resubmit' : 'Submit'}
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
 
         {filtered.length === 0 && (
           <div style={{ padding: 24, color: '#94a3b8', textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: 12 }}>
@@ -314,6 +447,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   Max Score: {submitTarget.maxScore ?? 100} pts · Type:{' '}
                   {submitTarget.assignmentType || 'Subjective'}
                 </p>
+                {submitTarget.createdBy && (
+                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#4f46e5', fontWeight: 600 }}>
+                    Assigned by: {submitTarget.createdBy.firstName} {submitTarget.createdBy.lastName}
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setSubmitTarget(null)}

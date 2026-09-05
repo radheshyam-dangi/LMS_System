@@ -14,11 +14,13 @@ import {
   Zap,
   Bell,
   Trash2,
+  Menu,
+  X
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
-import { useSearch } from '../../context/SearchContext';
+import { GlobalSearchBar } from './GlobalSearchBar';
 
 type AppLayoutProps = {
   activeRole: RoleName;
@@ -53,7 +55,6 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
       { name: 'Assignments', path: '/assignments', icon: ClipboardList },
       { name: 'Evaluations', path: '/evaluations', icon: Star },
-      { name: 'Progress', path: '/progress', icon: TrendingUp },
     ],
     tools: [
       { name: 'Settings', path: '/settings', icon: Settings },
@@ -64,7 +65,6 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
       { name: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
       { name: 'Assignments', path: '/assignments', icon: ClipboardList },
-      { name: 'Progress', path: '/progress', icon: TrendingUp },
     ],
     tools: [{ name: 'Settings', path: '/settings', icon: Settings }],
   },
@@ -103,7 +103,6 @@ export function AppLayout({
   const navigate = useNavigate();
   const location = useLocation();
   const { notifications, markAsRead, markAllRead, unreadCount, deleteNotification } = useNotifications();
-  const { searchQuery, setSearchQuery } = useSearch();
   const [panelOpen, setPanelOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const count = Math.max(notificationCount, unreadCount);
@@ -146,11 +145,28 @@ export function AppLayout({
     return location.pathname.startsWith(path);
   };
 
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // When clicking a link on mobile, close the menu
+  const handleNavClick = (path: string) => {
+    navigate(path);
+    setIsMobileMenuOpen(false);
+  };
+
   const bellDisplay = count > 5 ? '5+' : count > 0 ? String(count) : null;
 
   return (
-    <main className="dashboard-shell">
-      <aside className="sidebar">
+    <div className="dashboard-shell">
+      {/* Mobile Backdrop */}
+      {isMobileMenuOpen && (
+        <div 
+          className="mobile-sidebar-backdrop hidden-desktop" 
+          onClick={() => setIsMobileMenuOpen(false)}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 40 }}
+        />
+      )}
+
+      <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
         <div className="brand-block" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
           <div className="brand-mark">
             <Zap size={20} color="#ffffff" strokeWidth={2.5} />
@@ -181,10 +197,10 @@ export function AppLayout({
             const active = isCurrentPath(item.path);
             return (
               <button
-                className={active ? 'side-nav-item active' : 'side-nav-item'}
+                className={`side-nav-item hover-effect focus-ring touch-target ${active ? 'active' : ''}`}
                 key={item.name}
                 type="button"
-                onClick={() => navigate(item.path)}
+                onClick={() => handleNavClick(item.path)}
               >
                 <div className="nav-item-left">
                   <IconComponent className="nav-icon-svg" size={18} />
@@ -203,10 +219,10 @@ export function AppLayout({
             const active = isCurrentPath(item.path);
             return (
               <button
-                className={active ? 'side-nav-item active' : 'side-nav-item'}
+                className={`side-nav-item hover-effect focus-ring touch-target ${active ? 'active' : ''}`}
                 key={item.name}
                 type="button"
-                onClick={() => navigate(item.path)}
+                onClick={() => handleNavClick(item.path)}
               >
                 <div className="nav-item-left">
                   <IconComponent className="nav-icon-svg" size={18} />
@@ -220,7 +236,13 @@ export function AppLayout({
         </nav>
 
         <div className="sidebar-profile">
-          <div className="avatar">{initialsFor(user)}</div>
+          <div className="avatar" style={{ padding: (user as any).avatarUrl ? 0 : undefined, overflow: 'hidden' }}>
+            {(user as any).avatarUrl ? (
+              <img src={(user as any).avatarUrl} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              initialsFor(user)
+            )}
+          </div>
           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
             <strong
               style={{
@@ -241,16 +263,18 @@ export function AppLayout({
 
       <section className="workspace">
         <header className="workspace-topbar">
-          <h2 className="topbar-title">{activeSection}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <button 
+              className="hidden-desktop hover-effect focus-ring touch-target" 
+              onClick={() => setIsMobileMenuOpen(true)}
+              style={{ background: 'none', border: 'none', padding: 0, color: '#475569', display: 'flex', alignItems: 'center' }}
+            >
+              <Menu size={24} />
+            </button>
+            <h2 className="topbar-title">{activeSection}</h2>
+          </div>
           <div className="topbar-actions">
-            <div className="search-field">
-              <span className="search-icon">🔍</span>
-              <input
-                placeholder="Search anything... ⌘K"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+            <GlobalSearchBar activeRole={effectiveRole} />
 
             {showRoleSwitcher && (
               <div className="role-selector-wrap">
@@ -474,7 +498,13 @@ export function AppLayout({
             </div>
 
             <div className="topbar-user-badge" title={displayName}>
-              <div className="avatar">{initialsFor(user)}</div>
+              <div className="avatar" style={{ padding: (user as any).avatarUrl ? 0 : undefined, overflow: 'hidden' }}>
+                {(user as any).avatarUrl ? (
+                  <img src={(user as any).avatarUrl} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  initialsFor(user)
+                )}
+              </div>
               <div className="user-meta">
                 <span className="user-name">{displayName}</span>
                 <span className="user-role">{effectiveRole}</span>
@@ -496,6 +526,6 @@ export function AppLayout({
           50% { transform: scale(1.15); }
         }
       `}</style>
-    </main>
+    </div>
   );
 }

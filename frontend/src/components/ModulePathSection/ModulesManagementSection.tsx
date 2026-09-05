@@ -5,6 +5,7 @@ import { curriculumService } from "../../services/curriculumService";
 import { progressService } from "../../services/lmsApi";
 import { assignmentService } from "../../services/assignmentService";
 import { useNotifications } from "../../context/NotificationContext";
+import { DeadlineDisplay } from "../DeadlineDisplay";
 import "./ModulesManagement.css";
 
 interface ModulesProps {
@@ -751,10 +752,7 @@ export function ModulesManagementSection({
                             <span style={{ background: '#e2e8f0', padding: '2px 8px', borderRadius: 6, fontWeight: 600, color: '#475569', fontSize: 11, textTransform: 'uppercase' }}>{task.assignmentType}</span>
                             <span>{task.lessonTitle || 'Module task'}</span>
                             <span style={{ color: '#cbd5e1' }}>•</span>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                              Due {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'N/A'}
-                            </span>
+                            <DeadlineDisplay task={task} submission={sub} />
                           </div>
                         </div>
                       </div>
@@ -868,8 +866,8 @@ export function ModulesManagementSection({
                     let isOverdue = false;
                     const status = task.status || (sub ? sub.status : 'not_started');
                     
-                    if (status === 'started' && task.deadlineAt) {
-                      const deadline = new Date(task.deadlineAt);
+                    if (status === 'started' && task.computedDeadline) {
+                      const deadline = new Date(task.computedDeadline);
                       const diff = deadline.getTime() - currentTime.getTime();
                       if (diff <= 0) {
                         isOverdue = true;

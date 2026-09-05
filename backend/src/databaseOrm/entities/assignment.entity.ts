@@ -47,8 +47,17 @@ export class AssignmentEntity extends BaseEntity {
   @Column({ type: 'integer', name: 'duration_minutes', default: 0 })
   durationMinutes: number;
 
-  @Column({ type: 'timestamp', name: 'due_date', nullable: true })
-  dueDate: Date;
+  @Column({ type: 'varchar', name: 'anchor_type', default: 'LP_ASSIGNED' })
+  anchorType: string;
+
+  @Column({ type: 'integer', name: 'sequence_index', nullable: true })
+  sequenceIndex: number | null;
+
+  @Column({ type: 'boolean', name: 'is_external', default: false })
+  isExternal: boolean;
+
+  // Dynamically injected by service
+  assignedBy?: any;
 
   // 1. Optional attachment to Lesson
   @ManyToOne(() => LessonEntity, (lesson) => lesson.assignments, {

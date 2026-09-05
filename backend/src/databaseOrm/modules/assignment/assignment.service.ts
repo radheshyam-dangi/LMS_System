@@ -173,6 +173,8 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     return String(ownerId).toLowerCase() === String(userId).toLowerCase();
   }
 
+
+
   async createAssignment(
     dto: any,
     creatorId: string,
@@ -194,6 +196,8 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       durationDays,
       durationHours,
       durationMinutes,
+      anchorType,
+      sequenceIndex,
     } = dto;
 
     if (!title || !title.trim()) {
@@ -270,15 +274,17 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       externalUrl: externalUrl || undefined,
       mcqConfig: mcqConfig || undefined,
       maxScore: calculatedMaxScore,
-      dueDate: dueDate ? new Date(dueDate) : undefined,
       lesson: external ? undefined : lesson || undefined,
       module: external ? undefined : module || undefined,
       learningPath: external ? undefined : learningPath || undefined,
       createdBy: { id: creatorId },
       assignedToTraineeIds: assignedIds,
-      durationDays: Number(durationDays) || 0,
-      durationHours: Number(durationHours) || 0,
-      durationMinutes: Number(durationMinutes) || 0,
+      durationDays: durationDays || 0,
+      durationHours: durationHours || 0,
+      durationMinutes: durationMinutes || 0,
+      anchorType: anchorType || 'LP_ASSIGNED',
+      sequenceIndex: sequenceIndex || null,
+      isExternal: external,
     });
 
     const saved = await this.repository.save(assignment);
@@ -290,6 +296,38 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         assignedBy: { id: creatorId } as any,
       }));
       await this.traineeAssignmentRepository.save(mappings);
+      
+      const now = new Date();
+      let computedDeadline: Date | null = null;
+      let lpAssignedAt: Date | null = now;
+      let taskUnlockedAt: Date | null = null;
+      let initialStatus = external ? 'AVAILABLE' : 'LOCKED';
+
+      if (anchorType === 'TASK_UNLOCKED' || anchorType === 'MODULE_UNLOCK') {
+        lpAssignedAt = null;
+        taskUnlockedAt = null; // Stays null until unlocked
+      } else if (anchorType === 'TASK_START') {
+        // Deadline is computed later when task starts
+        computedDeadline = null;
+      } else {
+        // LP_ASSIGNED or ASSIGNMENT
+        if ((durationDays || 0) > 0 || (durationHours || 0) > 0 || (durationMinutes || 0) > 0) {
+           computedDeadline = new Date(now.getTime());
+           if (durationDays) computedDeadline.setDate(computedDeadline.getDate() + durationDays);
+           if (durationHours) computedDeadline.setHours(computedDeadline.getHours() + durationHours);
+           if (durationMinutes) computedDeadline.setMinutes(computedDeadline.getMinutes() + durationMinutes);
+        }
+      }
+
+      const submissions = assignedIds.map(tid => this.submissionRepository.create({
+        assignment: { id: saved.id } as any,
+        trainee: { id: tid } as any,
+        status: initialStatus,
+        lpAssignedAt: lpAssignedAt,
+        deadline: computedDeadline,
+        taskUnlockedAt: taskUnlockedAt
+      }));
+      await this.submissionRepository.save(submissions);
     }
 
     if (this.notificationService && assignedIds.length > 0) {
@@ -405,9 +443,13 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       learningPathId,
       traineeIds,
       assignedToTraineeIds,
+      anchorType,
       ...rest
     } = dto;
     const updated = this.repository.merge(assignment, rest);
+    if (anchorType) {
+      updated.anchorType = anchorType;
+    }
 
     if (Array.isArray(traineeIds) || Array.isArray(assignedToTraineeIds)) {
       const ids = [
@@ -508,7 +550,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
     submission.score = status === 'Rejected' ? 0 : score;
     submission.feedback = feedback;
-    submission.status = status;
+    submission.status = status.toUpperCase() as any;
     submission.evaluatedAt = new Date();
     submission.evaluatedBy = { id: evaluatorId } as any;
 
@@ -546,7 +588,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     trainerId?: string,
   ): Promise<AssignmentSubmissionEntity[]> {
     const all = await this.submissionRepository.find({
-      where: { status: 'Submitted' },
+      where: { status: 'SUBMITTED' },
       relations: [
         'trainee',
         'assignment',
@@ -628,10 +670,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     attachmentUrl?: string,
   ): Promise<AssignmentSubmissionEntity> {
     const assignment = await this.findOne(assignmentId, traineeId);
-    
-    if (assignment.dueDate && new Date() > new Date(assignment.dueDate)) {
-      throw new BadRequestException('Task submission deadline has passed.');
-    }
+    // Check if overdue? Wait, due date check is removed.
 
     // External: only assigned trainees may submit
     const assigned = assignment.assignedToTraineeIds || [];
@@ -653,17 +692,15 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
 
     if (submission) {
-      if (submission.deadlineAt && new Date() > new Date(submission.deadlineAt)) {
+      if (submission.deadline && new Date() > new Date(submission.deadline)) {
         throw new BadRequestException('Task submission deadline has passed. This task is overdue.');
       }
       submission.submissionText = submissionText;
       submission.attachmentUrl = attachmentUrl || submission.attachmentUrl;
-      submission.status = 'Submitted';
+      submission.status = 'SUBMITTED';
       submission.submittedAt = new Date();
     } else {
-      // For tasks that don't have timers, they can just be submitted directly.
-      // But if the assignment has a duration set, they MUST be started first.
-      const hasDuration = (assignment.durationDays || 0) > 0 || (assignment.durationHours || 0) > 0 || (assignment.durationMinutes || 0) > 0;
+      const hasDuration = (assignment.durationValue || 0) > 0;
       if (hasDuration) {
         throw new BadRequestException('You must start this task before submitting.');
       }
@@ -672,14 +709,13 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         trainee: { id: traineeId },
         submissionText,
         attachmentUrl,
-        status: 'Submitted',
+        status: 'SUBMITTED',
         submittedAt: new Date(),
       });
     }
 
     const saved = await this.submissionRepository.save(submission);
 
-    // Lookup assigner to route the notification
     const assigner = await this.resolveAssignerForInstance(assignment, traineeId);
     let assignerId = assigner?.id || null;
 
@@ -704,7 +740,6 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   async startAssignment(assignmentId: string, traineeId: string): Promise<AssignmentSubmissionEntity> {
     const assignment = await this.findOne(assignmentId, traineeId);
 
-    // Enforce lock explicitly
     if (assignment.isLocked) {
       throw new ForbiddenException('Cannot start a locked task.');
     }
@@ -716,53 +751,51 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       },
     });
 
-    if (submission && submission.startedAt) {
+    if (submission && submission.timerStartedAt) {
       throw new BadRequestException('Task has already been started.');
     }
 
-    const durationDays = assignment.durationDays || 0;
-    const durationHours = assignment.durationHours || 0;
-    const durationMinutes = assignment.durationMinutes || 0;
-
-    const totalMs = (durationDays * 86400 + durationHours * 3600 + durationMinutes * 60) * 1000;
-    if (totalMs <= 0) {
-      throw new BadRequestException('This task does not have a duration set.');
-    }
-
     const now = new Date();
-    const deadlineAt = new Date(now.getTime() + totalMs);
+    
+    let computedDeadline: Date | null = null;
+    const { durationDays, durationHours, durationMinutes } = assignment;
+    if ((durationDays || 0) > 0 || (durationHours || 0) > 0 || (durationMinutes || 0) > 0) {
+      computedDeadline = new Date(now.getTime());
+      if (durationDays) computedDeadline.setDate(computedDeadline.getDate() + durationDays);
+      if (durationHours) computedDeadline.setHours(computedDeadline.getHours() + durationHours);
+      if (durationMinutes) computedDeadline.setMinutes(computedDeadline.getMinutes() + durationMinutes);
+    }
 
     if (submission) {
-      submission.status = 'started';
-      submission.startedAt = now;
-      submission.deadlineAt = deadlineAt;
+      submission.timerStartedAt = now;
+      if (computedDeadline) {
+        submission.deadline = computedDeadline;
+      }
+      if (submission.status === 'AVAILABLE' || submission.status === 'LOCKED') {
+        submission.status = 'IN_PROGRESS';
+      }
+      return await this.submissionRepository.save(submission);
     } else {
       submission = this.submissionRepository.create({
-        assignment: { id: assignmentId },
-        trainee: { id: traineeId },
-        status: 'started',
-        startedAt: now,
-        deadlineAt: deadlineAt,
+        assignment: { id: assignmentId } as any,
+        trainee: { id: traineeId } as any,
+        timerStartedAt: now,
+        deadline: computedDeadline,
+        status: 'IN_PROGRESS'
       });
+      return await this.submissionRepository.save(submission);
     }
-
-    return await this.submissionRepository.save(submission);
   }
 
   async restartAssignment(assignmentId: string, traineeId: string): Promise<AssignmentSubmissionEntity> {
     const assignment = await this.findOne(assignmentId, traineeId);
 
-    // Enforce lock explicitly
     if (assignment.isLocked) {
       throw new ForbiddenException('Cannot restart a locked task.');
     }
 
-    const durationDays = assignment.durationDays || 0;
-    const durationHours = assignment.durationHours || 0;
-    const durationMinutes = assignment.durationMinutes || 0;
-
-    const totalMs = (durationDays * 86400 + durationHours * 3600 + durationMinutes * 60) * 1000;
-    if (totalMs <= 0) {
+    const durationVal = assignment.durationValue || 0;
+    if (durationVal <= 0) {
       throw new BadRequestException('This task does not have a duration set, restart not required.');
     }
 
@@ -778,11 +811,8 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     }
 
     const now = new Date();
-    const deadlineAt = new Date(now.getTime() + totalMs);
-
-    submission.status = 'started';
-    submission.startedAt = now;
-    submission.deadlineAt = deadlineAt;
+    submission.timerStartedAt = now;
+    submission.status = 'IN_PROGRESS';
     submission.submissionText = undefined as any;
     submission.attachmentUrl = undefined as any;
     submission.submittedAt = undefined as any;
@@ -906,7 +936,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     }
 
     if (isTrainee) {
-      return await this.findMyAssignments(userId);
+      return await this.findMyAssignments(userId, currentUser);
     }
 
     return enriched;
@@ -935,9 +965,15 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
     const byAssignment = new Map<string, AssignmentSubmissionEntity[]>();
     for (const s of allSubs) {
-      const aid = s.assignment?.id;
+      const aid = s.assignment?.id || (s.assignment as any)?.id;
       if (!aid || !ids.has(aid)) continue;
-      
+
+      // Replace s.assignment with the fully populated one from our array
+      const populatedAssignment = assignments.find(a => a.id === aid);
+      if (populatedAssignment) {
+        s.assignment = populatedAssignment;
+      }
+
       let includeSub = true;
 
       if (s.assignment && s.trainee) {
@@ -945,7 +981,13 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         (s as any).assignedBy = assigner;
 
         if (isTrainer) {
-          if (!assigner || String(assigner.id).toLowerCase() !== String(userId).toLowerCase()) {
+          const isAssigner = assigner && String(assigner.id).toLowerCase() === String(userId).toLowerCase();
+          const isEvaluator = s.evaluatedBy && String(s.evaluatedBy.id).toLowerCase() === String(userId).toLowerCase();
+          if (!isAssigner && !isEvaluator) {
+            includeSub = false;
+          }
+          // Trainer only sees submissions that have actually been submitted (not just started)
+          if (s.status === 'IN_PROGRESS' || s.status === 'AVAILABLE' || s.status === 'LOCKED') {
             includeSub = false;
           }
         }
@@ -973,21 +1015,21 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       if (subs.length === 0) {
         status = 'Pending';
       } else {
-        const hasSubmitted = subs.some((s) => s.status === 'Submitted');
+        const hasSubmitted = subs.some((s) => s.status === 'SUBMITTED');
         const hasAccepted = subs.some(
-          (s) => s.status === 'Accepted' || s.status === 'Approved' || s.status === 'Evaluated',
+          (s) => s.status === 'APPROVED' || s.status === 'EVALUATED',
         );
-        const hasRejected = subs.some((s) => s.status === 'Rejected');
+        const hasRejected = subs.some((s) => s.status === 'REJECTED');
         if (hasSubmitted) status = 'Submitted';
         else if (hasAccepted) status = 'Approved';
         else if (hasRejected) status = 'Rejected';
         else {
-          const hasStarted = subs.some((s) => s.status === 'started');
+          const hasStarted = subs.some((s) => s.status === 'IN_PROGRESS');
           status = hasStarted ? 'started' : 'In Progress';
           
           if (status === 'started') {
-            const startedSub = subs.find((s) => s.status === 'started');
-            if (startedSub?.deadlineAt && new Date() > new Date(startedSub.deadlineAt)) {
+            const startedSub = subs.find((s) => s.status === 'IN_PROGRESS');
+            if (startedSub?.deadline && new Date() > new Date(startedSub.deadline)) {
               status = 'Overdue';
             }
           }
@@ -1001,8 +1043,8 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         ...a,
         status,
         score,
-        startedAt: latestSubmission?.startedAt || null,
-        deadlineAt: latestSubmission?.deadlineAt || null,
+        startedAt: latestSubmission?.timerStartedAt || null,
+        deadlineAt: latestSubmission?.deadline || null,
         maxScore: a.maxScore,
         submissions: subs,
         latestSubmission,
@@ -1020,8 +1062,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     );
   }
 
-  async findMyAssignments(traineeId: string): Promise<AssignmentEntity[]> {
-    const all = await this.getAllAssignmentsEnriched();
+  async findMyAssignments(traineeId: string, currentUser?: any): Promise<AssignmentEntity[]> {
+    const userToPass = currentUser || { sub: traineeId, 'custom:role': '["trainee"]' };
+    const all = await this.getAllAssignmentsEnriched(userToPass);
 
     const enrolledPaths = await this.enrollmentRepository.find({
       where: { user: { id: traineeId }, status: 'active' },
@@ -1035,7 +1078,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
     const directAssignedIds = new Set(directMappings.map((m) => m.assignment?.id).filter(Boolean));
 
-    return all.filter((a) => {
+    const filtered = all.filter((a) => {
       const isExternal =
         String(a.assignmentType || '').toLowerCase() === 'external' ||
         (!a.lesson && !a.module && !a.learningPath);
@@ -1051,6 +1094,30 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         a.module?.learningPath?.id ||
         a.lesson?.module?.learningPath?.id;
       return pathId && enrolledPathIds.has(pathId);
+    });
+
+    for (const a of filtered) {
+      const assigner = await this.resolveAssignerForInstance(a, traineeId);
+      if (assigner) {
+        (a as any).assignedBy = assigner;
+      }
+    }
+
+    return filtered.sort((a, b) => {
+      const aSub = (a as any).latestSubmission;
+      const bSub = (b as any).latestSubmission;
+      const aStatus = aSub?.status || 'not_started';
+      const bStatus = bSub?.status || 'not_started';
+      const aLocked = aStatus.toLowerCase() === 'locked';
+      const bLocked = bStatus.toLowerCase() === 'locked';
+
+      if (aLocked && !bLocked) return 1;
+      if (!aLocked && bLocked) return -1;
+
+      const aDeadline = aSub?.deadline ? new Date(aSub.deadline).getTime() : Infinity;
+      const bDeadline = bSub?.deadline ? new Date(bSub.deadline).getTime() : Infinity;
+      
+      return aDeadline - bDeadline;
     });
   }
 

@@ -257,6 +257,57 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
           assignedBy: assignerId ? { id: assignerId } as any : undefined,
         }),
       );
+
+      // Fan out tasks for new assignment
+      const assignmentRepo = this.datasource.getRepository('Assignment');
+      const submissionRepo = this.datasource.getRepository('AssignmentSubmission');
+      
+      const allAssignmentsInPath = await assignmentRepo.find({
+        where: [
+          { learningPath: { id: pathId } },
+          { module: { learningPath: { id: pathId } } },
+          { lesson: { module: { learningPath: { id: pathId } } } }
+        ],
+        relations: ['lesson', 'lesson.module', 'module']
+      });
+
+      const submissions = [];
+      const now = new Date();
+
+      for (const task of allAssignmentsInPath) {
+        const parentModule = (task as any).module || (task as any).lesson?.module;
+        const isGated = parentModule && parentModule.taskLocking === true && (parentModule.lessons?.length > 0 || (task as any).lesson);
+        
+        let deadlineMode = 'assignment_anchored';
+        let deadlineAnchorAt: Date | null = now;
+        let computedDeadline: Date | null = null;
+
+        if (isGated) {
+          deadlineMode = 'unlock_anchored';
+          deadlineAnchorAt = null;
+        } else if ((task as any).durationValue) {
+           const durationVal = (task as any).durationValue;
+           const durationUnit = (task as any).durationUnit || 'days';
+           const totalMs = durationUnit === 'minutes' ? durationVal * 60000 
+                         : durationUnit === 'hours' ? durationVal * 3600000 
+                         : durationVal * 86400000;
+           computedDeadline = new Date(now.getTime() + totalMs);
+        }
+
+        submissions.push(submissionRepo.create({
+          assignment: { id: (task as any).id } as any,
+          trainee: { id: traineeId } as any,
+          status: 'LOCKED',
+          deadlineMode,
+          deadlineAnchorAt,
+          computedDeadline,
+          unlockedAt: null
+        }));
+      }
+
+      if (submissions.length > 0) {
+        await submissionRepo.save(submissions);
+      }
     } else if (existingEnrollment.status !== 'active') {
       existingEnrollment.status = 'active';
       await this.enrollmentRepository.save(existingEnrollment);

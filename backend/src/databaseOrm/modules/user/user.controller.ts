@@ -6,6 +6,7 @@ import {
   Param,
   Put,
   Delete,
+  Req,
 } from '@nestjs/common';
 import { UserEntityService } from './user.service';
 import type { UserModel } from '../../../types/models/user.model';
@@ -57,8 +58,19 @@ export class UserController {
     return await this.userService.update(id, updateUserDto);
   }
 
+  @Put(':id/deactivate')
+  async deactivate(@Param('id') id: string) {
+    return await this.userService.updateUserStatus(id, false);
+  }
+
+  @Put(':id/reactivate')
+  async reactivate(@Param('id') id: string) {
+    return await this.userService.updateUserStatus(id, true);
+  }
+
   @Delete(':id')
-  async remove(@Param('id') id: string) {
-    return await this.userService.remove(id);
+  async remove(@Param('id') id: string, @Req() req: any) {
+    const requesterId = req?.user?.userId; // assuming JWT middleware sets this
+    return await this.userService.removeUser(id, requesterId);
   }
 }

@@ -135,6 +135,18 @@ export const assignmentService = {
   },
 
   /**
+   * 8c. START ASSIGNMENT (Trainee Action)
+   */
+  startAssignment: async (assignmentId: string, token: string) => {
+    const response = await axios.post(
+      `${API_BASE_URL}/assignments/${assignmentId}/start`,
+      {},
+      getAuthHeaders(token)
+    );
+    return response.data;
+  },
+
+  /**
    * 9. SUBMIT ASSIGNMENT (Trainee Action)
    * Sends submission text, code/drive attachments, or MCQ answer selections
    */

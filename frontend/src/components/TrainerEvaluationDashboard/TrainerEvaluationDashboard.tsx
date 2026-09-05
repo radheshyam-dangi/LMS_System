@@ -26,7 +26,16 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; border: string;
   'In Progress': { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe', dot: '#3b82f6' },
   Submitted: { bg: '#fef3c7', color: '#b45309', border: '#fde68a', dot: '#f59e0b' },
   Accepted: { bg: '#dcfce7', color: '#166534', border: '#86efac', dot: '#22c55e' },
+  Approved: { bg: '#dcfce7', color: '#166534', border: '#86efac', dot: '#22c55e' },
   Rejected: { bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5', dot: '#ef4444' },
+};
+
+const formatDuration = (d?: number, h?: number, m?: number) => {
+  const parts = [];
+  if (d) parts.push(`${d} day${d !== 1 ? 's' : ''}`);
+  if (h) parts.push(`${h} hour${h !== 1 ? 's' : ''}`);
+  if (m) parts.push(`${m} minute${m !== 1 ? 's' : ''}`);
+  return parts.length ? parts.join(' ') : 'No duration';
 };
 
 export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSection, activeRole }: TrainerEvaluationDashboardProps) {
@@ -62,7 +71,9 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   const [formPathId, setFormPathId] = useState('');
   const [formModuleId, setFormModuleId] = useState('');
   const [formLessonId, setFormLessonId] = useState('');
-  const [formDueDate, setFormDueDate] = useState('');
+  const [formDurationValue, setFormDurationValue] = useState<number>(0);
+  const [formDurationUnit, setFormDurationUnit] = useState<'minutes' | 'hours' | 'days'>('days');
+  const [formAnchorType, setFormAnchorType] = useState<'MODULE_UNLOCK' | 'TASK_START' | 'PREVIOUS_TASK_SUBMIT' | 'ASSIGNMENT'>('ASSIGNMENT');
   const [formPriority, setFormPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
   const [formDescription, setFormDescription] = useState('');
   const [formResourceUrl, setFormResourceUrl] = useState('');
@@ -138,8 +149,13 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     if (statusFilter !== 'All') {
       result = result.filter((a: any) => {
         let st = (a.status || 'Pending').toLowerCase();
+        
         if (statusFilter.toLowerCase() === 'approved' && (st === 'approved' || st === 'accepted')) return true;
         if (statusFilter.toLowerCase() === 'needs improvement' && st === 'rejected') return true;
+        
+        // "Pending" now means "Pending Evaluation" (i.e., submitted by trainee, waiting for trainer)
+        if (statusFilter.toLowerCase() === 'pending' && st === 'submitted') return true;
+
         return st === statusFilter.toLowerCase();
       });
     }
@@ -159,16 +175,21 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Approved: 0, Rejected: 0 };
     roleFilteredAssignments.forEach((a: any) => {
-      let st = a.status || 'Pending';
-      if (st === 'Accepted') st = 'Approved';
-      counts[st] = (counts[st] || 0) + 1;
+      let st = (a.status || 'Pending').toLowerCase();
+      
+      if (st === 'accepted' || st === 'approved') {
+        counts['Approved'] = (counts['Approved'] || 0) + 1;
+      } else if (st === 'rejected') {
+        counts['Rejected'] = (counts['Rejected'] || 0) + 1;
+      } else if (st === 'submitted') {
+        counts['Pending'] = (counts['Pending'] || 0) + 1;
+      }
     });
     return counts;
   }, [assignments]);
 
   const summaryCards = [
     { title: 'Pending', count: statusCounts['Pending'] || 0, key: 'Pending' },
-    { title: 'Submitted', count: statusCounts['Submitted'] || 0, key: 'Submitted' },
     { title: 'Needs Improvement', count: statusCounts['Rejected'] || 0, key: 'Needs Improvement' },
     { title: 'Approved', count: statusCounts['Approved'] || 0, key: 'Approved' },
   ];
@@ -311,7 +332,10 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
         assignmentType: formAssignmentType,
         externalUrl: isExternal ? formExternalUrl : undefined,
         mcqConfig: isExternal ? undefined : mcqConfig,
-        dueDate: formDueDate || undefined,
+        durationDays: formDurationUnit === 'days' ? formDurationValue : 0,
+        durationHours: formDurationUnit === 'hours' ? formDurationValue : 0,
+        durationMinutes: formDurationUnit === 'minutes' ? formDurationValue : 0,
+        anchorType: formAnchorType,
         priority: formPriority,
         resourceUrl: formResourceUrl || undefined,
         traineeIds: formSelectedTrainees,
@@ -334,7 +358,9 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     setFormPathId('');
     setFormModuleId('');
     setFormLessonId('');
-    setFormDueDate('');
+    setFormDurationValue(0);
+    setFormDurationUnit('days');
+    setFormAnchorType('ASSIGNMENT');
     setFormPriority('Medium');
     setFormDescription('');
     setFormResourceUrl('');
@@ -385,7 +411,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           </p>
         </div>
         {currentTab === 'assignments' && (
-          <button onClick={() => setShowNewModal(true)} className="btn-trainer-primary">
+          <button onClick={() => setShowNewModal(true)} className="fab-trainer-primary">
             + New Assignment
           </button>
         )}
@@ -436,8 +462,18 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {filteredAssignments.map((assign: any) => {
-                const statusKey = assign.status || 'Pending';
-                const sc = STATUS_COLORS[statusKey] || STATUS_COLORS.Pending;
+                const rawStatus = (assign.status || 'Pending').toLowerCase();
+                let displayStatus = 'Pending';
+                if (rawStatus === 'accepted' || rawStatus === 'approved') {
+                  displayStatus = 'Approved';
+                } else if (rawStatus === 'rejected') {
+                  displayStatus = 'Rejected';
+                }
+
+                // If it's pending, let's use the 'Submitted' yellow color as it means pending evaluation
+                const colorKey = displayStatus === 'Pending' ? 'Submitted' : displayStatus;
+                const sc = STATUS_COLORS[colorKey] || STATUS_COLORS.Pending;
+                
                 const pc = PRIORITY_COLORS[assign.priority || 'Medium'] || PRIORITY_COLORS.Medium;
                 let traineeName = 'Unassigned';
                 if (assign.trainee || assign.assignedTo) {
@@ -465,13 +501,13 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                           <span style={{ ...pc, padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, border: '1px solid' }}>{assign.priority || 'Medium'}</span>
                           <span style={{ ...sc, padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, border: '1px solid', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: sc.dot, display: 'inline-block' }} />
-                            {statusKey === 'Accepted' || statusKey === 'Approved' ? 'Approved' : statusKey}
+                            {displayStatus}
                           </span>
                         </div>
                         <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                           {assign.module?.title && <span>📦 {assign.module.title}</span>}
                           <span>👤 {traineeName}</span>
-                          {assign.dueDate && <span>📅 Due: {new Date(assign.dueDate).toLocaleDateString()}</span>}
+                          {(assign.durationDays > 0 || assign.durationHours > 0 || assign.durationMinutes > 0) && <span>⏱️ Duration: {formatDuration(assign.durationDays, assign.durationHours, assign.durationMinutes)}</span>}
                         </div>
                       </div>
 
@@ -503,10 +539,14 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
                           <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div>
-                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Assigned To</span>
+                            <div style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Task Path</span>
                               <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                {assign.assignedToTraineeIds?.length ? `${assign.assignedToTraineeIds.length} trainees` : 'Cohort (Path assigned)'}
+                                {[
+                                  assign.learningPath?.title || assign.module?.learningPath?.title || assign.lesson?.module?.learningPath?.title,
+                                  assign.module?.title || assign.lesson?.module?.title,
+                                  assign.lesson?.title,
+                                ].filter(Boolean).join(' ➔ ') || (assign.learningPath?.title || 'External Task')}
                               </span>
                             </div>
                             <div>
@@ -516,9 +556,9 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                               </span>
                             </div>
                             <div>
-                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Due Date</span>
+                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Duration</span>
                               <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                {assign.dueDate ? new Date(assign.dueDate).toLocaleDateString() : 'No deadline'}
+                                {formatDuration(assign.durationDays, assign.durationHours, assign.durationMinutes)} (Anchor: {assign.anchorType === 'LP_ASSIGNED' ? 'When LP is Assigned' : assign.anchorType === 'TASK_UNLOCKED' ? 'When Task is Unlocked' : assign.anchorType})
                               </span>
                             </div>
                             <div>
@@ -543,17 +583,6 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                                 </span>
                               </div>
                             )}
-                          </div>
-
-                          <div style={{ fontSize: '13px', color: '#334155', background: '#fff', padding: '10px 12px', borderRadius: '6px', display: 'flex', gap: '6px', alignItems: 'center', border: '1px solid #e2e8f0' }}>
-                            <strong>Task Path:</strong>
-                            <span style={{ color: '#475569' }}>
-                              {[
-                                assign.learningPath?.title || assign.module?.learningPath?.title || assign.lesson?.module?.learningPath?.title,
-                                assign.module?.title || assign.lesson?.module?.title,
-                                assign.lesson?.title,
-                              ].filter(Boolean).join(' ➔ ') || 'External Task'}
-                            </span>
                           </div>
 
                           {assign.instructions && (
@@ -743,8 +772,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
       {/* ═══ NEW ASSIGNMENT MODAL ═══ */}
       {showNewModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', width: '680px', maxHeight: '92vh', overflowY: 'auto', borderRadius: '20px', boxShadow: '0 25px 80px rgba(0,0,0,0.2)' }}>
+        <div className="modal-backdrop">
+          <div className="modal-container">
             <div style={{ padding: '24px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderRadius: '20px 20px 0 0' }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>New Assignment</h2>
@@ -753,7 +782,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
               <button onClick={() => { setShowNewModal(false); resetForm(); }} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', width: '32px', height: '32px', cursor: 'pointer', fontSize: '18px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
             </div>
 
-            <form onSubmit={handleCreateAssignment} style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <form onSubmit={handleCreateAssignment} className="modal-content-scroll" style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
 
               {/* Assignment Title */}
               <div>
@@ -761,7 +790,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 <input
                   required value={formTitle} onChange={e => setFormTitle(e.target.value)}
                   placeholder="e.g. Build a REST API with authentication"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s' }}
+                  className="touch-target focus-ring hover-effect"
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s', minHeight: '44px' }}
                 />
               </div>
 
@@ -771,7 +801,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 <select
                   value={formAssignmentType}
                   onChange={e => setFormAssignmentType(e.target.value as any)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', cursor: 'pointer', outline: 'none' }}
+                  className="touch-target focus-ring hover-effect"
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', cursor: 'pointer', outline: 'none', minHeight: '44px' }}
                 >
                   <option value="Subjective">📝 Subjective Questions</option>
                   <option value="MCQ">🔘 Multiple Choice Quiz (MCQ)</option>
@@ -797,19 +828,76 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
               {/* Due Date + Priority */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                 {formAssignmentType !== 'External' ? (
-                  <div>
-                    <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Due Date</label>
-                    <input
-                      type="date" value={formDueDate} onChange={e => setFormDueDate(e.target.value)}
-                      style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                    />
-                  </div>
-                ) : <div />}
+                  <>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Duration</label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="number" min={0} value={formDurationValue} onChange={e => setFormDurationValue(Number(e.target.value) || 0)}
+                          className="touch-target focus-ring hover-effect"
+                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none', minHeight: '44px' }}
+                        />
+                        <select
+                          value={formDurationUnit} onChange={e => setFormDurationUnit(e.target.value as any)}
+                          className="touch-target focus-ring hover-effect"
+                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none', minHeight: '44px' }}
+                        >
+                          <option value="minutes">Minutes</option>
+                          <option value="hours">Hours</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Anchor Type</label>
+                      <select
+                        value={formAnchorType} onChange={e => setFormAnchorType(e.target.value as any)}
+                        style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none' }}
+                      >
+                        <option value="ASSIGNMENT">When Assigned</option>
+                        <option value="TASK_START">When Trainee clicks Start</option>
+                      </select>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Duration</label>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <input
+                          type="number" min={0} value={formDurationValue} onChange={e => setFormDurationValue(Number(e.target.value) || 0)}
+                          className="touch-target focus-ring hover-effect"
+                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none', minHeight: '44px' }}
+                        />
+                        <select
+                          value={formDurationUnit} onChange={e => setFormDurationUnit(e.target.value as any)}
+                          className="touch-target focus-ring hover-effect"
+                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none', minHeight: '44px' }}
+                        >
+                          <option value="minutes">Minutes</option>
+                          <option value="hours">Hours</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Countdown Starts</label>
+                      <select
+                        value={formAnchorType} onChange={e => setFormAnchorType(e.target.value as any)}
+                        style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none' }}
+                      >
+                        <option value="ASSIGNMENT">On Assignment</option>
+                        <option value="TASK_START">On Trainee Start</option>
+                      </select>
+                    </div>
+                  </>
+                )}
                 <div>
                   <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Priority</label>
                   <select
                     value={formPriority} onChange={e => setFormPriority(e.target.value as any)}
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', cursor: 'pointer', outline: 'none' }}
+                    className="touch-target focus-ring hover-effect"
+                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', cursor: 'pointer', outline: 'none', minHeight: '44px' }}
                   >
                     <option>High</option><option>Medium</option><option>Low</option>
                   </select>
@@ -837,65 +925,67 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
               </div>
 
               {/* Questions builder */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {formAssignmentType === 'MCQ' ? 'MCQ Questions' : 'Subjective Questions'}
-                  </label>
-                  <button
-                    type="button" onClick={addQuestion}
-                    style={{ fontSize: '12px', fontWeight: 600, color: '#4f46e5', background: '#ede9fe', border: 'none', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}
-                  >
-                    + Add Question
-                  </button>
-                </div>
-                {formQuestions.map((q, qIdx) => (
-                  <div key={qIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', marginBottom: '10px' }}>
-                    <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
-                      <input
-                        value={q.questionText} onChange={e => updateQuestion(qIdx, 'questionText', e.target.value)}
-                        placeholder={`Q${qIdx + 1}: Enter question text`}
-                        style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                      />
-                      <input
-                        type="number" min={1} max={100} value={q.points}
-                        onChange={e => updateQuestion(qIdx, 'points', Number(e.target.value))}
-                        style={{ width: '70px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', textAlign: 'center', outline: 'none' }}
-                        placeholder="Pts"
-                      />
-                    </div>
-                    {formAssignmentType === 'MCQ' && (
-                      <div>
-                        {(q.options || ['', '', '', '']).map((opt, optIdx) => (
-                          <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                            <input
-                              type="radio" name={`correct_${qIdx}`}
-                              checked={q.correctIndex === optIdx}
-                              onChange={() => updateQuestion(qIdx, 'correctIndex', optIdx)}
-                              title="Mark as correct answer"
-                            />
-                            <input
-                              value={opt} onChange={e => updateOption(qIdx, optIdx, e.target.value)}
-                              placeholder={`Option ${optIdx + 1}`}
-                              style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none' }}
-                            />
-                          </div>
-                        ))}
-                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>🔘 Select radio button to mark correct answer</div>
-                      </div>
-                    )}
-                    {formQuestions.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== qIdx))}
-                        style={{ fontSize: '11px', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', marginTop: '4px', fontWeight: 600 }}
-                      >
-                        Remove Question
-                      </button>
-                    )}
+              {formAssignmentType !== 'External' && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {formAssignmentType === 'MCQ' ? 'MCQ Questions' : 'Subjective Questions'}
+                    </label>
+                    <button
+                      type="button" onClick={addQuestion}
+                      style={{ fontSize: '12px', fontWeight: 600, color: '#4f46e5', background: '#ede9fe', border: 'none', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}
+                    >
+                      + Add Question
+                    </button>
                   </div>
-                ))}
-              </div>
+                  {formQuestions.map((q, qIdx) => (
+                    <div key={qIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', marginBottom: '10px' }}>
+                      <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+                        <input
+                          value={q.questionText} onChange={e => updateQuestion(qIdx, 'questionText', e.target.value)}
+                          placeholder={`Q${qIdx + 1}: Enter question text`}
+                          style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
+                        />
+                        <input
+                          type="number" min={1} max={100} value={q.points}
+                          onChange={e => updateQuestion(qIdx, 'points', Number(e.target.value))}
+                          style={{ width: '70px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', textAlign: 'center', outline: 'none' }}
+                          placeholder="Pts"
+                        />
+                      </div>
+                      {formAssignmentType === 'MCQ' && (
+                        <div>
+                          {(q.options || ['', '', '', '']).map((opt, optIdx) => (
+                            <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                              <input
+                                type="radio" name={`correct_${qIdx}`}
+                                checked={q.correctIndex === optIdx}
+                                onChange={() => updateQuestion(qIdx, 'correctIndex', optIdx)}
+                                title="Mark as correct answer"
+                              />
+                              <input
+                                value={opt} onChange={e => updateOption(qIdx, optIdx, e.target.value)}
+                                placeholder={`Option ${optIdx + 1}`}
+                                style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none' }}
+                              />
+                            </div>
+                          ))}
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>🔘 Select radio button to mark correct answer</div>
+                        </div>
+                      )}
+                      {formQuestions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== qIdx))}
+                          style={{ fontSize: '11px', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', marginTop: '4px', fontWeight: 600 }}
+                        >
+                          Remove Question
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Trainee Assignment Checklist */}
               <div>
@@ -946,6 +1036,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 </button>
                 <button
                   type="submit" disabled={isCreating}
+                  className="hover-effect active-effect touch-target focus-ring"
                   style={{ padding: '10px 22px', background: isCreating ? '#a5b4fc' : 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', border: 'none', borderRadius: '10px', cursor: isCreating ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: '13px', boxShadow: '0 2px 8px rgba(99,102,241,0.35)' }}
                 >
                   {isCreating ? 'Creating...' : 'Create Assignment'}

@@ -54,6 +54,7 @@ export function CurriculumManager({
   const [formExternalUrl, setFormExternalUrl] = useState('');
   const [formAssignedTraineeId, setFormAssignedTraineeId] = useState<string>('');
   const [formTaskDurationDays, setFormTaskDurationDays] = useState<number>(0);
+  const [formTaskAnchorType, setFormTaskAnchorType] = useState<string>('LP_ASSIGNED');
   const [formTaskDurationHours, setFormTaskDurationHours] = useState<number>(0);
   const [formTaskDurationMinutes, setFormTaskDurationMinutes] = useState<number>(0);
 
@@ -124,6 +125,7 @@ export function CurriculumManager({
     setFormExternalUrl('');
     setFormAssignedTraineeId('');
     setFormTaskDurationDays(0);
+    setFormTaskAnchorType('LP_ASSIGNED');
     setFormTaskDurationHours(0);
     setFormTaskDurationMinutes(0);
     setSubjectiveQuestions([{ id: 'sub-1', questionText: '', maxPoints: 10 }]);
@@ -179,6 +181,11 @@ export function CurriculumManager({
     setFormExternalUrl(task.externalUrl || '');
     setFormAssignedTraineeId(task.assignedToId || task.traineeId || '');
     setFormTaskDurationDays(task.durationDays || 0);
+    const anchor = task.anchorType || 'LP_ASSIGNED';
+    const mappedAnchor = ['MODULE_UNLOCK', 'PREVIOUS_TASK_SUBMIT', 'TASK_START', 'ASSIGNMENT'].includes(anchor) 
+      ? 'TASK_UNLOCKED' 
+      : anchor;
+    setFormTaskAnchorType(mappedAnchor);
     setFormTaskDurationHours(task.durationHours || 0);
     setFormTaskDurationMinutes(task.durationMinutes || 0);
     
@@ -332,6 +339,8 @@ export function CurriculumManager({
           durationDays: formTaskDurationDays,
           durationHours: formTaskDurationHours,
           durationMinutes: formTaskDurationMinutes,
+          anchorType: formTaskAnchorType,
+          sequenceIndex: null, // sequenceIndex logic handled via drag/drop or backend
           traineeIds: formAssignedTraineeId ? [formAssignedTraineeId] : [],
           mcqConfig: isExternal
             ? undefined
@@ -813,6 +822,14 @@ export function CurriculumManager({
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Days)</label>
                       <input type="number" min={0} value={formTaskDurationDays} onChange={(e) => setFormTaskDurationDays(Number(e.target.value) || 0)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                    </div>
+                    
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#475569' }}>Anchor Type (When does the timer start?)</label>
+                      <select value={formTaskAnchorType} onChange={(e) => setFormTaskAnchorType(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
+                        <option value="ASSIGNMENT">When LP is Assigned</option>
+                        <option value="TASK_UNLOCKED">When Task is Unlocked</option>
+                      </select>
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Hours)</label>
