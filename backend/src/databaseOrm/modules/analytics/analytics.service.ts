@@ -11,9 +11,14 @@ import { EvaluationEntity } from '../../entities/evaluation.entity';
 import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
 import { UserResourceVisitEntity } from '../../entities/userResourceVisit.entity';
 
+import { ProgressEntityService } from '../progress/progress.service';
+
 @Injectable()
 export class AnalyticsEntityService {
-  constructor(private readonly datasource: DataSource) {}
+  constructor(
+    private readonly datasource: DataSource,
+    private readonly progressService: ProgressEntityService,
+  ) {}
 
   async getDashboardStats(currentUser?: any, requestedRole?: string, traineeId?: string, trainerId?: string) {
     const userRepo = this.datasource.getRepository(UserEntity);
@@ -991,55 +996,41 @@ export class AnalyticsEntityService {
         );
 
         let lpEarned = 0;
-        let lpMax = 0;
         let recentEarned = 0;
-        let recentMax = 0;
         let oldEarned = 0;
-        let oldMax = 0;
+        let totalLpMax = 0;
         let gradedCount = 0;
 
         lpAssignments.forEach(task => {
+          const sMax = Number(task.maxScore || 100);
+          totalLpMax += sMax;
+
           const subsForTask = traineeEvaluatedSubs.filter(s => s.assignment?.id === task.id);
           if (subsForTask.length > 0) {
             const bestSub = subsForTask.reduce((best, current) => Number(current.score || 0) > Number(best.score || 0) ? current : best);
             const subTime = new Date(bestSub.submittedAt || bestSub.createdAt).getTime();
             const sScore = Number(bestSub.score || 0);
-            const sMax = Number(task.maxScore || 100);
 
             lpEarned += sScore;
-            lpMax += sMax;
             gradedCount++;
 
             if (subTime >= thirtyDaysAgo) {
               recentEarned += sScore;
-              recentMax += sMax;
             } else {
               oldEarned += sScore;
-              oldMax += sMax;
             }
           }
         });
 
-        // Per-LP score = avg(earned/max × 100) across graded items
-        const lpPercent = lpMax > 0 ? Math.round((lpEarned / lpMax) * 100 * 100) / 100 : 0;
+        // Per-LP score = (earned / total possible in LP) × 100
+        const lpPercent = totalLpMax > 0 ? Math.round((lpEarned / totalLpMax) * 100 * 100) / 100 : 0;
         skillDistribution.push({ name: lp.title || 'Unknown Path', count: gradedCount, percent: lpPercent });
 
-        // Growth calculation for this LP
-        if (oldMax > 0 || recentMax > 0) {
-          const oldScore = oldMax > 0 ? (oldEarned / oldMax) * 100 : 0;
-          const recentScore = recentMax > 0 ? (recentEarned / recentMax) * 100 : 0;
-
-          if (oldMax > 0 && oldScore > 0) {
-            const growth = ((recentScore - oldScore) / oldScore) * 100;
-            if (Number.isFinite(growth)) {
-              sumGrowth += growth;
-              pathsWithGrowth++;
-            }
-          } else if (recentMax > 0) {
-            // All graded data is recent — treat recentScore as absolute gain
-            sumGrowth += recentScore;
-            pathsWithGrowth++;
-          }
+        // Growth calculation for this LP (absolute gain in percentage points over last 30 days)
+        if (totalLpMax > 0 && recentEarned > 0) {
+          const gainPct = (recentEarned / totalLpMax) * 100;
+          sumGrowth += gainPct;
+          pathsWithGrowth++;
         }
       });
 
@@ -1403,7 +1394,9 @@ export class AnalyticsEntityService {
     type: 'progress' | 'score',
     filter?: string,
     customStartDate?: string,
-    customEndDate?: string
+    customEndDate?: string,
+    traineeId?: string,
+    trainerId?: string
   ) {
     const submissionRepo = this.datasource.getRepository(
       AssignmentSubmissionEntity,
@@ -1418,8 +1411,11 @@ export class AnalyticsEntityService {
     let submissionWhereQuery: any = {};
     const trainerTraineeIds = new Set<string>();
 
-    if (role.toLowerCase() === 'trainee' && userId) {
-      submissionWhereQuery = { trainee: { id: userId } };
+    const effectiveUserId = traineeId || userId;
+    const isTrainerScopedTraineeView = !!(traineeId && trainerId);
+
+    if (role.toLowerCase() === 'trainee' && effectiveUserId) {
+      submissionWhereQuery = { trainee: { id: effectiveUserId } };
     } else if (isTrainerScope) {
       const myPaths = await pathRepo.find({
         where: { createdBy: { id: userId } },
@@ -1514,15 +1510,15 @@ export class AnalyticsEntityService {
 
     let progressRows: any[] = [];
     let visitRows: any[] = [];
-    if (role.toLowerCase() === 'trainee' && userId && type === 'score') {
+    if (role.toLowerCase() === 'trainee' && effectiveUserId && type === 'score') {
       const progressRepo = this.datasource.getRepository(UserLessonProgressEntity);
       const visitsRepo = this.datasource.getRepository(UserResourceVisitEntity);
       progressRows = await progressRepo.find({
-        where: { user: { id: userId }, updatedAt: MoreThan(startDate) as any },
+        where: { user: { id: effectiveUserId }, updatedAt: MoreThan(startDate) as any },
         relations: ['lesson']
       });
       visitRows = await visitsRepo.find({
-        where: { user: { id: userId }, visitedAt: MoreThan(startDate) as any },
+        where: { user: { id: effectiveUserId }, visitedAt: MoreThan(startDate) as any },
         relations: ['resource']
       });
 
@@ -1626,7 +1622,7 @@ export class AnalyticsEntityService {
       range,
       scope:
         role.toLowerCase() === 'trainee'
-          ? `trainee:${userId}`
+          ? `trainee:${effectiveUserId}`
           : isTrainerScope
             ? `trainer:${userId}`
             : 'admin:all',
@@ -2090,7 +2086,15 @@ export class AnalyticsEntityService {
 
         const hasEvaluations = tMaxScore > 0;
         const tAvgScore = hasEvaluations ? (tEarnedScore / tMaxScore) * 100 : 0;
-        const isAtRisk = tCompletionRate < 30 || tAvgScore < 50;
+        
+        let status = 'On Track';
+        if (totalCompleted === 0) {
+           status = 'Not Started';
+        } else if (Math.round(tCompletionRate) === 100) {
+           status = 'Completed';
+        } else if (tCompletionRate < 30 || (hasEvaluations && tAvgScore < 40)) {
+           status = 'At Risk';
+        }
 
         // On Time Submission Rate
         let onTimeCount = 0;
@@ -2118,7 +2122,7 @@ export class AnalyticsEntityService {
         assignedTraineesProgress.push({
           traineeId: tId,
           traineeName: tName,
-          status: isAtRisk ? 'At Risk' : 'On Track',
+          status: status,
           progressPercent: Math.round(tCompletionRate),
           avgScore: Math.round(tAvgScore),
           // Extra props for ui
@@ -2175,10 +2179,253 @@ export class AnalyticsEntityService {
         weeklyScores,
         skillDistribution,
         moduleCompletion,
-        pathPerformance,
+pathPerformance,
         pathProgression
       }
     };
   }
+  async getTraineeSummaryForTrainer(trainerId: string, traineeId: string) {
+    const userRepo = this.datasource.getRepository(UserEntity);
+    const pathRepo = this.datasource.getRepository(LearningPathEntity);
+    const moduleRepo = this.datasource.getRepository(ModuleEntity);
+    const lessonRepo = this.datasource.getRepository(LessonEntity);
+    const assignmentRepo = this.datasource.getRepository(AssignmentEntity);
+    const submissionRepo = this.datasource.getRepository(AssignmentSubmissionEntity);
+    const progressRepo = this.datasource.getRepository(UserLessonProgressEntity);
 
+    const trainee = await userRepo.findOne({ where: { id: traineeId } });
+    if (!trainee) throw new Error('Trainee not found');
+
+    const allPaths = await pathRepo.find({
+      where: { createdBy: { id: trainerId } },
+    });
+    const paths = allPaths.filter(p => p.assignedToTraineeIds?.includes(traineeId));
+    const pathIds = paths.map(p => p.id);
+
+    let modules: any[] = [];
+    if (pathIds.length > 0) {
+      modules = await moduleRepo.find({
+        where: { learningPath: { id: In(pathIds) } },
+        relations: ['lessons', 'learningPath'],
+      });
+    }
+
+    let allLessons: any[] = [];
+    for (const m of modules) {
+      if (m.lessons) {
+        allLessons = allLessons.concat(m.lessons);
+      }
+    }
+    const lessonIds = allLessons.map(l => l.id);
+
+    // Fetch assignments created by trainer
+    const allAssignments = await assignmentRepo.find({
+      where: { createdBy: { id: trainerId } },
+      relations: ['learningPath', 'module', 'lesson'],
+    });
+
+    const scopedAssignments = allAssignments.filter(a => {
+      // It's assigned to trainee if it's explicitly assigned
+      if (a.assignedToTraineeIds?.includes(traineeId)) return true;
+      // Or if it belongs to a path/module/lesson the trainee has
+      if (a.learningPath?.id && pathIds.includes(a.learningPath.id)) return true;
+      const modId = a.module?.id;
+      if (modId && modules.some(m => m.id === modId)) return true;
+      const lesId = a.lesson?.id;
+      if (lesId && lessonIds.includes(lesId)) return true;
+      return false;
+    });
+    const assignmentIds = scopedAssignments.map(a => a.id);
+
+    let progressRows: any[] = [];
+    if (lessonIds.length > 0) {
+      progressRows = await progressRepo.find({
+        where: { user: { id: traineeId }, lesson: { id: In(lessonIds) } },
+        relations: ['lesson'],
+      });
+    }
+
+    let submissions: any[] = [];
+    if (assignmentIds.length > 0) {
+      submissions = await submissionRepo.find({
+        where: { trainee: { id: traineeId }, assignment: { id: In(assignmentIds) } },
+        relations: ['assignment'],
+      });
+    }
+
+    // Calculations
+    const lessonsCompleted = progressRows.filter(p => p.isCompleted).length;
+    const lessonsTotal = lessonIds.length;
+
+    let overallLPProgress = 0;
+    const learningPaths = [];
+
+    let totalLpProgress = 0;
+    let pathsWithProgress = 0;
+
+    for (const p of paths) {
+      const pMods = modules.filter(m => m.learningPath?.id === p.id);
+      let pTotalMods = pMods.length;
+      let pCompletedMods = 0;
+
+      for (const m of pMods) {
+        const mLessons = m.lessons || [];
+        if (mLessons.length === 0) {
+           pCompletedMods++;
+        } else {
+           const mLessonIds = mLessons.map((l: any) => l.id);
+           const mCompletedCount = progressRows.filter(pr => mLessonIds.includes(pr.lesson?.id) && pr.isCompleted).length;
+           if (mCompletedCount === mLessons.length) pCompletedMods++;
+        }
+      }
+
+      const pProgress = pTotalMods > 0 ? Math.round((pCompletedMods / pTotalMods) * 100) : 0;
+      learningPaths.push({
+        lpId: p.id,
+        lpName: p.title,
+        progressPercent: pProgress
+      });
+      totalLpProgress += pProgress;
+      pathsWithProgress++;
+    }
+
+    if (pathsWithProgress > 0) {
+      overallLPProgress = Math.round(totalLpProgress / pathsWithProgress);
+    }
+
+    // Avg Score Calculation
+    let earned = 0;
+    let max = 0;
+    const bestScores = new Map<string, { score: number }>();
+    
+    // Total max is the sum of maxScore of all assigned tasks
+    for (const a of scopedAssignments) {
+      max += Number(a.maxScore || 100);
+    }
+
+    for (const sub of submissions) {
+      if (['evaluated', 'approved', 'accepted'].includes(String(sub.status).toLowerCase())) {
+        const aId = sub.assignment?.id;
+        if (aId) {
+          const currentBest = bestScores.get(aId)?.score || -1;
+          const sScore = Number(sub.score || 0);
+          if (sScore > currentBest) {
+            bestScores.set(aId, { score: sScore });
+          }
+        }
+      }
+    }
+    const gradedItems = Array.from(bestScores.values());
+    for (const item of gradedItems) {
+      earned += item.score;
+    }
+    const avgScore = max > 0 ? Math.round((earned / max) * 100) : null;
+
+    // Assignments Summary
+    const assignmentsSummary = {
+      pending: 0,
+      submitted: 0,
+      needsImprovement: 0,
+      approved: 0
+    };
+
+    const latestStatusByAssignment = new Map<string, string>();
+    for (const sub of submissions) {
+      const aId = sub.assignment?.id;
+      if (aId) {
+        latestStatusByAssignment.set(aId, String(sub.status).toLowerCase());
+      }
+    }
+    for (const [_, st] of latestStatusByAssignment) {
+      if (st === 'pending' || st === 'not started') assignmentsSummary.pending++;
+      else if (st === 'submitted' || st === 'under review') assignmentsSummary.submitted++;
+      else if (st === 'needs improvement' || st === 'rejected') assignmentsSummary.needsImprovement++;
+      else if (st === 'approved' || st === 'evaluated' || st === 'accepted') assignmentsSummary.approved++;
+    }
+
+    const completionRate = overallLPProgress;
+    let healthStatus = 'Not Started';
+    if (completionRate === 100) healthStatus = 'Completed';
+    else if (completionRate > 0) {
+      const avg = avgScore ?? 0;
+      const combined = (completionRate * 0.5) + (avg * 0.5);
+      if (combined < 40) healthStatus = 'At Risk';
+      else healthStatus = 'On Track';
+    }
+
+    return {
+      traineeId: trainee.id,
+      traineeName: `${trainee.firstName || ''} ${trainee.lastName || ''}`.trim() || trainee.email,
+      avgScore,
+      lessonsCompleted,
+      lessonsTotal,
+      overallLPProgress,
+      learningPaths,
+      assignmentsSummary,
+      status: healthStatus
+    };
+  }
+  async getLearningPathTraineesProgress(trainerId: string, lpId: string) {
+    const pathRepo = this.datasource.getRepository(LearningPathEntity);
+    const userRepo = this.datasource.getRepository(UserEntity);
+    
+    const path = await pathRepo.findOne({
+      where: { id: lpId }
+    });
+    
+    if (!path) {
+      throw new Error('Learning Path not found');
+    }
+    
+    const assignedIds = path.assignedToTraineeIds || [];
+    
+    const trainees = [];
+    let completed = 0;
+    let inProgress = 0;
+    let notStarted = 0;
+
+    if (assignedIds.length > 0) {
+      const dbTrainees = await userRepo.find({
+        where: { id: In(assignedIds) }
+      });
+      
+      for (const t of dbTrainees) {
+        // Compute full stats using the updated item-aggregate logic in statsForUser
+        const stats = await this.progressService.statsForUser(t.id, lpId);
+        
+        trainees.push({
+          traineeId: t.id,
+          traineeName: `${t.firstName} ${t.lastName}`.trim(),
+          email: t.email,
+          lessonsCompleted: stats.completedLessons,
+          lessonsTotal: stats.totalLessons,
+          tasksApproved: stats.tasksAccepted,
+          tasksTotal: stats.totalAssignments,
+          resourcesVisited: stats.visitedResources,
+          resourcesTotal: stats.totalResources,
+          avgScorePercent: stats.averageScore,
+          pathProgressPercent: stats.completionPercent
+        });
+        
+        if (stats.completionPercent === 100) {
+          completed++;
+        } else if (stats.completionPercent > 0) {
+          inProgress++;
+        } else {
+          notStarted++;
+        }
+      }
+    }
+    
+    return {
+      lpId: path.id,
+      lpName: path.title,
+      cohort: {
+        completed,
+        inProgress,
+        notStarted
+      },
+      trainees
+    };
+  }
 }

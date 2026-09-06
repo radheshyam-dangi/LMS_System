@@ -103,8 +103,9 @@ export function LearningPathsSection({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedPathForTrainees, setSelectedPathForTrainees] = useState<string | null>(null);
+  const [lpTraineesProgress, setLpTraineesProgress] = useState<any>(null);
+  const [isLoadingLpProgress, setIsLoadingLpProgress] = useState(false);
   const [expandedTraineeId, setExpandedTraineeId] = useState<string | null>(null);
-  const [expandedTraineeStats, setExpandedTraineeStats] = useState<any>(null);
   const [editingPathId, setEditingPathId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -166,24 +167,29 @@ export function LearningPathsSection({
     }
   };
 
-  const handleTraineeRowClick = async (traineeId: string, pathId: string) => {
+  const handleTraineeRowClick = (traineeId: string) => {
     if (expandedTraineeId === traineeId) {
       setExpandedTraineeId(null);
-      setExpandedTraineeStats(null);
-      return;
-    }
-    setExpandedTraineeId(traineeId);
-    setExpandedTraineeStats(null); // Set to loading state
-    try {
-      const response = await fetch(`http://localhost:3000/v1/progress/user/${traineeId}?learningPathId=${pathId}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const data = await response.json();
-      setExpandedTraineeStats(data);
-    } catch (err) {
-      console.error("Failed to fetch trainee stats", err);
+    } else {
+      setExpandedTraineeId(traineeId);
     }
   };
+
+  useEffect(() => {
+    if (selectedPathForTrainees) {
+      setIsLoadingLpProgress(true);
+      fetch(`http://localhost:3000/v1/trainer/learning-paths/${selectedPathForTrainees}/trainees-progress`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      })
+      .then(res => res.json())
+      .then(data => setLpTraineesProgress(data))
+      .catch(err => console.error("Failed to fetch LP progress", err))
+      .finally(() => setIsLoadingLpProgress(false));
+    } else {
+      setLpTraineesProgress(null);
+      setExpandedTraineeId(null);
+    }
+  }, [selectedPathForTrainees, accessToken]);
 
   useEffect(() => {
     loadDatabasePaths();
@@ -1311,37 +1317,62 @@ export function LearningPathsSection({
       )}
       {selectedPathForTrainees && (() => {
         const path = paths.find(p => p.id === selectedPathForTrainees);
-        const summary = progressSummary[selectedPathForTrainees] as any;
-        const assignedIds = path?.assignedToTraineeIds || [];
-        const trainees = allTrainees.filter(t => assignedIds.includes(t.id));
+        
+        if (isLoadingLpProgress || !lpTraineesProgress) {
+          return (
+            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', color: '#64748b', fontWeight: 600 }}>Loading cohort data...</div>
+            </div>
+          );
+        }
 
-        // Prepare chart data
-        let completed = 0, inProgress = 0, notStarted = 0;
-        trainees.forEach(t => {
-          const p = summary?.traineeProgressMap?.[t.id] || 0;
-          if (p === 100) completed++;
-          else if (p > 0) inProgress++;
-          else notStarted++;
-        });
+        const { cohort, trainees } = lpTraineesProgress;
+        
         const chartData = [
-          { name: 'Completed', value: completed, color: '#10b981' },
-          { name: 'In Progress', value: inProgress, color: '#4f46e5' },
-          { name: 'Not Started', value: notStarted, color: '#94a3b8' }
+          { name: 'Completed', value: cohort.completed, color: '#10b981' },
+          { name: 'In Progress', value: cohort.inProgress, color: '#4f46e5' },
+          { name: 'Not Started', value: cohort.notStarted, color: '#94a3b8' }
         ].filter(d => d.value > 0);
 
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <style>{`
+              .trainee-table-row { display: table-row; }
+              .trainee-table-cell { display: table-cell; }
+              .trainee-table-head { display: table-header-group; }
+              .cohort-overview-flex { flex-direction: row; }
+              @media (max-width: 650px) {
+                .trainee-table-head { display: none; }
+                .trainee-table-row { display: flex; flex-direction: column; padding: 12px; border-bottom: 1px solid #e2e8f0; position: relative; }
+                .trainee-table-cell { display: flex; padding: 6px 0 !important; align-items: center; }
+                .trainee-table-cell[data-label]::before { content: attr(data-label); font-weight: 600; width: 120px; color: #475569; font-size: 12px; text-transform: uppercase; }
+                .cohort-overview-flex { flex-direction: column !important; }
+              }
+              
+              .expandable-row-content {
+                display: grid;
+                grid-template-rows: 0fr;
+                transition: grid-template-rows 0.3s ease-out;
+              }
+              .expandable-row-content.open {
+                grid-template-rows: 1fr;
+              }
+              .expandable-row-inner {
+                overflow: hidden;
+              }
+            `}</style>
+            
             <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '850px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
               <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>Trainees Progress: {path?.title}</h2>
-                <button onClick={() => setSelectedPathForTrainees(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
+                <button onClick={() => setSelectedPathForTrainees(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
               </div>
               <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
                 
                 {/* Graphical Progress Summary */}
                 {trainees.length > 0 && chartData.length > 0 && (
-                  <div style={{ display: 'flex', gap: '20px', alignItems: 'center', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ width: '200px', height: '200px' }}>
+                  <div className="cohort-overview-flex" style={{ display: 'flex', gap: '20px', alignItems: 'center', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ width: '200px', height: '200px', margin: '0 auto' }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
@@ -1371,82 +1402,91 @@ export function LearningPathsSection({
                 )}
 
                 {/* Trainee Table */}
-                <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Trainee Name</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Email</th>
-                        <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Path Progress</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {trainees.map(t => {
-                        const progress = summary?.traineeProgressMap?.[t.id] || 0;
-                        const isExpanded = expandedTraineeId === t.id;
-                        return (
-                          <React.Fragment key={t.id}>
-                            <tr 
-                              style={{ 
-                                borderBottom: isExpanded ? 'none' : '1px solid #e2e8f0', 
-                                cursor: 'pointer',
-                                background: isExpanded ? '#f0f9ff' : 'transparent',
-                                transition: 'background 0.2s'
-                              }}
-                              onClick={() => handleTraineeRowClick(t.id, selectedPathForTrainees)}
-                              onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = '#f8fafc'; }}
-                              onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}
-                            >
-                              <td style={{ padding: '12px 16px', fontWeight: 500, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '16px', color: '#94a3b8', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>▶</span>
-                                {t.firstName} {t.lastName}
-                              </td>
-                              <td style={{ padding: '12px 16px', color: '#64748b' }}>{t.email}</td>
-                              <td style={{ padding: '12px 16px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  <div style={{ flex: 1, height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', background: progress === 100 ? '#10b981' : '#4f46e5', width: `${progress}%`, transition: 'width 0.5s' }} />
-                                  </div>
-                                  <span style={{ fontSize: '12px', fontWeight: 600, color: '#475569', width: '35px' }}>{progress}%</span>
-                                </div>
-                              </td>
-                            </tr>
-                            {isExpanded && (
-                              <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                                <td colSpan={3} style={{ padding: '16px 24px' }}>
-                                  {!expandedTraineeStats ? (
-                                    <div style={{ fontSize: '13px', color: '#64748b' }}>Loading detailed progress...</div>
-                                  ) : (
-                                    <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                                      <div style={{ flex: '1 1 200px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Lessons Completed</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.completedLessons} / {expandedTraineeStats.totalLessons}</div>
-                                      </div>
-                                      <div style={{ flex: '1 1 200px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Tasks Approved</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.tasksAccepted} / {expandedTraineeStats.totalAssignments}</div>
-                                      </div>
-                                      <div style={{ flex: '1 1 200px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Average Score</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.averageScore}%</div>
-                                      </div>
-                                      <div style={{ flex: '1 1 200px' }}>
-                                        <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '4px' }}>Resources Visited</div>
-                                        <div style={{ fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>{expandedTraineeStats.visitedResources} / {expandedTraineeStats.totalResources}</div>
-                                      </div>
+                <div style={{ borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff' }}>
+                  {trainees.length === 0 ? (
+                    <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748b' }}>
+                      <div style={{ fontSize: '32px', marginBottom: '12px' }}>📭</div>
+                      <div style={{ fontWeight: 600, color: '#334155', marginBottom: '4px' }}>No trainees assigned</div>
+                      <div style={{ fontSize: '13px' }}>Assign trainees to this path to track their progress.</div>
+                    </div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', display: 'table' }}>
+                      <thead className="trainee-table-head">
+                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                          <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Trainee Name</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Email</th>
+                          <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Path Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody style={{ display: 'table-row-group' }}>
+                        {trainees.map((t: any) => {
+                          const progress = t.pathProgressPercent;
+                          const isExpanded = expandedTraineeId === t.traineeId;
+                          let barColor = '#4f46e5';
+                          if (progress === 100) barColor = '#10b981';
+                          if (progress === 0) barColor = '#94a3b8';
+
+                          return (
+                            <React.Fragment key={t.traineeId}>
+                              <tr 
+                                className="trainee-table-row"
+                                style={{ 
+                                  cursor: 'pointer',
+                                  background: isExpanded ? '#f0f9ff' : 'transparent',
+                                  transition: 'background 0.2s',
+                                  borderBottom: '1px solid #e2e8f0'
+                                }}
+                                onClick={() => handleTraineeRowClick(t.traineeId)}
+                                onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = '#f8fafc'; }}
+                                onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}
+                              >
+                                <td className="trainee-table-cell" data-label="Trainee Name" style={{ padding: '16px', fontWeight: 600, color: '#0f172a', gap: '8px' }}>
+                                  <span style={{ fontSize: '12px', color: '#64748b', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.3s ease', display: 'inline-block', width: '16px' }}>▶</span>
+                                  {t.traineeName}
+                                </td>
+                                <td className="trainee-table-cell" data-label="Email" style={{ padding: '16px', color: '#64748b' }}>{t.email}</td>
+                                <td className="trainee-table-cell" data-label="Path Progress" style={{ padding: '16px', width: '100%', maxWidth: '300px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
+                                    <div style={{ flex: 1, height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                                      <div style={{ height: '100%', background: barColor, width: `${progress}%`, transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)' }} />
                                     </div>
-                                  )}
+                                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', minWidth: '40px', textAlign: 'right' }}>{progress}%</span>
+                                  </div>
                                 </td>
                               </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                      {trainees.length === 0 && (
-                        <tr><td colSpan={3} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>No trainees assigned to this path.</td></tr>
-                      )}
-                    </tbody>
-                  </table>
+                              
+                              <tr style={{ display: 'table-row' }}>
+                                <td colSpan={3} style={{ padding: 0, border: 'none' }}>
+                                  <div className={`expandable-row-content ${isExpanded ? 'open' : ''}`}>
+                                    <div className="expandable-row-inner" style={{ background: '#f8fafc', borderBottom: isExpanded ? '1px solid #e2e8f0' : 'none' }}>
+                                      <div style={{ padding: '20px 24px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Lessons Completed</div>
+                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.lessonsCompleted} <span style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 500 }}>/ {t.lessonsTotal}</span></div>
+                                        </div>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Tasks Approved</div>
+                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.tasksApproved} <span style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 500 }}>/ {t.tasksTotal}</span></div>
+                                        </div>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Average Score</div>
+                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.avgScorePercent !== null ? `${t.avgScorePercent}%` : '—'}</div>
+                                        </div>
+                                        <div style={{ flex: '1 1 180px' }}>
+                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Resources Visited</div>
+                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.resourcesVisited} <span style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 500 }}>/ {t.resourcesTotal}</span></div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               </div>
             </div>

@@ -20,9 +20,11 @@ type DashboardChartsProps = {
   role: string;
   type: 'progress' | 'score';
   accessToken: string;
+  targetTraineeId?: string;
+  scopedToTrainerId?: string;
 };
 
-export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitle, role, type, accessToken }) => {
+export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitle, role, type, accessToken, targetTraineeId, scopedToTrainerId }) => {
   const [filter, setFilter] = useState<'today'|'week'|'month'|'year'|'custom'>('month');
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
@@ -50,6 +52,8 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
     if (filter === 'custom' && customStart && customEnd) {
       url += `&startDate=${customStart}&endDate=${customEnd}`;
     }
+    if (targetTraineeId) url += `&traineeId=${targetTraineeId}`;
+    if (scopedToTrainerId) url += `&trainerId=${scopedToTrainerId}`;
     
     axios.get(url, {
       headers: {
@@ -72,7 +76,7 @@ export const DashboardCharts: React.FC<DashboardChartsProps> = ({ title, subtitl
       });
       
     return () => { cancelled = true; };
-  }, [filter, customStart, customEnd, role, type, accessToken]);
+  }, [filter, customStart, customEnd, role, type, accessToken, targetTraineeId, scopedToTrainerId]);
 
   const isEmpty = data.length === 0 || data.every(d => 
     (type === 'progress' ? (d.submissions === 0 && d.completions === 0) : d.score === 0)

@@ -290,6 +290,8 @@ export class ProgressEntityService {
     let maxScoreSum = 0;
 
     for (const a of scopedAssignments) {
+      maxScoreSum += Number(a.maxScore || 100);
+      
       const sub = subByAssign.get(a.id);
       if (!sub) continue;
       if (
@@ -297,12 +299,11 @@ export class ProgressEntityService {
       ) {
         tasksSubmitted++;
       }
-      if (sub.status === 'APPROVED' || sub.status === 'EVALUATED')
+      if (sub.status === 'APPROVED' || sub.status === 'EVALUATED' || sub.status === 'ACCEPTED')
         tasksAccepted++;
       if (sub.status === 'REJECTED') tasksRejected++;
-      if (typeof sub.score === 'number') {
+      if (typeof sub.score === 'number' && sub.score >= 0) {
         scoreSum += sub.score;
-        maxScoreSum += Number(a.maxScore || 100);
         scoreCount++;
       }
     }
@@ -323,16 +324,7 @@ export class ProgressEntityService {
     const totalItems = totalLessons + totalResources + scopedAssignments.length;
     const completedItems = completedLessons + visitedResources + tasksAccepted;
     
-    let completionPercent = 0;
-    if (learningPathId) {
-      completionPercent = await this.getLPProgress(userId, learningPathId);
-    } else if (enrolledPathIds.size > 0) {
-      let sum = 0;
-      for (const pid of enrolledPathIds) {
-        sum += await this.getLPProgress(userId, pid);
-      }
-      completionPercent = Math.round(sum / enrolledPathIds.size);
-    }
+    let completionPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
     const completedLessonIds = completedRows
       .map((r) => r.lesson?.id)
       .filter(Boolean);
@@ -430,32 +422,8 @@ export class ProgressEntityService {
   async getLPProgress(userId: string, learningPathId: string): Promise<number> {
     if (!userId || !learningPathId) return 0;
 
-    const path = await this.pathRepository.findOne({
-      where: { id: learningPathId },
-      relations: ['modules'],
-    });
-
-    if (!path || !path.modules || path.modules.length === 0) {
-      return 0; // Empty LP -> 0%
-    }
-
-    // Exclude draft/archived/deleted modules
-    const activeModules = path.modules.filter((m) => {
-      const s = String(m.status || '').toLowerCase();
-      return !['draft', 'archived', 'deleted', 'upcoming'].includes(s);
-    });
-
-    if (activeModules.length === 0) {
-      return 0;
-    }
-
-    let totalCompletion = 0;
-    for (const module of activeModules) {
-      const modProg = await this.getModuleProgress(userId, module.id);
-      totalCompletion += modProg.completionPercent;
-    }
-
-    return Math.round(totalCompletion / activeModules.length);
+    const stats = await this.statsForUser(userId, learningPathId);
+    return stats.completionPercent;
   }
 
   /**

@@ -305,7 +305,8 @@ export function ModulesManagementSection({
 
     const completedLessons = lessons.filter((l: any) => completedLessonIds.has(String(l.id))).length;
     const visitedResourceIds = new Set<string>((progressStats?.visitedResourceIds || []).map(String));
-    const tasksSubmitted = tasks.filter((t: any) => subByAssignment.has(t.id)).length;
+    const isTaskSubmitted = (sub: any) => sub && sub.status !== 'AVAILABLE' && sub.status !== 'LOCKED';
+    const tasksSubmitted = tasks.filter((t: any) => isTaskSubmitted(subByAssignment.get(t.id))).length;
     const tasksScored = tasks.filter((t: any) => {
       const s = subByAssignment.get(t.id);
       return s && typeof s.score === 'number';

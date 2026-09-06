@@ -488,9 +488,12 @@ export function DashboardPage({
 
   const [completionGrowth, setCompletionGrowth] = useState(0);
 
-  const isAdmin = useMemo(() => activeRole.toLowerCase() === 'admin', [activeRole]);
-  const isTrainer = useMemo(() => activeRole.toLowerCase() === 'trainer', [activeRole]);
-  const isTrainee = useMemo(() => activeRole.toLowerCase() === 'trainee', [activeRole]);
+  const isTrainerDrillDown = activeSection === 'TrainerTraineeDetail';
+  const targetTraineeId = isTrainerDrillDown ? window.location.pathname.split('/').pop() : undefined;
+  const scopedToTrainerId = isTrainerDrillDown ? currentUser.id : undefined;
+  const isTrainee = activeRole.toLowerCase() === 'trainee' || isTrainerDrillDown;
+  const isAdmin = useMemo(() => activeRole.toLowerCase() === 'admin' && !isTrainerDrillDown, [activeRole, isTrainerDrillDown]);
+  const isTrainer = useMemo(() => activeRole.toLowerCase() === 'trainer' && !isTrainerDrillDown, [activeRole, isTrainerDrillDown]);
 
   const addInvitedUser = (user: Omit<VisibleUser, 'status'>) => {
     setUsers((current) => [{ ...user, status: 'invited' }, ...current]);
@@ -509,16 +512,17 @@ export function DashboardPage({
     const fetchDatabaseMetrics = async () => {
       setIsLoadingMetrics(true);
       try {
+        const fetchRole = isTrainerDrillDown ? 'Trainee' : activeRole;
         const [analytics, usersList, pathsList, pendingSubs, mySubs, myProgress] = await Promise.all([
           (isTrainer
             ? analyticsService.fetchTrainerDashboardSummary(accessToken, currentUser.id)
-            : analyticsService.fetchDashboard(accessToken, activeRole)
+            : analyticsService.fetchDashboard(accessToken, fetchRole, targetTraineeId, scopedToTrainerId)
           ).catch(() => null),
           userService.fetchAllUsers(accessToken).catch(() => []),
           learningPathService.fetchAllPaths(accessToken).catch(() => []),
           assignmentService.fetchPendingSubmissions(accessToken, activeRole).catch(() => []),
           isTrainee ? assignmentService.fetchMySubmissions(accessToken, activeRole).catch(() => []) : Promise.resolve([]),
-          progressService.fetchMyStats(accessToken).catch(() => ({
+          progressService.fetchMyStats(accessToken, targetTraineeId, scopedToTrainerId).catch(() => ({
             completedLessons: 0,
             totalLessons: 0,
             completionPercent: 0,
@@ -652,7 +656,7 @@ export function DashboardPage({
 
           if (assigned) {
             try {
-              const specificStats = await progressService.fetchMyStats(accessToken, assigned.id);
+              const specificStats = await progressService.fetchMyStats(accessToken, targetTraineeId, scopedToTrainerId, assigned.id);
               if (specificStats) {
                 setDbData(prev => ({ ...prev, completionRate: specificStats.completionPercent || 0 }));
                 // Removed: setProgressStats(specificStats); to keep progressStats tracking overall stats
@@ -817,25 +821,17 @@ export function DashboardPage({
     );
   }
 
-  if (activeSection === 'TrainerTraineeDetail') {
-    return (
-      <div className="dashboard-content">
-        <TrainerTraineeDetail
-          accessToken={accessToken}
-          activeRole={activeRole}
-          currentUser={currentUser}
-        />
-      </div>
-    );
-  }
+
 
   if (activeSection === 'Progress' || activeSection === 'Analytics') {
     return (
       <div className="dashboard-content">
         <ProgressAnalyticsSection
           accessToken={accessToken}
-          activeRole={activeRole}
+          activeRole={isTrainerDrillDown ? 'Trainee' : activeRole}
           currentUser={currentUser}
+          targetTraineeId={targetTraineeId}
+          scopedToTrainerId={scopedToTrainerId}
         />
       </div>
     );
@@ -893,11 +889,27 @@ export function DashboardPage({
 
     return (
       <div className="dashboard-content" style={{ padding: '24px 32px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
-        <header style={{ marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Good morning, {firstName}</h1>
-          <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px', margin: 0 }}>
-            You're {progressPercent}% through {currentPathTitle}. Keep the momentum!
-          </p>
+        <header style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {isTrainerDrillDown && (
+            <button
+              onClick={() => window.history.back()}
+              className="hover-effect touch-target"
+              style={{
+                background: 'none', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px',
+                cursor: 'pointer', color: '#475569', fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px'
+              }}
+            >
+              <span>&larr;</span> Back
+            </button>
+          )}
+          <div>
+            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+              {isTrainerDrillDown ? `Trainee Progress` : `Good morning, ${firstName}`}
+            </h1>
+            <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px', margin: 0 }}>
+              You're {progressPercent}% through {currentPathTitle}. Keep the momentum!
+            </p>
+          </div>
         </header>
 
         {/* Row 2: Key stat strip */}
@@ -948,9 +960,11 @@ export function DashboardPage({
             <DashboardCharts
               title={'Daily Activity Trend'}
               subtitle={'Daily activity points (last 30 days)'}
-              role={activeRole.toLowerCase()}
+              role={isTrainerDrillDown ? 'trainee' : activeRole.toLowerCase()}
               type="score"
               accessToken={accessToken}
+              targetTraineeId={targetTraineeId}
+              scopedToTrainerId={scopedToTrainerId}
             />
             <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -1205,6 +1219,7 @@ export function DashboardPage({
             <InteractiveTraineeProgress
               data={((dbData as any).assignedTraineesProgress || [])}
               isLoading={isLoadingMetrics}
+              accessToken={accessToken}
             />
           </section>
         </>
@@ -1275,6 +1290,7 @@ export function DashboardPage({
             <InteractiveTraineeProgress
               data={((dbData as any).assignedTraineesProgress || [])}
               isLoading={isLoadingMetrics}
+              accessToken={accessToken}
             />
           </section>
         </>

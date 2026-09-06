@@ -88,7 +88,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   });
 
   const tasksPassedCount = passedTasks.length;
-  const tasksSubmitted = tasks.filter((t: any) => subByAssignment.has(t.id)).length;
+  const isTaskSubmitted = (sub: any) => sub && sub.status !== 'AVAILABLE' && sub.status !== 'LOCKED';
+  const tasksSubmitted = tasks.filter((t: any) => isTaskSubmitted(subByAssignment.get(t.id))).length;
 
   const tasksScored = tasks.filter((t: any) => {
     const s = subByAssignment.get(t.id);
@@ -253,7 +254,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           {(
             [
               ['Lessons', `Lessons (${completedLessons}/${lessons.length})`],
-              ['Tasks', `Tasks (${tasksPassedCount}/${tasks.length})`],
+              ['Tasks', `Tasks (${tasksSubmitted}/${tasks.length})`],
               ['Resources', `Resources (${visitedResourcesCount}/${resources.length || 0})`],
               ['Assessments', `Assessments (${tasks.filter((t: any) => t.assignmentType === 'MCQ').length})`],
             ] as const
@@ -425,7 +426,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                           }}
                           style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
                         >
-                          {sub ? 'Resubmit' : 'Submit'}
+                          {isTaskSubmitted(sub) ? 'Resubmit' : 'Attempt'}
                         </button>
                       )}
                     </div>
@@ -546,7 +547,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                           }}
                           style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
                         >
-                          {sub ? 'Resubmit' : 'Attempt'}
+                          {isTaskSubmitted(sub) ? 'Resubmit' : 'Attempt'}
                         </button>
                       )}
                     </div>

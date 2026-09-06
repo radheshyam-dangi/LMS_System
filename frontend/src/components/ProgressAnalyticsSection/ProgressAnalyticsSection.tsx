@@ -270,9 +270,11 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken,
         <DashboardCharts
           title={isReports ? 'Avg. Evaluation Score Trend' : 'Daily Activity Trend'}
           subtitle={isReports ? 'Daily evaluation scores (last 14 days)' : 'Daily activity points (last 30 days)'}
-          role={activeRole.toLowerCase()}
+          role={targetTraineeId ? 'trainee' : activeRole.toLowerCase()}
           type="score"
           accessToken={accessToken}
+          targetTraineeId={targetTraineeId}
+          scopedToTrainerId={scopedToTrainerId}
         />
 
         <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>

@@ -19,6 +19,8 @@ export class DashboardController {
     @Query('filter') filter: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Query('traineeId') traineeId?: string,
+    @Query('trainerId') trainerId?: string,
   ) {
     const range = parseInt(rangeStr, 10) || 30;
     return await this.analyticsService.getDailyChartData(
@@ -28,7 +30,9 @@ export class DashboardController {
       'progress',
       filter,
       startDate,
-      endDate
+      endDate,
+      traineeId,
+      trainerId
     );
   }
 
@@ -41,6 +45,8 @@ export class DashboardController {
     @Query('filter') filter: string,
     @Query('startDate') startDate: string,
     @Query('endDate') endDate: string,
+    @Query('traineeId') traineeId?: string,
+    @Query('trainerId') trainerId?: string,
   ) {
     const range = parseInt(rangeStr, 10) || 30;
     return await this.analyticsService.getDailyChartData(
@@ -50,7 +56,9 @@ export class DashboardController {
       'score',
       filter,
       startDate,
-      endDate
+      endDate,
+      traineeId,
+      trainerId
     );
   }
 }
