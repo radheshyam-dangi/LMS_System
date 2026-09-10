@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation, Navigate } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { TrainerTraineeDetail } from './TrainerTraineeDetail';
 import { InviteUserModal } from '../components/users/InviteUserModal';
 import { UsersSection } from '../components/users/UserManagement';
@@ -7,6 +7,7 @@ import { LearningPathsSection } from '../components/LearningPathsSection/Learnin
 import { CurriculumManager } from '../components/CurriculumManager/CurriculumManager';
 import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
 import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
+import { useScrollLock } from '../hooks/useScrollLock';
 import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
 import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
 import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
@@ -372,6 +373,7 @@ export function DashboardPage({
   // Chart tooltip state
   const [chartTooltip, setChartTooltip] = useState<{ visible: boolean; x: number; y: number; label: string; value: string }>({ visible: false, x: 0, y: 0, label: '', value: '' });
   const [showInviteModal, setShowInviteModal] = useState(false);
+  useScrollLock(showInviteModal);
   const location = useLocation();
   const [selectedPathId, setSelectedPathId] = useState<string | null>((location.state as any)?.pathId || null);
   const [selectedPathTitle, setSelectedPathTitle] = useState<string>((location.state as any)?.pathName || '');
@@ -380,6 +382,18 @@ export function DashboardPage({
     const saved = sessionStorage.getItem('dailyActivityRange');
     return saved ? parseInt(saved, 10) : 30;
   });
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const prevRoleRef = useRef(activeRole);
+
+  useEffect(() => {
+    if (prevRoleRef.current !== activeRole) {
+      prevRoleRef.current = activeRole;
+      if (searchParams.size > 0) {
+        setSearchParams({});
+      }
+    }
+  }, [activeRole, searchParams, setSearchParams]);
 
   useEffect(() => {
     sessionStorage.setItem('dailyActivityRange', heatmapRange.toString());
@@ -599,9 +613,6 @@ export function DashboardPage({
         const acceptedCount = (mySubs || []).filter((s: any) => s.status === 'Approved').length;
         const calcRate = isTrainee ? (myProgress.completionPercent || 0) : (analytics?.completionRate || 0);
 
-        // Notification bell is driven by NotificationProvider (poll + mark-read on sections)
-        void refreshNotifications();
-
         setDbData({
           totalUsers: analytics?.totalUsers ?? usersList?.length ?? 0,
           totalTrainers: analytics?.totalTrainers ?? trainersCount,
@@ -788,7 +799,8 @@ export function DashboardPage({
     );
   }
   if (activeSection === 'Modules' || activeSection === 'Module Details') {
-    const pathId = location.state?.pathId || selectedPathId || traineePath?.id || '';
+    const { pathId: urlPathId } = useParams<{ pathId?: string }>();
+    const pathId = location.state?.pathId || urlPathId || selectedPathId || traineePath?.id || '';
     const pathTitle = location.state?.pathName || selectedPathTitle || traineePath?.title || 'All Modules';
 
     if (!isTrainee) {
@@ -1094,7 +1106,7 @@ export function DashboardPage({
           </div>
           <div style={{ width: '100%', height: 450 }}>
             {filteredModuleCompletion.length > 0 ? (
-              <ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={filteredModuleCompletion} margin={{ top: 20, right: 30, left: 0, bottom: 120 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="title" axisLine={false} tickLine={false} interval={0} tick={<CustomXAxisTick />} />

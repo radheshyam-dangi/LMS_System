@@ -13,7 +13,7 @@ import type { UserModel } from '../../../types/models/user.model';
 import { RoutePaths } from '../../../constants/routePaths';
 @Controller(RoutePaths.Users)
 export class UserController {
-  constructor(private readonly userService: UserEntityService) {}
+  constructor(private readonly userService: UserEntityService) { }
 
   @Get()
   async findAll() {

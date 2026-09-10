@@ -3,6 +3,7 @@ import "../../App.css";
 import { API_BASE_URL } from '../../api';
 import { analyticsService } from '../../services/lmsApi';
 import { UserProfileDrawer } from './UserProfileDrawer';
+import { useScrollLock } from '../../hooks/useScrollLock';
 
 export type UserStatus = 'Active' | 'Inactive' | 'At Risk';
 export type AppRole = 'Admin' | 'Trainer' | 'Trainee';
@@ -15,8 +16,8 @@ export interface UserDetail {
   roles: AppRole[];
   primaryRole: AppRole;
   status: UserStatus;
-  created_at: string; 
-  
+  created_at: string;
+
   // UPGRADED FIELD: For customized UI display string
   joinedDisplay: string;
   progress: number;
@@ -34,10 +35,10 @@ function mapApiUser(u: any): UserDetail {
   const rawRoles = u.roles ?? (u.primaryRole ? [u.primaryRole] : []);
   // 1. Capture the raw timestamp from the Base Entity column
   const rawDate = u.createdAt ?? u.joined_date ?? u.joinedDate;
-  
+
   // 2. Customize the date format (e.g., "Jul 3, 2026")
-  const customizedDate = rawDate 
-    ? new Date(rawDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) 
+  const customizedDate = rawDate
+    ? new Date(rawDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
     : '—';
 
   return {
@@ -48,8 +49,8 @@ function mapApiUser(u: any): UserDetail {
     roles: rawRoles.map(extractRoleName),
     primaryRole: extractRoleName(u.primaryRole ?? u.primary_role),
     status: u.status ?? 'Active',
-    created_at : rawDate ?? '',
-    joinedDisplay: customizedDate, 
+    created_at: rawDate ?? '',
+    joinedDisplay: customizedDate,
     progress: Number(u.progress ?? 0),
     currentModule: u.currentModule ?? u.current_module ?? '—',
     score: Number(u.score ?? 0),
@@ -126,9 +127,9 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<'All' | AppRole>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | 'At Risk'>('All');
-  
+
   const isMobile = useMediaQuery('(max-width: 768px)');
-  
+
   // MUTUALLY EXCLUSIVE MODAL STATE MANAGER
   const [activeModal, setActiveModal] = useState<'NONE' | 'ADD_USER' | 'VIEW_DETAILS'>('NONE');
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
@@ -136,6 +137,8 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
   const [inviteForm, setInviteForm] = useState(EMPTY_INVITE_FORM);
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  useScrollLock(activeModal !== 'NONE');
 
   const loadUsers = useCallback((signal?: AbortSignal) => {
     setIsLoading(true);
@@ -195,7 +198,7 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
     // setInviteError(null);
     // setSelectedUser(null); // Clear any open user profiles
     // setActiveModal('ADD_USER');
-    onOpenInviteModal(); 
+    onOpenInviteModal();
   };
 
   const handleOpenDetailsModal = (user: UserDetail) => {
@@ -242,11 +245,11 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
           </div>
         </div>
       </div>
-      
+
       {/* Floating Action Button (FAB) for Inviting Users */}
-      <button 
-        type="button" 
-        className="invite-user-fab" 
+      <button
+        type="button"
+        className="invite-user-fab"
         onClick={handleOpenAddUserModal}
         style={{
           position: 'fixed',
@@ -399,49 +402,49 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
               ))}
             </div>
           ) : (
-          <table className="fidelity-data-table">
-            <thead>
-              <tr>
-                <th>NAME</th>
-                <th>ROLE</th>
-                <th>JOINED</th>
-                <th className="text-right-aligned">View Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.map((user) => (
-                <tr key={user.id} className="interactive-data-row" onClick={() => handleOpenDetailsModal(user)}>
-                  <td className="identity-data-cell">
-                    <div className="user-initials-avatar">
-                      {user.firstName[0]}{user.lastName[0]}
-                    </div>
-                    <div className="name-email-stack">
-                      <span className="full-name-string">{user.firstName} {user.lastName}</span>
-                      <span className="email-string">{user.email}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`role-pill-badge role-${user.primaryRole.toLowerCase()}`}>
-                      {user.primaryRole}
-                    </span>
-                  </td>
-                  <td><span className="registry-date-label">{user.joinedDisplay}</span></td>
-                  <td className="text-right-aligned">
-                    <div className="actions-button-wrapper">
-                      <button type="button" className="row-ellipsis-menu" onClick={(e) => e.stopPropagation()}>•••</button>
-                      <button
-                        type="button"
-                        className="view-details-action-btn"
-                        onClick={(e) => { e.stopPropagation(); handleOpenDetailsModal(user); }}
-                      >
-                        View Details
-                      </button>
-                    </div>
-                  </td>
+            <table className="fidelity-data-table">
+              <thead>
+                <tr>
+                  <th>NAME</th>
+                  <th>ROLE</th>
+                  <th>JOINED</th>
+                  <th className="text-right-aligned">View Details</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filteredUsers.map((user) => (
+                  <tr key={user.id} className="interactive-data-row" onClick={() => handleOpenDetailsModal(user)}>
+                    <td className="identity-data-cell">
+                      <div className="user-initials-avatar">
+                        {user.firstName[0]}{user.lastName[0]}
+                      </div>
+                      <div className="name-email-stack">
+                        <span className="full-name-string">{user.firstName} {user.lastName}</span>
+                        <span className="email-string">{user.email}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`role-pill-badge role-${user.primaryRole.toLowerCase()}`}>
+                        {user.primaryRole}
+                      </span>
+                    </td>
+                    <td><span className="registry-date-label">{user.joinedDisplay}</span></td>
+                    <td className="text-right-aligned">
+                      <div className="actions-button-wrapper">
+                        <button type="button" className="row-ellipsis-menu" onClick={(e) => e.stopPropagation()}>•••</button>
+                        <button
+                          type="button"
+                          className="view-details-action-btn"
+                          onClick={(e) => { e.stopPropagation(); handleOpenDetailsModal(user); }}
+                        >
+                          View Details
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )
         )}
       </section>

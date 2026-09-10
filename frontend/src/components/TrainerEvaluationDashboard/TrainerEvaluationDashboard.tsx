@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { assignmentService } from '../../services/assignmentService';
 import { learningPathService } from '../../services/learningPathService';
 import { userService } from '../../services/userService';
-import { Plus, CheckCircle, Clock, Search, ExternalLink, X, MessageSquare, Save, Users, AlertCircle, PlayCircle, Eye, Edit2, Archive, Link as LinkIcon } from 'lucide-react';
+import { Plus, CheckCircle, Clock, Search, ExternalLink, X, MessageSquare, Save, Users, AlertCircle, PlayCircle, Eye, Edit2, Archive, Link as LinkIcon, Filter } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useSearch } from '../../context/SearchContext';
+import { useSearchParams } from 'react-router-dom';
+import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
 import './TrainerDashboard.css';
 
 interface TrainerEvaluationDashboardProps {
@@ -40,7 +42,17 @@ const formatDuration = (d?: number, h?: number, m?: number) => {
 
 export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSection, activeRole }: TrainerEvaluationDashboardProps) {
   const { refresh: refreshNotifications, markRelatedRead } = useNotifications();
-  const { searchQuery } = useSearch();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const localFiltersState = useMemo(() => {
+    const filters: Record<string, string> = {};
+    searchParams.forEach((value: string, key: string) => {
+      filters[key] = value;
+    });
+    return filters;
+  }, [searchParams]);
+
   // ─── Evaluation (pending submissions) state ───────────────────────────
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
@@ -52,7 +64,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   // ─── Assignments list state ────────────────────────────────────────────
   const [assignments, setAssignments] = useState<any[]>([]);
   const [isLoadingAssignments, setIsLoadingAssignments] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<string>('All');
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
 
   // ─── View / Edit Modal State ───────────────────────────────────────────
   const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
@@ -89,13 +101,13 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   const isAdminView = activeRole?.toLowerCase() === 'admin';
 
   // ─── Load data ─────────────────────────────────────────────────────────
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     setIsLoadingSubmissions(true);
     setIsLoadingAssignments(true);
     try {
       const [subs, allAssign] = await Promise.all([
         curriculumService.fetchPendingSubmissions(accessToken, activeRole).catch(() => []),
-        assignmentService.fetchAllAssignments(accessToken, activeRole).catch(() => []),
+        assignmentService.fetchAllAssignments(accessToken, activeRole, localFiltersState).catch(() => []),
       ]);
       setPendingSubmissions(Array.isArray(subs) ? subs : []);
       setAssignments(Array.isArray(allAssign) ? allAssign : []);
@@ -105,9 +117,9 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
       setIsLoadingSubmissions(false);
       setIsLoadingAssignments(false);
     }
-  };
+  }, [accessToken, activeRole, localFiltersState]);
 
-  useEffect(() => { loadAll(); }, [accessToken, activeRole]);
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   // ─── Load Trainees when Modal Opens ──────────────────
   useEffect(() => {
@@ -143,22 +155,19 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   }, [assignments]);
 
   // ─── Filter assignments by status ─────────────────────────────────────
+  const statusFilter = localFiltersState['status'] || 'All';
+  const setStatusFilter = (val: string) => {
+    const newFilters = { ...localFiltersState };
+    if (val === 'All') {
+      delete newFilters.status;
+    } else {
+      newFilters.status = val;
+    }
+    setSearchParams(newFilters);
+  };
+
   const filteredAssignments = useMemo(() => {
     let result = roleFilteredAssignments;
-
-    if (statusFilter !== 'All') {
-      result = result.filter((a: any) => {
-        let st = (a.status || 'Pending').toLowerCase();
-        
-        if (statusFilter.toLowerCase() === 'approved' && (st === 'approved' || st === 'accepted')) return true;
-        if (statusFilter.toLowerCase() === 'needs improvement' && st === 'rejected') return true;
-        
-        // "Pending" now means "Pending Evaluation" (i.e., submitted by trainee, waiting for trainer)
-        if (statusFilter.toLowerCase() === 'pending' && st === 'submitted') return true;
-
-        return st === statusFilter.toLowerCase();
-      });
-    }
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -170,7 +179,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
 
     return result;
-  }, [roleFilteredAssignments, statusFilter, searchQuery]);
+  }, [roleFilteredAssignments, searchQuery]);
 
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Approved: 0, Rejected: 0 };
@@ -446,18 +455,149 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
             </div>
           </div>
 
+          {/* Search and Filters */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: 'stretch' }}>
+            <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+              </span>
+              <input
+                type="text"
+                placeholder="Search assignments or tasks..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{ 
+                  width: '100%', 
+                  padding: '12px 16px 12px 40px', 
+                  borderRadius: '8px', 
+                  border: '1px solid #e2e8f0', 
+                  fontSize: '14px', 
+                  outline: 'none',
+                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+                  transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
+                  color: '#0f172a',
+                  backgroundColor: '#fff'
+                }}
+                onFocus={(e) => { e.target.style.borderColor = '#4f46e5'; e.target.style.boxShadow = '0 0 0 3px rgba(79, 70, 229, 0.1)'; }}
+                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)'; }}
+              />
+            </div>
+            <button
+              onClick={() => setIsFilterPanelOpen(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '0 16px', borderRadius: '8px', border: '1px solid #e2e8f0',
+                background: '#fff', color: '#334155', fontWeight: 600, fontSize: '14px',
+                cursor: 'pointer', transition: 'all 0.15s ease-in-out',
+                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+            >
+              <Filter size={18} />
+              Filters
+              {Object.keys(localFiltersState).filter(k => k !== 'status').length > 0 && (
+                <span style={{
+                  background: '#4f46e5', color: '#fff', padding: '2px 8px',
+                  borderRadius: '99px', fontSize: '12px', marginLeft: '2px',
+                  fontWeight: 700
+                }}>
+                  {Object.keys(localFiltersState).filter(k => k !== 'status').length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          <AssignmentsFilterPanel
+            isOpen={isFilterPanelOpen}
+            onClose={() => setIsFilterPanelOpen(false)}
+            categories={[
+              {
+                id: 'status', label: 'Status', options: [
+                  { label: 'Pending Evaluation', value: 'pending' },
+                  { label: 'Approved', value: 'approved' },
+                  { label: 'Needs Improvement', value: 'needs improvement' }
+                ]
+              },
+              {
+                id: 'type', label: 'Type', options: [
+                  { label: 'Learning Path', value: 'learning path' },
+                  { label: 'External', value: 'external' }
+                ]
+              },
+              {
+                id: 'difficulty', label: 'Difficulty', options: [
+                  { label: 'Basic', value: 'basic' },
+                  { label: 'Medium', value: 'medium' },
+                  { label: 'Hard', value: 'hard' }
+                ]
+              }
+            ]}
+            initialFilters={localFiltersState}
+            onApply={(newFilters: Record<string, string>) => setSearchParams(newFilters)}
+          />
+
+          {/* Active Filter Chips */}
+          {Object.keys(localFiltersState).length > 0 && (
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+              {Object.entries(localFiltersState).map(([key, value]) => {
+                if (!value) return null;
+                // Map category labels manually since filterCategories is hardcoded in the panel component above
+                let categoryLabel = key;
+                if (key === 'status') categoryLabel = 'Status';
+                if (key === 'type') categoryLabel = 'Type';
+                if (key === 'difficulty') categoryLabel = 'Difficulty';
+                
+                return value.split(',').map(v => {
+                  return (
+                    <div key={`${key}-${v}`} style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5',
+                      borderRadius: '99px', fontSize: '12px', fontWeight: 600
+                    }}>
+                      <span>{categoryLabel}: {v}</span>
+                      <button 
+                        onClick={() => {
+                          const currentVals = value.split(',');
+                          const newVals = currentVals.filter(val => val !== v);
+                          const newFilters = { ...localFiltersState };
+                          if (newVals.length > 0) {
+                            newFilters[key] = newVals.join(',');
+                          } else {
+                            delete newFilters[key];
+                          }
+                          setSearchParams(newFilters);
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  );
+                });
+              })}
+              <button
+                onClick={() => setSearchParams({})}
+                style={{ background: 'transparent', border: 'none', color: '#64748b', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
           {/* Assignment cards */}
           {isLoadingAssignments ? (
             <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading assignments...</div>
           ) : filteredAssignments.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px', background: '#f8fafc', borderRadius: '12px', border: '2px dashed #e2e8f0' }}>
-              <div style={{ fontSize: '32px', marginBottom: '12px' }}>{searchQuery ? '🔍' : '📋'}</div>
-              <div style={{ fontWeight: 700, color: '#475569' }}>
-                {searchQuery ? 'No matches found' : 'No assignments found'}
-              </div>
-              <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
-                {searchQuery ? `We couldn't find anything matching "${searchQuery}".` : 'Create a new assignment to get started'}
-              </div>
+            <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>No assignments match these filters</h3>
+              <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px' }}>Try adjusting or clearing your filters to see more assignments.</p>
+              <button 
+                onClick={() => setSearchParams({})}
+                style={{ padding: '8px 16px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Clear Filters
+              </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>

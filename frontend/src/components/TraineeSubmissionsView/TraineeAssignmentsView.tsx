@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { assignmentService } from '../../services/assignmentService';
 import { useNotifications } from '../../context/NotificationContext';
 import { DeadlineDisplay } from '../DeadlineDisplay';
+import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
+import { Filter, X } from 'lucide-react';
 
 type Props = {
   accessToken: string;
@@ -15,10 +18,22 @@ type Props = {
  */
 export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }: Props) {
   const { refresh: refreshNotifications } = useNotifications();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'external' | 'path'>('all');
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  
+  const localFiltersState = useMemo(() => {
+    const filters: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      filters[key] = value;
+    });
+    return filters;
+  }, [searchParams]);
+
+  const [searchQuery, setSearchQuery] = useState('');
   const [submitTarget, setSubmitTarget] = useState<any | null>(null);
   const [viewDetailsTarget, setViewDetailsTarget] = useState<any | null>(null);
   const [submissionText, setSubmissionText] = useState('');
@@ -27,11 +42,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const load = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [mine, mySubs] = await Promise.all([
-        assignmentService.fetchMyAssignments(accessToken, activeRole).catch(() => []),
+        assignmentService.fetchMyAssignments(accessToken, activeRole, localFiltersState).catch(() => []),
         assignmentService.fetchMySubmissions(accessToken, activeRole).catch(() => []),
       ]);
       setAssignments(Array.isArray(mine) ? mine : []);
@@ -39,24 +54,58 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     } finally {
       setLoading(false);
     }
-  };
+  }, [accessToken, activeRole, localFiltersState]);
 
   useEffect(() => {
-    void load();
-  }, [accessToken, activeRole]);
+    loadData();
+  }, [loadData]);
 
   const submissionByAssignment = new Map(
     submissions.map((s) => [s.assignment?.id || s.assignmentId, s]),
   );
 
-  const filtered = assignments.filter((a) => {
-    const isExternal =
-      String(a.assignmentType || '').toLowerCase() === 'external' ||
-      (!a.lesson && !a.module && !a.learningPath);
-    if (activeTab === 'external') return isExternal;
-    if (activeTab === 'path') return !isExternal;
-    return true;
-  });
+  const filtered = React.useMemo(() => {
+    let result = assignments;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(a => {
+        const titleMatch = (a.title || '').toLowerCase().includes(q);
+        const descMatch = (a.description || a.instructions || '').toLowerCase().includes(q);
+        return titleMatch || descMatch;
+      });
+    }
+    return result;
+  }, [assignments, searchQuery]);
+
+  const filterCategories = [
+    {
+      id: 'status', label: 'Status', options: [
+        { label: 'Pending', value: 'pending' },
+        { label: 'Submitted', value: 'submitted' },
+        { label: 'Approved', value: 'approved' },
+        { label: 'Needs Improvement', value: 'needs improvement' }
+      ]
+    },
+    {
+      id: 'type', label: 'Type', options: [
+        { label: 'Learning Path', value: 'learning path' },
+        { label: 'External', value: 'external' }
+      ]
+    },
+    {
+      id: 'difficulty', label: 'Difficulty', options: [
+        { label: 'Basic', value: 'basic' },
+        { label: 'Medium', value: 'medium' },
+        { label: 'Hard', value: 'hard' }
+      ]
+    },
+    {
+      id: 'lockState', label: 'Lock State', options: [
+        { label: 'Locked', value: 'locked' },
+        { label: 'Unlocked', value: 'unlocked' }
+      ]
+    }
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,7 +123,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       setSubmitTarget(null);
       setSubmissionText('');
       setAttachmentUrl('');
-      await load();
+      await loadData();
       await refreshNotifications();
       alert('Submitted for evaluation. Your trainer has been notified.');
     } catch (err: any) {
@@ -97,39 +146,136 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         </p>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        {(
-          [
-            ['all', 'All'],
-            ['path', 'Learning Path'],
-            ['external', 'External'],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setActiveTab(key)}
-            style={{
-              padding: '8px 14px',
-              borderRadius: 999,
-              border: activeTab === key ? 'none' : '1px solid #e2e8f0',
-              background: activeTab === key ? '#4f46e5' : '#fff',
-              color: activeTab === key ? '#fff' : '#475569',
-              fontWeight: 600,
-              fontSize: 12,
-              cursor: 'pointer',
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: 'stretch' }}>
+        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </span>
+          <input
+            type="text"
+            placeholder="Search assignments or tasks..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ 
+              width: '100%', 
+              padding: '12px 16px 12px 40px', 
+              borderRadius: '8px', 
+              border: '1px solid #e2e8f0', 
+              fontSize: '14px', 
+              outline: 'none',
+              boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+              transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
+              color: '#0f172a',
+              backgroundColor: '#fff'
             }}
-          >
-            {label}
-          </button>
-        ))}
+            onFocus={(e) => { e.target.style.borderColor = '#4f46e5'; e.target.style.boxShadow = '0 0 0 3px rgba(79, 70, 229, 0.1)'; }}
+            onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)'; }}
+          />
+        </div>
+        <button
+          onClick={() => setIsFilterPanelOpen(true)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            padding: '0 16px', borderRadius: '8px', border: '1px solid #e2e8f0',
+            background: '#fff', color: '#334155', fontWeight: 600, fontSize: '14px',
+            cursor: 'pointer', transition: 'all 0.15s ease-in-out',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+        >
+          <Filter size={18} />
+          Filters
+          {Object.keys(localFiltersState).length > 0 && (
+            <span style={{
+              background: '#4f46e5', color: '#fff', padding: '2px 8px',
+              borderRadius: '99px', fontSize: '12px', marginLeft: '2px',
+              fontWeight: 700
+            }}>
+              {Object.keys(localFiltersState).length}
+            </span>
+          )}
+        </button>
       </div>
+
+      <AssignmentsFilterPanel
+        isOpen={isFilterPanelOpen}
+        onClose={() => setIsFilterPanelOpen(false)}
+        categories={filterCategories}
+        initialFilters={localFiltersState}
+        onApply={(newFilters) => setSearchParams(newFilters)}
+      />
+
+      {/* Active Filter Chips */}
+      {Object.keys(localFiltersState).length > 0 && (
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          {Object.entries(localFiltersState).map(([key, value]) => {
+            if (!value) return null;
+            const category = filterCategories.find(c => c.id === key);
+            const label = category ? category.label : key;
+            return value.split(',').map(v => {
+              const opt = category?.options.find(o => o.value === v);
+              const valLabel = opt ? opt.label : v;
+              return (
+                <div key={`${key}-${v}`} style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5',
+                  borderRadius: '99px', fontSize: '12px', fontWeight: 600
+                }}>
+                  <span>{label}: {valLabel}</span>
+                  <button 
+                    onClick={() => {
+                      const currentVals = value.split(',');
+                      const newVals = currentVals.filter(val => val !== v);
+                      const newFilters = { ...localFiltersState };
+                      if (newVals.length > 0) {
+                        newFilters[key] = newVals.join(',');
+                      } else {
+                        delete newFilters[key];
+                      }
+                      setSearchParams(newFilters);
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex' }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              );
+            });
+          })}
+          <button
+            onClick={() => setSearchParams({})}
+            style={{ background: 'transparent', border: 'none', color: '#64748b', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
+      {/* Empty State */}
+      {filtered.length === 0 && !loading && (
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>No assignments match these filters</h3>
+          <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px' }}>Try adjusting or clearing your filters to see more assignments.</p>
+          <button 
+            onClick={() => setSearchParams({})}
+            style={{ padding: '8px 16px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontWeight: 600, cursor: 'pointer' }}
+          >
+            Clear Filters
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {(() => {
           const getCardData = (a: any) => {
             const sub = submissionByAssignment.get(a.id);
-            const rawStatus = (sub?.status || 'Pending').toUpperCase();
+            let rawStatus = (sub?.status || 'Pending').toUpperCase();
+            
+            if (a.isLocked) {
+              rawStatus = 'LOCKED';
+            }
+
             const deadlineDate = a.computedDeadline ? new Date(a.computedDeadline) : null;
             const now = new Date();
             
@@ -143,7 +289,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
               priority = 6;
             } else if (rawStatus === 'APPROVED' || rawStatus === 'EVALUATED') {
               const maxScore = a.maxScore || 100;
-              isBelowCutoff = (typeof sub?.score === 'number') && (sub.score / maxScore) * 100 < 40;
+              isBelowCutoff = (typeof sub?.score === 'number') && (sub.score / maxScore) * 100 < 35;
               
               if (isBelowCutoff) {
                 displayStatus = 'Approved'; // Remains "Approved" but styled differently
@@ -346,7 +492,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                             if (!window.confirm('Start this assignment now? The deadline countdown will begin immediately.')) return;
                             try {
                               await assignmentService.startAssignment(a.id, accessToken);
-                              await load();
+                              await loadData();
                             } catch (err: any) {
                               alert(err?.response?.data?.message || err.message || 'Could not start assignment');
                             }
@@ -494,7 +640,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   setAttachmentUrl('');
                   setSelectedMcqAnswers({});
                   setSubjectiveAnswers({});
-                  await load();
+                  await loadData();
                   await refreshNotifications();
                   alert('Submitted for evaluation. Your trainer has been notified.');
                 } catch (err: any) {

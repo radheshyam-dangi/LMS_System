@@ -7,7 +7,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, Brackets } from 'typeorm';
 import { BaseService } from '../../../common/services/base.service';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { UserEntity } from '../../entities/user.entity';
@@ -41,11 +41,42 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
   /**
    * 1. READ ALL PATHS
    */
-  async findAll(): Promise<LearningPathEntity[]> {
-    const paths = await this.repository.find({
-      relations: ['createdBy', 'modules', 'modules.lessons'],
-      order: { createdAt: 'DESC' },
-    });
+  async findAll(search?: string): Promise<LearningPathEntity[]> {
+    let paths: LearningPathEntity[] = [];
+
+    if (search && search.trim().length > 0) {
+      const q = `%${search}%`;
+      const builder = this.repository.createQueryBuilder('lp')
+        .leftJoinAndSelect('lp.createdBy', 'createdBy')
+        .leftJoinAndSelect('lp.modules', 'modules')
+        .leftJoinAndSelect('modules.lessons', 'lessons')
+        .where('lp.deletedAt IS NULL')
+        .andWhere(
+           new Brackets(qb => {
+             qb.where('lp.title ILIKE :q', { q })
+               .orWhere('lp."skillsTags"::text ILIKE :q', { q });
+           })
+        )
+        .orderBy('lp.createdAt', 'DESC');
+      
+      paths = await builder.getMany();
+      
+      for (const p of paths) {
+        (p as any).matchedTags = [];
+        if (p.skillsTags && Array.isArray(p.skillsTags)) {
+          for (const tag of p.skillsTags) {
+            if (tag.toLowerCase().includes(search.toLowerCase())) {
+              (p as any).matchedTags.push(tag);
+            }
+          }
+        }
+      }
+    } else {
+      paths = await this.repository.find({
+        relations: ['createdBy', 'modules', 'modules.lessons'],
+        order: { createdAt: 'DESC' },
+      });
+    }
 
     const enrollments = await this.enrollmentRepository.find({
       relations: ['learningPath', 'user', 'assignedBy'],

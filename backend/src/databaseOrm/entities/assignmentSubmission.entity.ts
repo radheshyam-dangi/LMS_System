@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { AssignmentEntity } from './assignment.entity';
 import { UserEntity } from './user.entity';
@@ -13,6 +13,7 @@ export class AssignmentSubmissionEntity extends BaseEntity {
   attachmentUrl: string;
 
   // 🌟 3. Status tracking
+  @Index()
   @Column({ 
     type: 'varchar',
     default: 'LOCKED' 
@@ -23,6 +24,7 @@ export class AssignmentSubmissionEntity extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   feedback: string;
 
+  @Index()
   @Column({ type: 'integer', nullable: true })
   score: number;
 

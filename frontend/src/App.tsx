@@ -35,11 +35,9 @@ function ProtectedShell({
     void markSectionRead(section);
   }, [section, markSectionRead]);
 
-  // Refresh after route changes so counters stay live without full page reload
-  useEffect(() => {
-    void refresh();
-  }, [location.pathname, refresh]);
-
+  // Remove route-based refresh to prevent continuous API hits
+  // Notifications will now only be refreshed when explicitly triggered (e.g., submitting an assignment)
+  
   return (
     <AppLayout
       activeRole={activeRole}
@@ -241,8 +239,10 @@ function App() {
       <Route path="/learning-paths/:pathId" element={<ProtectedLayout section="Learning Paths" />} />
       <Route path="/modules" element={<ProtectedLayout section="Modules" />} />
       <Route path="/modules/:moduleId" element={<ProtectedLayout section="Module Details" />} />
+      <Route path="/learning-paths/:pathId/modules/:moduleId" element={<ProtectedLayout section="Module Details" />} />
       <Route path="/assignments" element={<ProtectedLayout section="Assignments" />} />
-      <Route path="/evaluations" element={<ProtectedLayout section="Evaluations" />} />
+      <Route path="/trainer/assignments" element={<Navigate to="/assignments" replace />} />
+      <Route path="/evaluations" element={<Navigate to="/assignments?status=pending" replace />} />
       <Route path="/users" element={<ProtectedLayout section="Users" />} />
       <Route path="/progress" element={<ProtectedLayout section="Progress" />} />
       <Route path="/analytics" element={<ProtectedLayout section="Analytics" />} />

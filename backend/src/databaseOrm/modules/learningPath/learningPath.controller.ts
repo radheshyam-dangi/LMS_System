@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Query,
   Post,
   Put,
   Delete,
@@ -25,8 +26,8 @@ export class LearningPathController {
   constructor(private readonly lpService: LearningPathEntityService) {}
 
   @Get()
-  async findAll() {
-    return await this.lpService.findAll();
+  async findAll(@Query('search') search?: string) {
+    return await this.lpService.findAll(search);
   }
 
   @Get(':id')

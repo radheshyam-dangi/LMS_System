@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { SessionUser, RoleName } from '../../types/auth';
 import { userService } from '../../services/userService';
+import './SettingsSection.css';
 
 type SettingsSectionProps = {
   currentUser: SessionUser;
@@ -103,20 +104,13 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
       )}
 
       {panel === 'home' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+        <div className="settings-tiles-grid">
           {tiles.map((tile) => (
             <button
               key={tile.id}
               type="button"
               onClick={() => setPanel(tile.id)}
-              style={{
-                textAlign: 'left',
-                background: '#fff',
-                border: '1px solid #e2e8f0',
-                borderRadius: '14px',
-                padding: '20px',
-                cursor: 'pointer',
-              }}
+              className="settings-tile"
             >
               <div style={{ fontSize: '22px', marginBottom: '10px' }}>{tile.icon}</div>
               <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>{tile.title}</div>

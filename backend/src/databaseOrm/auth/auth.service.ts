@@ -21,7 +21,7 @@ export class AuthService {
     @InjectRepository(RoleEntity)
     private readonly roleRepository: Repository<RoleEntity>,
     private readonly jwtService: JwtService,
-  ) {}
+  ) { }
 
   /**
    * 🔒 LOGIN: Authenticates user and generates short-lived access & long-lived refresh tokens
@@ -199,7 +199,7 @@ export class AuthService {
       }
       //token is expired so we need to refresh the token
       //generate new token
-      
+
       throw new BadRequestException(
         'Invitation token is invalid or has expired',
       );

@@ -10,8 +10,12 @@ const getAuthHeaders = (token: string) => ({
 
 export const learningPathService = {
   // Existing methods...
-  fetchAllPaths: async (token: string) => {
-    const response = await axios.get(`${API_BASE_URL}/learningPaths`, getAuthHeaders(token));
+  fetchAllPaths: async (token: string, search?: string) => {
+    let url = `${API_BASE_URL}/learningPaths`;
+    if (search) {
+      url += `?search=${encodeURIComponent(search)}`;
+    }
+    const response = await axios.get(url, getAuthHeaders(token));
     return response.data;
   },
 

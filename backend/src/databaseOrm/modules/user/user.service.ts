@@ -9,7 +9,8 @@ import { BaseService } from '../../../common/services/base.service';
 import { UserEntity } from '../../entities/user.entity';
 import { RoleEntity } from '../../entities/role.entity';
 import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
-import { SubmissionEntity } from '../../entities/submission.entity';
+import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
+import { UserResourceVisitEntity } from '../../entities/userResourceVisit.entity';
 import { EvaluationEntity } from '../../entities/evaluation.entity';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { EnrollmentEntity } from '../../entities/enrollment.entity';
@@ -186,7 +187,7 @@ export class UserEntityService extends BaseService<UserEntity> {
     }
     const user = await this.findOne(id);
     if (!user) throw new NotFoundException('User not found');
-    
+
     if (user.primaryRole?.name === 'Admin') {
       const adminCount = await this.repository.count({
         where: { primaryRole: { name: 'Admin' }, isActive: true, deletedAt: null } as any
@@ -195,13 +196,13 @@ export class UserEntityService extends BaseService<UserEntity> {
         throw new BadRequestException('Cannot delete the last admin.');
       }
     }
-    
+
     if (user.primaryRole?.name === 'Trainer') {
       const em = this.repository.manager;
       const myAssignments = await em.find(AssignmentEntity, { where: { createdBy: { id } } as any });
       if (myAssignments.length > 0) {
         const assignmentIds = myAssignments.map(a => a.id);
-        const pendingEvaluationsCount = await em.count(SubmissionEntity, {
+        const pendingEvaluationsCount = await em.count(AssignmentSubmissionEntity, {
           where: { assignment: { id: In(assignmentIds) }, status: 'Submitted' } as any,
         });
         if (pendingEvaluationsCount > 0) {
@@ -228,52 +229,71 @@ export class UserEntityService extends BaseService<UserEntity> {
         relations: ['learningPath'],
       });
 
-      const submissions = await em.find(SubmissionEntity, {
-        where: { user: { id } },
-        relations: ['assignment', 'evaluations'],
-      });
+      const accurateStats = await this.progressService.statsForUser(id);
 
-      const allProgressCount = await em.count(UserLessonProgressEntity, {
-        where: { user: { id }, isCompleted: true },
-      });
-      // Calculate accurate progress percentage by averaging all enrolled LPs
-      let totalLPProgress = 0;
+      stats.progress = accurateStats.lessonProgressPercent;
+
+      let completedLPs = 0;
       for (const enrollment of enrollments) {
         if (enrollment.learningPath?.id) {
-          totalLPProgress += await this.progressService.getLPProgress(id, enrollment.learningPath.id);
+          const lpProg = await this.progressService.getLPProgress(id, enrollment.learningPath.id);
+          if (lpProg >= 100) completedLPs++;
         }
       }
-      
-      stats.progress = enrollments.length > 0
-        ? Math.round(totalLPProgress / enrollments.length)
-        : 0;
-        
-      stats.lpCompleted = enrollments.filter(
-        (e) => e.status === 'completed',
-      ).length;
-      stats.assignmentsCompleted = submissions.length;
-      let totalScore = 0;
-      let evaluatedCount = 0;
-      submissions.forEach((s) => {
-        if (
-          s.evaluations &&
-          s.evaluations.length > 0 &&
-          s.evaluations[0].overallScore
-        ) {
-          totalScore += s.evaluations[0].overallScore;
-          evaluatedCount++;
-        }
-      });
-      stats.score = evaluatedCount
-        ? Math.round(totalScore / evaluatedCount)
-        : 0;
+      stats.lpCompleted = completedLPs;
 
-      const latestProgress = await em.findOne(UserLessonProgressEntity, {
+      stats.assignmentsCompleted = accurateStats.tasksSubmitted;
+      stats.score = accurateStats.averageScore;
+
+      const latestLesson = await em.findOne(UserLessonProgressEntity, {
         where: { user: { id } },
         order: { updatedAt: 'DESC' },
         relations: ['lesson', 'lesson.module'],
       });
-      stats.currentModule = latestProgress?.lesson?.module?.title || 'None';
+      const latestResource = await em.findOne(UserResourceVisitEntity, {
+        where: { user: { id } },
+        order: { visitedAt: 'DESC' },
+        relations: ['resource', 'resource.module', 'resource.lesson', 'resource.lesson.module'],
+      });
+
+      const candidates: { title: string, time: number }[] = [];
+      if (latestLesson?.lesson?.module?.title) {
+        candidates.push({ title: latestLesson.lesson.module.title, time: latestLesson.updatedAt?.getTime() || 0 });
+      }
+      if (latestResource) {
+        const mod = latestResource.resource?.module || latestResource.resource?.lesson?.module;
+        if (mod?.title) {
+          candidates.push({ title: mod.title, time: latestResource.visitedAt?.getTime() || 0 });
+        }
+      }
+
+      let maxTime = 0;
+      let currentMod = 'None';
+
+      for (const c of candidates) {
+        if (c.time >= maxTime) {
+          maxTime = c.time;
+          currentMod = c.title;
+        }
+      }
+
+      const actualSubmissions = await em.find(AssignmentSubmissionEntity, {
+        where: { trainee: { id } } as any,
+        relations: ['assignment', 'assignment.module', 'assignment.lesson', 'assignment.lesson.module'],
+      });
+
+      for (const sub of actualSubmissions) {
+        const mod = sub.assignment?.module || sub.assignment?.lesson?.module;
+        if (mod?.title) {
+          const subTime = new Date(sub.submittedAt || 0).getTime();
+          if (subTime >= maxTime) {
+            maxTime = subTime;
+            currentMod = mod.title;
+          }
+        }
+      }
+
+      stats.currentModule = currentMod;
       const daysSinceJoined = (Date.now() - new Date(user.createdAt).getTime()) / (1000 * 3600 * 24);
       if (daysSinceJoined > 7 && stats.progress < 10) {
         (user as any).status = 'At Risk';
@@ -296,18 +316,20 @@ export class UserEntityService extends BaseService<UserEntity> {
         });
       });
 
-      submissions.sort(
+      // actualSubmissions already queried above
+
+      actualSubmissions.sort(
         (a: any, b: any) =>
-          new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime(),
+          new Date(b.submittedAt || 0).getTime() - new Date(a.submittedAt || 0).getTime(),
       );
-      submissions.slice(0, 3).forEach((s) => {
+      actualSubmissions.filter((s: any) => s.status !== 'AVAILABLE' && s.status !== 'LOCKED').slice(0, 3).forEach((s: any) => {
         activities.push({
           type: 'submit',
           description: `Submitted assignment ${s.assignment?.title || 'Unknown'}`,
-          date: s.submittedAt,
+          date: s.submittedAt || new Date(),
         });
       });
-        } else if (primaryRole === 'Trainer') {
+    } else if (primaryRole === 'Trainer') {
       const paths = await em.find(LearningPathEntity, {
         where: { createdBy: { id } } as any,
       });
@@ -330,15 +352,14 @@ export class UserEntityService extends BaseService<UserEntity> {
       let sumOfTraineeScores = 0;
       let traineesWithScoresCount = 0;
       for (const tid of activeTrainees) {
-        const traineeSubmissions = await em.find(SubmissionEntity, {
-          where: { user: { id: tid } } as any,
-          relations: ['evaluations'],
+        const traineeSubmissions = await em.find(AssignmentSubmissionEntity, {
+          where: { trainee: { id: tid } } as any,
         });
         let tScore = 0;
         let eCount = 0;
         traineeSubmissions.forEach((s) => {
-          if (s.evaluations && s.evaluations.length > 0 && s.evaluations[0].overallScore) {
-            tScore += s.evaluations[0].overallScore;
+          if (typeof s.score === 'number') {
+            tScore += s.score;
             eCount++;
           }
         });
@@ -375,14 +396,14 @@ export class UserEntityService extends BaseService<UserEntity> {
           date: e.createdAt,
         });
       });
-      
+
       // Calculate Trainer At Risk
-      const pendingEvals = await em.count(SubmissionEntity, {
-         where: { assignment: { createdBy: { id } }, status: 'Submitted' } as any
+      const pendingEvals = await em.count(AssignmentSubmissionEntity, {
+        where: { assignment: { createdBy: { id } }, status: 'Submitted' } as any
       });
       if (pendingEvals > 5) (user as any).status = 'At Risk';
       else (user as any).status = user.isActive ? 'Active' : 'Inactive';
-      
+
     } else if (primaryRole === 'Admin') {
       stats.usersManaged = await em.count(UserEntity, { where: { isActive: true } });
       (user as any).status = user.isActive ? 'Active' : 'Inactive';

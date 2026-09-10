@@ -91,22 +91,35 @@ export function ModulesManagementSection({
       .catch(() => {});
   }, [accessToken, isTrainee]);
 
+  // ── Sync currentPathId to selectedPathId ──────────────────────────────────
+  useEffect(() => {
+    if (currentPathId && currentPathId !== selectedPathId) {
+      setSelectedPathId(currentPathId);
+    }
+  }, [currentPathId, selectedPathId]);
+
   // ── Load modules when path changes ────────────────────────────────────────
   useEffect(() => {
     if (!selectedPathId) return;
     setIsLoading(true);
-    setModules([]);
+    // Don't clear modules here if we're just switching URL module IDs for the same path
     curriculumService.fetchModulesByPath(selectedPathId, accessToken)
       .then((data: any) => {
         const mods = Array.isArray(data) ? data : [];
         setModules(mods);
-        if (isTrainee && !openModuleId && mods.length > 0) {
-          void openModule(mods[0].id);
+        
+        // Open the module if urlModuleId changes, or open first module if none is open
+        if (isTrainee && mods.length > 0) {
+          if (urlModuleId && urlModuleId !== openModuleId) {
+            void openModule(urlModuleId);
+          } else if (!openModuleId && !urlModuleId) {
+            void openModule(mods[0].id);
+          }
         }
       })
       .catch(() => setModules([]))
       .finally(() => setIsLoading(false));
-  }, [selectedPathId, accessToken, isTrainee]);
+  }, [selectedPathId, accessToken, isTrainee, urlModuleId]);
 
   // ── Load progress stats once (for Trainee) ────────────────────────────────
   useEffect(() => {

@@ -32,7 +32,7 @@ export function TrainerTraineeDetail({ accessToken, activeRole, currentUser }: T
   }, [traineeId, accessToken]);
 
   return (
-    <div style={{ width: '100%', minHeight: '100vh', background: '#f8fafc' }}>
+    <div style={{ width: '100%', minHeight: '100dvh', background: '#f8fafc' }}>
       <div style={{ padding: '24px 32px 0', display: 'flex', alignItems: 'center', gap: '16px' }}>
         <button
           onClick={() => navigate(-1)}

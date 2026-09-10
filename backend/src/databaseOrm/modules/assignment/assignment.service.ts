@@ -586,23 +586,65 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
   async findPendingSubmissionsForTrainer(
     trainerId?: string,
+    filters?: { status?: string; type?: string }
   ): Promise<AssignmentSubmissionEntity[]> {
-    const all = await this.submissionRepository.find({
-      where: { status: 'SUBMITTED' },
-      relations: [
-        'trainee',
-        'assignment',
-        'assignment.createdBy',
-        'assignment.lesson',
-        'assignment.lesson.module',
-        'assignment.lesson.module.learningPath',
-        'assignment.lesson.module.learningPath.createdBy',
-        'assignment.module',
-        'assignment.module.learningPath',
-        'assignment.learningPath',
-      ],
-      order: { submittedAt: 'DESC' } as any,
-    });
+    const qb = this.submissionRepository.createQueryBuilder('submission')
+      .leftJoinAndSelect('submission.trainee', 'trainee')
+      .leftJoinAndSelect('submission.assignment', 'assignment')
+      .leftJoinAndSelect('assignment.createdBy', 'assignmentCreatedBy')
+      .leftJoinAndSelect('assignment.lesson', 'lesson')
+      .leftJoinAndSelect('lesson.module', 'lessonModule')
+      .leftJoinAndSelect('lessonModule.learningPath', 'lessonPath')
+      .leftJoinAndSelect('lessonPath.createdBy', 'lessonPathCreator')
+      .leftJoinAndSelect('assignment.module', 'module')
+      .leftJoinAndSelect('module.learningPath', 'modulePath')
+      .leftJoinAndSelect('assignment.learningPath', 'learningPath');
+
+    // Default status filtering if none provided, or map the provided statuses
+    if (filters?.status) {
+      const statuses = filters.status.split(',').map(s => s.trim().toLowerCase());
+      const orConditions = [];
+      const params: any = {};
+      
+      if (statuses.includes('pending')) {
+        orConditions.push("submission.status = 'SUBMITTED'");
+      }
+      if (statuses.includes('approved')) {
+        orConditions.push("submission.status IN ('APPROVED', 'EVALUATED') AND (submission.score * 1.0 / assignment.max_score) >= 0.35");
+      }
+      if (statuses.includes('rejected')) {
+        orConditions.push("submission.status = 'REJECTED'");
+      }
+      if (statuses.includes('needs improvement')) {
+        orConditions.push("submission.status IN ('APPROVED', 'EVALUATED') AND (submission.score * 1.0 / assignment.max_score) < 0.35");
+      }
+
+      if (orConditions.length > 0) {
+        qb.andWhere(`(${orConditions.join(' OR ')})`, params);
+      } else {
+        qb.andWhere("submission.status = 'SUBMITTED'");
+      }
+    } else {
+      qb.andWhere("submission.status = 'SUBMITTED'");
+    }
+
+    if (filters?.type) {
+      const types = filters.type.split(',').map(t => t.trim().toLowerCase());
+      const orConditions = [];
+      if (types.includes('learning path assignment')) {
+        orConditions.push("(assignment.assignment_type != 'external' AND assignment.assignment_type != 'External')");
+      }
+      if (types.includes('external assignment')) {
+        orConditions.push("(assignment.assignment_type = 'external' OR assignment.assignment_type = 'External')");
+      }
+      if (orConditions.length > 0) {
+        qb.andWhere(`(${orConditions.join(' OR ')})`);
+      }
+    }
+
+    qb.orderBy('submission.submittedAt', 'DESC');
+
+    const all = await qb.getMany();
 
     // Filter submissions based on who assigned them (the assigner should evaluate)
     const filtered: AssignmentSubmissionEntity[] = [];
@@ -914,32 +956,82 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     return await this.attachLockStateToAssignments(enriched, currentUser?.id || currentUser?.sub);
   }
 
-  async findAll(currentUser?: any): Promise<AssignmentEntity[]> {
+  async findAll(
+    currentUser?: any, 
+    filters?: { status?: string; type?: string; difficulty?: string; lockState?: string }
+  ): Promise<AssignmentEntity[]> {
     const enriched = await this.getAllAssignmentsEnriched(currentUser);
     
     if (!currentUser) return enriched;
 
     const isAdmin = this.isAdminUser(currentUser);
-    if (isAdmin) return enriched;
+    let result = enriched;
 
-    const roles = this.extractUserRoles(currentUser);
-    
-    const isTrainer = roles.includes('trainer');
-    const isTrainee = roles.includes('trainee');
-    const userId = currentUser?.id || currentUser?.sub;
+    if (!isAdmin) {
+      const roles = this.extractUserRoles(currentUser);
+      const isTrainer = roles.includes('trainer');
+      const isTrainee = roles.includes('trainee');
+      const userId = currentUser?.id || currentUser?.sub;
 
-    if (isTrainer) {
-      return enriched.filter((a: any) => {
-        // Must have at least one submission assigned to this trainer
-        return a.submissions && a.submissions.length > 0;
-      });
+      if (isTrainer) {
+        result = enriched.filter((a: any) => {
+          return a.submissions && a.submissions.length > 0;
+        });
+      } else if (isTrainee) {
+        return await this.findMyAssignments(userId, currentUser, filters);
+      }
     }
 
-    if (isTrainee) {
-      return await this.findMyAssignments(userId, currentUser);
+    if (filters && !this.extractUserRoles(currentUser).includes('trainee')) {
+      if (filters.type) {
+        const types = filters.type.split(',').map(t => t.trim().toLowerCase());
+        result = result.filter(a => {
+          const isExt = String(a.assignmentType || '').toLowerCase() === 'external';
+          if (types.includes('external') && isExt) return true;
+          if (types.includes('learning path') && !isExt) return true;
+          return false;
+        });
+      }
+      
+      if (filters.difficulty) {
+        const diffs = filters.difficulty.split(',').map(d => d.trim().toLowerCase());
+        result = result.filter(a => diffs.includes(String(a.difficultyLevel || '').toLowerCase()));
+      }
+
+      if (filters.status) {
+        const statuses = filters.status.split(',').map(s => s.trim().toLowerCase());
+        result = result.filter(a => {
+          const aStatus = String((a as any).status || '').toLowerCase();
+          
+          if (statuses.includes(aStatus)) return true;
+          
+          if (statuses.includes('in progress') && (aStatus === 'started' || aStatus === 'in progress')) {
+            return true;
+          }
+
+          if (statuses.includes('needs improvement') || statuses.includes('approved but score < 35%')) {
+            if (aStatus === 'rejected') return true;
+            if (aStatus === 'approved' || aStatus === 'evaluated') {
+               const score = (a as any).score || 0;
+               const max = a.maxScore || 100;
+               if ((score / max) < 0.35) return true;
+            }
+          }
+
+          if (statuses.includes('approved')) {
+            if (aStatus === 'approved' || aStatus === 'evaluated') {
+               // Usually approved means >= 35% if we want strict categories, 
+               // but we can just return true if it is evaluated.
+               return true;
+            }
+          }
+
+          return false;
+        });
+      }
     }
 
-    return enriched;
+    return result;
   }
 
   /**
@@ -1062,9 +1154,15 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     );
   }
 
-  async findMyAssignments(traineeId: string, currentUser?: any): Promise<AssignmentEntity[]> {
+  async findMyAssignments(
+    traineeId: string, 
+    currentUser?: any,
+    filters?: { status?: string; type?: string; difficulty?: string; lockState?: string }
+  ): Promise<AssignmentEntity[]> {
     const userToPass = currentUser || { sub: traineeId, 'custom:role': '["trainee"]' };
-    const all = await this.getAllAssignmentsEnriched(userToPass);
+    
+    // We fetch assignments but we can pre-filter them if `type` or `difficulty` is provided
+    let all = await this.getAllAssignmentsEnriched(userToPass);
 
     const enrolledPaths = await this.enrollmentRepository.find({
       where: { user: { id: traineeId }, status: 'active' },
@@ -1096,14 +1194,73 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       return pathId && enrolledPathIds.has(pathId);
     });
 
-    for (const a of filtered) {
+    let result = filtered;
+
+    // Apply Filters
+    if (filters) {
+      if (filters.type) {
+        const types = filters.type.split(',').map(t => t.trim().toLowerCase());
+        result = result.filter(a => {
+          const isExt = String(a.assignmentType || '').toLowerCase() === 'external';
+          if (types.includes('external') && isExt) return true;
+          if (types.includes('learning path') && !isExt) return true;
+          return false;
+        });
+      }
+      
+      if (filters.difficulty) {
+        const diffs = filters.difficulty.split(',').map(d => d.trim().toLowerCase());
+        result = result.filter(a => diffs.includes(String(a.difficultyLevel || '').toLowerCase()));
+      }
+
+      if (filters.lockState) {
+        const locks = filters.lockState.split(',').map(l => l.trim().toLowerCase());
+        result = result.filter(a => {
+          if (locks.includes('locked') && (a as any).isLocked) return true;
+          if (locks.includes('unlocked') && !(a as any).isLocked) return true;
+          return false;
+        });
+      }
+
+      if (filters.status) {
+        const statuses = filters.status.split(',').map(s => s.trim().toLowerCase());
+        result = result.filter(a => {
+          const aStatus = String((a as any).status || '').toLowerCase();
+          
+          if (statuses.includes(aStatus)) {
+            return true;
+          }
+
+          if (statuses.includes('in progress') && (aStatus === 'started' || aStatus === 'in progress')) {
+            return true;
+          }
+          
+          if (statuses.includes('approved but score < 35%') || statuses.includes('needs improvement')) {
+            if (aStatus === 'rejected') return true;
+            if (aStatus === 'approved' || aStatus === 'evaluated') {
+               const score = (a as any).score || 0;
+               const max = a.maxScore || 100;
+               if ((score / max) < 0.35) return true;
+            }
+          }
+
+          if (statuses.includes('approved')) {
+            if (aStatus === 'approved' || aStatus === 'evaluated') return true;
+          }
+
+          return false;
+        });
+      }
+    }
+
+    for (const a of result) {
       const assigner = await this.resolveAssignerForInstance(a, traineeId);
       if (assigner) {
         (a as any).assignedBy = assigner;
       }
     }
 
-    return filtered.sort((a, b) => {
+    return result.sort((a, b) => {
       const aSub = (a as any).latestSubmission;
       const bSub = (b as any).latestSubmission;
       const aStatus = aSub?.status || 'not_started';

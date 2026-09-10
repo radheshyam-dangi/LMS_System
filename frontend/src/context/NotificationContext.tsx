@@ -66,12 +66,6 @@ export function NotificationProvider({ accessToken, children }: ProviderProps) {
       return;
     }
     void refresh();
-
-    const intervalId = setInterval(() => {
-      void refresh();
-    }, 10000); // Poll every 10 seconds
-
-    return () => clearInterval(intervalId);
   }, [accessToken, refresh]);
 
   const markAsRead = useCallback(

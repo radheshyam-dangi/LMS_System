@@ -1,6 +1,11 @@
 import axios from 'axios';
 
-export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000') + '/v1';
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const defaultApiUrl = isLocalhost 
+  ? 'http://localhost:3000'
+  : 'https://h54dv5nh.aue.devtunnels.ms:3000';
+
+export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? defaultApiUrl) + '/v1';
 
 axios.interceptors.response.use(
   (response) => response,

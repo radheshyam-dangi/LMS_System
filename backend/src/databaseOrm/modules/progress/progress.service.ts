@@ -295,7 +295,7 @@ export class ProgressEntityService {
       const sub = subByAssign.get(a.id);
       if (!sub) continue;
       if (
-        ['Submitted', 'Accepted', 'Rejected', 'Evaluated'].includes(sub.status)
+        sub.status && sub.status.toUpperCase() !== 'AVAILABLE' && sub.status.toUpperCase() !== 'LOCKED'
       ) {
         tasksSubmitted++;
       }

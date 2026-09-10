@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import type { SessionUser } from '../types/auth';
+import { API_BASE_URL } from '../api';
 
 interface LoginPageProps {
   onLoginSuccess: (token: string, user: SessionUser) => void;
@@ -20,7 +21,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setIsSubmitting(true);
 
     try {
-      const response = await axios.post('http://localhost:3000/auth/login', {
+      const response = await axios.post(`${API_BASE_URL}/auth/login`, {
         email,
         password,
       });
@@ -40,7 +41,7 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ display: 'flex', minHeight: '100dvh', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', fontFamily: 'Inter, system-ui, sans-serif' }}>
       <form onSubmit={handleLoginSubmit} style={{ background: '#fff', padding: '32px', borderRadius: '12px', width: '380px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }}>
         <h2 style={{ margin: '0 0 6px 0', fontSize: '22px', fontWeight: 700, color: '#0f172a' }}>SkillForge AI Platform</h2>
         <p style={{ color: '#64748b', fontSize: '13px', margin: '0 0 20px 0' }}>Sign in to access your dashboard</p>

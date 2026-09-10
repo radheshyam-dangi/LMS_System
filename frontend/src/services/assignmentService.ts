@@ -74,9 +74,15 @@ export const assignmentService = {
   /**
    * 6. FETCH ALL ASSIGNMENTS (Trainer/Admin)
    */
-  fetchAllAssignments: async (token: string, activeRole?: string) => {
+  fetchAllAssignments: async (token: string, activeRole?: string, filters?: Record<string, string>) => {
+    let url = `${API_BASE_URL}/assignments`;
+    if (filters) {
+      const params = new URLSearchParams(filters);
+      const qs = params.toString();
+      if (qs) url += `?${qs}`;
+    }
     const response = await axios.get(
-      `${API_BASE_URL}/assignments`,
+      url,
       getAuthHeaders(token, activeRole)
     );
     return Array.isArray(response.data) ? response.data : (response.data?.data || response.data?.assignments || []);
@@ -108,9 +114,15 @@ export const assignmentService = {
   /**
    * 8b. Trainee: my assigned tasks (external + path-linked)
    */
-  fetchMyAssignments: async (token: string, activeRole?: string) => {
+  fetchMyAssignments: async (token: string, activeRole?: string, filters?: Record<string, string>) => {
+    let url = `${API_BASE_URL}/assignments/my-assignments`;
+    if (filters) {
+      const params = new URLSearchParams(filters);
+      const qs = params.toString();
+      if (qs) url += `?${qs}`;
+    }
     const response = await axios.get(
-      `${API_BASE_URL}/assignments/my-assignments`,
+      url,
       getAuthHeaders(token, activeRole)
     );
     return Array.isArray(response.data) ? response.data : [];

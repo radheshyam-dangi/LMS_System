@@ -1,4 +1,4 @@
-import { Entity, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, Index } from 'typeorm';
 import { BaseEntity } from './base.entity';
 import { LessonEntity } from './lesson.entity';
 import { ModuleEntity } from './module.entity';
@@ -19,9 +19,11 @@ export class AssignmentEntity extends BaseEntity {
   instructions: string;
 
   // 'Subjective' | 'MCQ'
+  @Index()
   @Column({ type: 'varchar', name: 'assignment_type', default: 'Subjective' })
   assignmentType: string;
 
+  @Index()
   @Column({
     type: 'varchar',
     name: 'difficulty_level',

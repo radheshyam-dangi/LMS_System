@@ -5,6 +5,7 @@ import { learningPathService } from "../../services/learningPathService";
 import { userService } from "../../services/userService";
 import { progressService } from "../../services/lmsApi";
 import { useNotifications } from "../../context/NotificationContext";
+import { useScrollLock } from "../../hooks/useScrollLock";
 import type {
   RoleName,
   LearningPath,
@@ -33,10 +34,50 @@ interface TraineeUser {
   primaryRole?: any;
 }
 
+const DescriptionModal = ({ description, onClose }: { description: string; onClose: () => void }) => {
+  useScrollLock(true);
+
+  // Focus trap / escape key handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }}>
+      <div 
+        className="modal-container" 
+        onClick={(e) => e.stopPropagation()} 
+        role="dialog" 
+        aria-modal="true"
+        aria-labelledby="desc-modal-title"
+        style={{ width: '90%', maxWidth: '600px', maxHeight: '90dvh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}
+      >
+        <div style={{ padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 id="desc-modal-title" style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#1e293b' }}>Full Description</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
+        </div>
+        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: '#334155', fontSize: '15px', lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+            {description}
+          </p>
+        </div>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '10px 20px', background: '#f1f5f9', color: '#475569', borderRadius: '8px', border: 'none', fontWeight: 600, cursor: 'pointer' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ExpandableDescription = ({ description }: { description: string }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
   const textRef = React.useRef<HTMLParagraphElement>(null);
+  const buttonRef = React.useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const el = textRef.current;
@@ -49,41 +90,62 @@ const ExpandableDescription = ({ description }: { description: string }) => {
     }
   }, [description]);
 
-  const toggleExpand = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isExpanded) {
-      if (textRef.current) {
-        textRef.current.scrollTop = 0;
-      }
-      setIsExpanded(false);
-    } else {
-      setIsExpanded(true);
+  useEffect(() => {
+    if (!isModalOpen && buttonRef.current) {
+      // Focus return
+      buttonRef.current.focus();
     }
-  };
+  }, [isModalOpen]);
+
+  if (!description) return null;
 
   return (
     <div className="expandable-description-container" onClick={(e) => e.stopPropagation()}>
       <p
         ref={textRef}
-        className={`card-description-string ${isExpanded ? "expanded" : ""}`}
-        style={{ WebkitBoxOrient: "vertical" }}
+        className="card-description-string"
       >
-        {description || "No description provided."}
+        {description}
       </p>
-      {isOverflowing && !isExpanded && (
-        <button className="expand-toggle-btn" onClick={toggleExpand}>
-          Read more
+      {isOverflowing && (
+        <button 
+          ref={buttonRef}
+          className="expand-toggle-btn" 
+          onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); }}
+          aria-haspopup="dialog"
+        >
+          Show more
         </button>
       )}
-      {isExpanded && (
-        <button className="expand-toggle-btn" onClick={toggleExpand}>
-          Show Less
-        </button>
+      
+      {isModalOpen && (
+        <DescriptionModal description={description} onClose={() => setIsModalOpen(false)} />
       )}
     </div>
   );
 };
 
+
+const highlightMatch = (text: string, highlight: string) => {
+  if (!highlight.trim() || !text) {
+    return <span>{text}</span>;
+  }
+  const regex = new RegExp(`(${highlight})`, 'gi');
+  const parts = text.split(regex);
+  return (
+    <span>
+      {parts.map((part, i) =>
+        regex.test(part) ? (
+          <mark key={i} style={{ padding: '0 2px', borderRadius: '2px', backgroundColor: 'rgba(79, 70, 229, 0.15)', color: '#4f46e5' }}>
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </span>
+  );
+};
 
 export function LearningPathsSection({
   currentUser,
@@ -98,6 +160,14 @@ export function LearningPathsSection({
     "All",
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Modal States
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -153,7 +223,7 @@ export function LearningPathsSection({
     setErrorMessage(null);
     try {
       const [data, summary] = await Promise.all([
-        learningPathService.fetchAllPaths(accessToken),
+        learningPathService.fetchAllPaths(accessToken, debouncedSearchQuery),
         progressService.fetchPathProgressSummary(accessToken).catch(() => ({})),
       ]);
       setPaths(data);
@@ -193,6 +263,9 @@ export function LearningPathsSection({
 
   useEffect(() => {
     loadDatabasePaths();
+  }, [debouncedSearchQuery]);
+
+  useEffect(() => {
     if (isAdmin || isTrainer) {
       userService.fetchAllUsers(accessToken).then((rawUsersList) => {
         const eligibleTrainees = (rawUsersList || []).filter((user: any) => {
@@ -392,11 +465,6 @@ export function LearningPathsSection({
     return paths.filter((path) => {
       if (isTrainee && !path.assignedToTraineeIds?.includes(currentUser.id))
         return false;
-        
-      const pathDisplayName = path.title || path.name || "";
-      if (!pathDisplayName.toLowerCase().includes(searchQuery.toLowerCase())) {
-        return false;
-      }
 
       if (isTrainee) {
         const progress = progressSummary[path.id]?.userProgressPercent || 0;
@@ -413,7 +481,7 @@ export function LearningPathsSection({
         path.status?.toLowerCase() === activeTabFilter.toLowerCase()
       );
     });
-  }, [paths, activeTabFilter, searchQuery, isTrainee, currentUser.id, progressSummary]);
+  }, [paths, activeTabFilter, isTrainee, currentUser.id, progressSummary]);
 
   const handleCreatePathSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -558,9 +626,32 @@ export function LearningPathsSection({
                   .map((t) => t.trim())
                   .filter(Boolean);
               }
+              
+              const matchedTagsRaw = (path as any).matchedTags || [];
+              const matchedTagsLower = matchedTagsRaw.map((t: string) => t.toLowerCase());
 
               return (
-                <div key={path.id} className="learning-path-card-item">
+                <div 
+                  key={path.id} 
+                  className="learning-path-card-item"
+                  style={{
+                    transition: 'transform 0.1s ease, box-shadow 0.1s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'scale(1.01)';
+                    e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)';
+                  }}
+                  onMouseDown={(e) => {
+                    e.currentTarget.style.transform = 'scale(0.98)';
+                  }}
+                  onMouseUp={(e) => {
+                    e.currentTarget.style.transform = 'scale(1.01)';
+                  }}
+                >
                   <div className="card-top-badges-row">
                     {path.imageUrl ? (
                       <img
@@ -591,7 +682,7 @@ export function LearningPathsSection({
                     </div>
                   </div>
 
-                  <h2 className="card-title-string">{currentTitle}</h2>
+                  <h2 className="card-title-string">{highlightMatch(currentTitle, debouncedSearchQuery)}</h2>
                   <ExpandableDescription description={path.description || ""} />
 
                   {/* SKILLS TAGS CLOUD ROW */}
@@ -606,22 +697,27 @@ export function LearningPathsSection({
                         marginBottom: "10px",
                       }}
                     >
-                      {currentTags.map((tag, idx) => (
-                        <span
-                          key={idx}
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: 600,
-                            color: "#2563eb",
-                            background: "#eff6ff",
-                            border: "1px solid #bfdbfe",
-                            padding: "2px 8px",
-                            borderRadius: "12px",
-                          }}
-                        >
-                          {tag}
-                        </span>
-                      ))}
+                      {currentTags.map((tag, idx) => {
+                        const isMatched = matchedTagsLower.includes(tag.toLowerCase());
+                        return (
+                          <span
+                            key={idx}
+                            title={isMatched ? `Matched search: ${tag}` : undefined}
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              color: isMatched ? "#4f46e5" : "#2563eb",
+                              background: isMatched ? "rgba(79, 70, 229, 0.15)" : "#eff6ff",
+                              border: isMatched ? "1px solid #818cf8" : "1px solid #bfdbfe",
+                              padding: "2px 8px",
+                              borderRadius: "12px",
+                              boxShadow: isMatched ? "0 0 0 1px #818cf8" : "none",
+                            }}
+                          >
+                            {highlightMatch(tag, debouncedSearchQuery)}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
 

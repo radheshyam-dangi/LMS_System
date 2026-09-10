@@ -206,57 +206,6 @@ export function UserProfileDrawer({ user, isOpen, onClose }: UserProfileDrawerPr
         <div className="drawer-footer" style={{ position: 'relative' }}>
           {errorMsg && <div style={{ position: 'absolute', top: '-40px', left: 0, right: 0, color: 'red', textAlign: 'center', background: '#fee2e2', padding: '4px', borderRadius: '4px' }}>{errorMsg}</div>}
           <button className="btn-secondary" onClick={onClose}>Close</button>
-          <div style={{ position: 'relative' }}>
-            <button className="btn-primary" onClick={() => setShowManageMenu(!showManageMenu)}>
-              Manage User
-            </button>
-            {showManageMenu && (
-              <div style={{
-                position: 'absolute', bottom: '110%', right: '0',
-                background: 'white', border: '1px solid #e2e8f0',
-                borderRadius: '8px', padding: '8px', display: 'flex',
-                flexDirection: 'column', gap: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-                minWidth: '150px', zIndex: 10
-              }}>
-                {user.status === 'Active' ? (
-                  <button onClick={async () => {
-                    await deactivateUser(user.id);
-                    onClose(); // and ideally trigger list refresh
-                  }} style={{ padding: '8px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: '4px' }} onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                    Deactivate User
-                  </button>
-                ) : (
-                  <button onClick={async () => {
-                    await reactivateUser(user.id);
-                    onClose();
-                  }} style={{ padding: '8px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderRadius: '4px' }} onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                    Reactivate User
-                  </button>
-                )}
-                <hr style={{ margin: '4px 0', border: 'none', borderTop: '1px solid #e2e8f0' }} />
-                {!isDeleting ? (
-                  <button onClick={() => setIsDeleting(true)} style={{ padding: '8px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', color: 'red', borderRadius: '4px' }} onMouseEnter={(e) => e.currentTarget.style.background = '#fee2e2'} onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                    Delete User
-                  </button>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '4px' }}>
-                    <span style={{ fontSize: '12px', color: 'red' }}>Are you sure?</span>
-                    <button onClick={async () => {
-                      const res = await deleteUser(user.id);
-                      if (!res.ok) {
-                        const err = await res.json();
-                        setErrorMsg(err.message || 'Failed to delete');
-                        setIsDeleting(false);
-                      } else {
-                        onClose();
-                      }
-                    }} style={{ padding: '4px', background: 'red', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Confirm Delete</button>
-                    <button onClick={() => setIsDeleting(false)} style={{ padding: '4px', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

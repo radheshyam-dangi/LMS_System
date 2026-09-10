@@ -8,7 +8,7 @@
   background-color: #f1f5f9;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   box-sizing: border-box;
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .learning-paths-header-row {
@@ -126,6 +126,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: 32px;
+  align-items: start;
 }
 
 .learning-path-card-item {
@@ -140,7 +141,7 @@
   transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
-  height: 420px;
+  min-height: 200px;
 }
 
 .learning-path-card-item::before {
@@ -246,20 +247,17 @@
   color: #64748b;
   line-height: 2;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   margin-bottom: 4px;
   transition: all 0.4s ease-in-out;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
-.card-description-string.expanded {
-  display: block;
-  -webkit-line-clamp: unset;
-  overflow-y: auto;
-  max-height: 150px;
-}
+
 
 .expand-toggle-btn {
   background: none;
@@ -272,10 +270,16 @@
   text-align: left;
   display: inline-block;
   width: fit-content;
+  border-radius: 4px;
 }
 
 .expand-toggle-btn:hover {
   text-decoration: underline;
+  color: #3730a3;
+}
+.expand-toggle-btn:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 2px;
 }
 
 .card-tags-cloud-row {
@@ -431,7 +435,7 @@
   top: 0 !important;
   left: 0 !important;
   width: 100vw !important;
-  height: 100vh !important;
+  height: 100dvh !important;
   background-color: rgba(15, 23, 42, 0.3) !important;
   backdrop-filter: blur(8px) !important;
   -webkit-backdrop-filter: blur(8px) !important;

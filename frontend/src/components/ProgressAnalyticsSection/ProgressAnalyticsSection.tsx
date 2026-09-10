@@ -512,7 +512,7 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken,
           </div>
           <div style={{ width: '100%', height: 450 }}>
             {filteredModuleCompletion.length > 0 ? (
-              <ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={filteredModuleCompletion} margin={{ top: 20, right: 30, left: 0, bottom: 120 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="title" axisLine={false} tickLine={false} interval={0} tick={<CustomXAxisTick />} />

@@ -30,12 +30,18 @@ export class AssignmentController {
 
   @Get('submissions/pending')
   @Roles('Admin', 'Trainer')
-  async getPendingSubmissions(@GetUser() currentUser: any, @Headers('x-active-role') activeRole?: string) {
+  async getPendingSubmissions(
+    @GetUser() currentUser: any, 
+    @Headers('x-active-role') activeRole?: string,
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+  ) {
     if (activeRole?.toLowerCase() === 'admin') return [];
     const trainerId = currentUser?.id || currentUser?.sub;
     const isAdmin = this.assignmentService.isAdminUser(currentUser);
     return await this.assignmentService.findPendingSubmissionsForTrainer(
       isAdmin ? undefined : trainerId,
+      { status, type }
     );
   }
 
@@ -98,11 +104,18 @@ export class AssignmentController {
   /** Trainee: list assignments assigned to them (external + path-linked) */
   @Get('my-assignments')
   @Roles('Trainee', 'Trainer', 'Admin')
-  async getMyAssignments(@GetUser() currentUser: any, @Headers('x-active-role') activeRole?: string) {
+  async getMyAssignments(
+    @GetUser() currentUser: any, 
+    @Headers('x-active-role') activeRole?: string,
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+    @Query('difficulty') difficulty?: string,
+    @Query('lockState') lockState?: string,
+  ) {
     if (activeRole?.toLowerCase() === 'admin') return [];
     const traineeId = currentUser?.id || currentUser?.sub;
     if (!traineeId) throw new ForbiddenException('User session missing.');
-    return await this.assignmentService.findMyAssignments(traineeId);
+    return await this.assignmentService.findMyAssignments(traineeId, currentUser, { status, type, difficulty, lockState });
   }
 
   @Get('external')
@@ -200,6 +213,10 @@ export class AssignmentController {
     @Query('moduleId') moduleId?: string,
     @Query('learningPathId') learningPathId?: string,
     @Query('externalOnly') externalOnly?: string,
+    @Query('status') status?: string,
+    @Query('type') type?: string,
+    @Query('difficulty') difficulty?: string,
+    @Query('lockState') lockState?: string,
     @GetUser() currentUser?: any,
     @Headers('x-active-role') activeRole?: string,
   ) {
@@ -213,7 +230,8 @@ export class AssignmentController {
     if (externalOnly === 'true' || externalOnly === '1') {
       return await this.assignmentService.findExternalAssignments(currentUser);
     }
-    const all = await this.assignmentService.findAll(currentUser);
+    const filters = { status, type, difficulty, lockState };
+    const all = await this.assignmentService.findAll(currentUser, filters);
     return all.filter((a) => {
       if (
         moduleId &&

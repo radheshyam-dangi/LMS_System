@@ -29,7 +29,7 @@ export const MultiLineProgressChart: React.FC<MultiLineProgressChartProps> = ({ 
       {subtitle && <p style={{ fontSize: '12px', color: '#64748b', margin: '0 0 16px 0' }}>{subtitle}</p>}
       <div style={{ width: '100%', height: height, overflowX: 'auto', overflowY: 'hidden' }}>
         <div style={{ minWidth: Math.max(800, data.length * 60), height: '100%' }}>
-          <ResponsiveContainer>
+          <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 150 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               <XAxis dataKey={xAxisKey} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} angle={-45} textAnchor="end" />

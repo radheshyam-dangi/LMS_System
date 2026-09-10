@@ -5,6 +5,7 @@ import { SearchService } from './search.service';
 import { UserEntity } from '../../entities/user.entity';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { AssignmentEntity } from '../../entities/assignment.entity';
+import { ModuleEntity } from '../../entities/module.entity';
 import { AuthModule } from '../../auth/auth.module';
 
 @Module({
@@ -13,6 +14,7 @@ import { AuthModule } from '../../auth/auth.module';
       UserEntity,
       LearningPathEntity,
       AssignmentEntity,
+      ModuleEntity,
     ]),
     AuthModule,
   ],
