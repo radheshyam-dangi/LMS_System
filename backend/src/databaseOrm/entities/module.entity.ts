@@ -4,6 +4,7 @@ import { LearningPathEntity } from './learningPath.entity';
 import { UserEntity } from './user.entity';
 import { LessonEntity } from './lesson.entity';
 import { ResourceEntity } from './resource.entity';
+import { AssignmentEntity } from './assignment.entity';
 
 @Entity('Module')
 export class ModuleEntity extends BaseEntity {
@@ -92,4 +93,22 @@ export class ModuleEntity extends BaseEntity {
     cascade: true,
   })
   resources: ResourceEntity[];
+
+  // 🌟 Assignments directly under this module (Tiptap authoring)
+  @OneToMany(() => AssignmentEntity, (assignment) => assignment.module, {
+    cascade: true,
+    onDelete: 'CASCADE',
+  })
+  assignments: AssignmentEntity[];
+
+  /**
+   * Alias for lessonLocking → maps to spec's `sequentialLessonLock`.
+   * When true, lesson N+1 is non-clickable until lesson N is completed.
+   */
+  get sequentialLessonLock(): boolean {
+    return this.lessonLocking;
+  }
+  set sequentialLessonLock(val: boolean) {
+    this.lessonLocking = val;
+  }
 }

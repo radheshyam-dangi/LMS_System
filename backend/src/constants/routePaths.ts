@@ -18,4 +18,6 @@ export const RoutePaths = {
   Users: 'users',
   UserLessonProgress: 'userLessonProgress',
   Resources: 'resources',
+  LpAuthoring: 'lp-authoring',
+  AiEvaluation: 'ai-evaluation',
 } as const;

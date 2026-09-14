@@ -60,4 +60,54 @@ export class AssignmentSubmissionEntity extends BaseEntity {
   @ManyToOne(() => UserEntity, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'evaluated_by_id' })
   evaluatedBy: UserEntity;
+
+  // ────────────────────────────────────────────
+  // 🌟 AI Evaluation Pipeline Fields
+  // ────────────────────────────────────────────
+
+  /** Structured answers: [{ questionId, answer }] */
+  @Column({ type: 'jsonb', nullable: true })
+  answers: Array<{ questionId: string; answer: string }>;
+
+  /** How was this submission evaluated? 'manual' | 'ai_assisted' | 'ai_auto' */
+  @Column({
+    type: 'varchar',
+    name: 'evaluation_method',
+    nullable: true,
+  })
+  evaluationMethod: string;
+
+  /**
+   * Raw AI evaluation response stored for audit trail.
+   * Shape: { questionScores: [...], totalScore, totalMaxScore, overallRemark }
+   */
+  @Column({
+    type: 'jsonb',
+    name: 'ai_evaluation_result',
+    nullable: true,
+  })
+  aiEvaluationResult: Record<string, any>;
+
+  /** True if some dependent lesson content was unavailable during AI evaluation */
+  @Column({
+    type: 'boolean',
+    name: 'context_incomplete',
+    default: false,
+  })
+  contextIncomplete: boolean;
+
+  /**
+   * AI evaluation pipeline status:
+   * null — not AI-evaluated
+   * 'pending' — queued for evaluation
+   * 'ai_evaluated_pending_review' — AI done, awaiting trainer review
+   * 'ai_auto_released' — AI result auto-released to trainee
+   * 'ai_evaluation_failed' — AI evaluation failed, routed to manual
+   */
+  @Column({
+    type: 'varchar',
+    name: 'ai_evaluation_status',
+    nullable: true,
+  })
+  aiEvaluationStatus: string;
 }

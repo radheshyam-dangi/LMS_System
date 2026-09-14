@@ -109,20 +109,63 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!submitTarget || !submissionText.trim()) {
-      alert('Please enter your submission.');
+
+    // F1: Support both new Tiptap 'questions' JSONB array and legacy 'mcqConfig.questions'
+    const questions: any[] = submitTarget?.questions || submitTarget?.mcqConfig?.questions || [];
+    const hasMcqQuestions = questions.some((q: any) => (q.type || q.questionType || '').toUpperCase() === 'MCQ');
+    const hasSubjectiveQuestions = questions.some((q: any) => (q.type || q.questionType || '') !== 'MCQ');
+
+    // F2: Build structured answers array with questionId for backend AI pipeline
+    const structuredAnswers: Array<{ questionId: string; answer: string }> = questions.map((q: any, idx: number) => {
+      const qId = q.id || String(idx);
+      const isMCQ = (q.type || q.questionType || '').toUpperCase() === 'MCQ';
+      if (isMCQ) {
+        const selectedIdx = selectedMcqAnswers[idx];
+        return {
+          questionId: qId,
+          answer: typeof selectedIdx === 'number' ? String(selectedIdx) : '',
+        };
+      } else {
+        return {
+          questionId: qId,
+          answer: subjectiveAnswers[idx] || submissionText,
+        };
+      }
+    });
+
+    // Build submissionText fallback (for legacy compatibility and general assignments)
+    let finalText = submissionText;
+    if (questions.length > 0) {
+      finalText = JSON.stringify({
+        answers: selectedMcqAnswers,
+        textAnswers: subjectiveAnswers,
+        raw: submissionText,
+      });
+    }
+    if (!finalText.trim()) finalText = 'Task completed & submitted';
+
+    if (!submitTarget) {
+      alert('Please select an assignment to submit.');
       return;
     }
+
     setIsSubmitting(true);
     try {
+      // F3: Pass structured answers for AI evaluation pipeline
       await assignmentService.submitAssignment(
         submitTarget.id,
-        { submissionText, attachmentUrl: attachmentUrl || undefined },
+        {
+          submissionText: finalText,
+          attachmentUrl: attachmentUrl || undefined,
+          answers: structuredAnswers.length > 0 ? structuredAnswers : undefined,
+        },
         accessToken,
       );
       setSubmitTarget(null);
       setSubmissionText('');
       setAttachmentUrl('');
+      setSelectedMcqAnswers({});
+      setSubjectiveAnswers({});
       await loadData();
       await refreshNotifications();
       alert('Submitted for evaluation. Your trainer has been notified.');
@@ -620,35 +663,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             </div>
 
             <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                let finalText = submissionText;
-                if (submitTarget.assignmentType === 'MCQ' || submitTarget.mcqConfig?.questions?.length > 0) {
-                  finalText = JSON.stringify({ answers: selectedMcqAnswers, textAnswers: subjectiveAnswers, raw: submissionText });
-                }
-                if (!finalText.trim()) finalText = 'Task completed & submitted';
-
-                setIsSubmitting(true);
-                try {
-                  await assignmentService.submitAssignment(
-                    submitTarget.id,
-                    { submissionText: finalText, attachmentUrl: attachmentUrl || undefined },
-                    accessToken,
-                  );
-                  setSubmitTarget(null);
-                  setSubmissionText('');
-                  setAttachmentUrl('');
-                  setSelectedMcqAnswers({});
-                  setSubjectiveAnswers({});
-                  await loadData();
-                  await refreshNotifications();
-                  alert('Submitted for evaluation. Your trainer has been notified.');
-                } catch (err: any) {
-                  alert(err?.response?.data?.message || err.message || 'Submission failed.');
-                } finally {
-                  setIsSubmitting(false);
-                }
-              }}
+              onSubmit={handleSubmit}
               style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: '16px' }}
             >
               {/* Instructions Banner */}
@@ -703,116 +718,116 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 </a>
               )}
 
-              {/* MCQ Questions */}
-              {submitTarget.assignmentType === 'MCQ' ? (
-                <div>
-                  {(submitTarget.mcqConfig?.questions || [
-                    { questionText: submitTarget.title || 'What is your answer to this question?', points: 10, options: ['LLM', 'Model', 'AI', 'hardware'] }
-                  ]).map((q: any, qIdx: number) => (
-                    <div
-                      key={qIdx}
-                      style={{
-                        background: '#f8fafc',
-                        padding: '14px',
-                        borderRadius: '10px',
-                        marginBottom: '12px',
-                        border: '1px solid #e2e8f0',
-                      }}
-                    >
-                      <p style={{ fontSize: '13px', fontWeight: 700, margin: '0 0 10px 0', color: '#0f172a' }}>
-                        Q{qIdx + 1}: {q.questionText || q.question} <span style={{ color: '#4f46e5', fontWeight: 600 }}>({q.points || 10} pts)</span>
-                      </p>
-                      {(q.options || ['Option 1', 'Option 2', 'Option 3', 'Option 4']).map((opt: string, optIdx: number) => (
-                        <label
-                          key={optIdx}
+              {/* F1: Questions — support both new Tiptap 'questions' JSONB and legacy 'mcqConfig.questions' */}
+              {(() => {
+                // Normalize: use new questions array first, fall back to mcqConfig
+                const questions: any[] = submitTarget.questions || submitTarget.mcqConfig?.questions || [];
+                if (questions.length > 0) {
+                  return (
+                    <div>
+                      {questions.map((q: any, qIdx: number) => {
+                      // Support both field name conventions
+                      const qText = q.text || q.questionText || q.question || '';
+                      const qType = (q.type || q.questionType || '').toUpperCase();
+                      const qPoints = q.maxPoints || q.points || 10;
+                      const qOptions: string[] = q.options || [];
+                      const isMCQ = qType === 'MCQ' && qOptions.length > 0;
+
+                      return (
+                        <div
+                          key={qIdx}
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            fontSize: '13px',
-                            marginTop: '8px',
-                            cursor: 'pointer',
-                            padding: '8px 12px',
-                            borderRadius: '8px',
-                            background: selectedMcqAnswers[qIdx] === optIdx ? '#ede9fe' : '#fff',
-                            border: '1px solid',
-                            borderColor: selectedMcqAnswers[qIdx] === optIdx ? '#6366f1' : '#e2e8f0',
-                            transition: 'all 0.15s',
+                            background: '#f8fafc',
+                            padding: '14px',
+                            borderRadius: '10px',
+                            marginBottom: '12px',
+                            border: '1px solid #e2e8f0',
                           }}
                         >
-                          <input
-                            type="radio"
-                            name={`q_${qIdx}`}
-                            checked={selectedMcqAnswers[qIdx] === optIdx}
-                            onChange={() => setSelectedMcqAnswers((prev) => ({ ...prev, [qIdx]: optIdx }))}
-                            style={{ accentColor: '#4f46e5' }}
-                          />
-                          {opt}
-                        </label>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ) : submitTarget.mcqConfig?.questions?.length > 0 ? (
-                /* Subjective multi-question */
-                <div>
-                  {submitTarget.mcqConfig.questions.map((q: any, qIdx: number) => (
-                    <div
-                      key={qIdx}
+                          <p style={{ fontSize: '13px', fontWeight: 700, margin: '0 0 10px 0', color: '#0f172a' }}>
+                            Q{qIdx + 1}: {qText}{' '}
+                            <span style={{ color: '#4f46e5', fontWeight: 600 }}>({qPoints} pts)</span>
+                          </p>
+                          {isMCQ ? (
+                            // MCQ options
+                            qOptions.map((opt: string, optIdx: number) => (
+                              <label
+                                key={optIdx}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '10px',
+                                  fontSize: '13px',
+                                  marginTop: '8px',
+                                  cursor: 'pointer',
+                                  padding: '8px 12px',
+                                  borderRadius: '8px',
+                                  background: selectedMcqAnswers[qIdx] === optIdx ? '#ede9fe' : '#fff',
+                                  border: '1px solid',
+                                  borderColor: selectedMcqAnswers[qIdx] === optIdx ? '#6366f1' : '#e2e8f0',
+                                  transition: 'all 0.15s',
+                                }}
+                              >
+                                <input
+                                  type="radio"
+                                  name={`q_${qIdx}`}
+                                  checked={selectedMcqAnswers[qIdx] === optIdx}
+                                  onChange={() => setSelectedMcqAnswers((prev) => ({ ...prev, [qIdx]: optIdx }))}
+                                  style={{ accentColor: '#4f46e5' }}
+                                />
+                                {opt}
+                              </label>
+                            ))
+                          ) : (
+                            // Subjective text answer
+                            <textarea
+                              rows={3}
+                              placeholder="Write your answer here..."
+                              value={subjectiveAnswers[qIdx] || ''}
+                              onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [qIdx]: e.target.value }))}
+                              style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                borderRadius: '8px',
+                                border: '1.5px solid #e2e8f0',
+                                fontSize: '13px',
+                                resize: 'vertical',
+                                outline: 'none',
+                              }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+                }
+
+                return (
+                  /* Single textarea fallback */
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: '#374151' }}>
+                      Your Solution / Answer *
+                    </label>
+                    <textarea
+                      rows={5}
+                      required
+                      placeholder="Type your response here..."
+                      value={submissionText}
+                      onChange={(e) => setSubmissionText(e.target.value)}
                       style={{
-                        background: '#f8fafc',
-                        padding: '14px',
+                        width: '100%',
+                        padding: '12px',
                         borderRadius: '10px',
-                        marginBottom: '12px',
-                        border: '1px solid #e2e8f0',
+                        border: '1.5px solid #e2e8f0',
+                        fontSize: '13px',
+                        resize: 'vertical',
+                        outline: 'none',
                       }}
-                    >
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
-                        Q{qIdx + 1}: {q.questionText || q.question} <span style={{ color: '#4f46e5' }}>({q.maxPoints || q.points || 10} pts)</span>
-                      </label>
-                      <textarea
-                        rows={3}
-                        required
-                        placeholder="Write your answer here..."
-                        value={subjectiveAnswers[qIdx] || ''}
-                        onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [qIdx]: e.target.value }))}
-                        style={{
-                          width: '100%',
-                          padding: '10px 12px',
-                          borderRadius: '8px',
-                          border: '1.5px solid #e2e8f0',
-                          fontSize: '13px',
-                          resize: 'vertical',
-                          outline: 'none',
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                /* Single textarea fallback */
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: '#374151' }}>
-                    Your Solution / Answer *
-                  </label>
-                  <textarea
-                    rows={5}
-                    required
-                    placeholder="Type your response here..."
-                    value={submissionText}
-                    onChange={(e) => setSubmissionText(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      borderRadius: '10px',
-                      border: '1.5px solid #e2e8f0',
-                      fontSize: '13px',
-                      resize: 'vertical',
-                      outline: 'none',
-                    }}
-                  />
-                </div>
-              )}
+                    />
+                  </div>
+                );
+              })()}
 
               {/* Attachment URL */}
               <div>

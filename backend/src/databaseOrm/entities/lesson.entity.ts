@@ -39,6 +39,22 @@ export class LessonEntity extends BaseEntity {
   })
   displayOrder: number;
 
+  // ────────────────────────────────────────────
+  // 🌟 Tiptap Authoring: Multi-media content blocks
+  // ────────────────────────────────────────────
+
+  /** Multiple video blocks: [{ url, title? }] */
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  videos: Array<{ url: string; title?: string }>;
+
+  /** Multiple audio blocks: [{ url, title? }] */
+  @Column({ type: 'jsonb', nullable: true, default: [] })
+  audios: Array<{ url: string; title?: string }>;
+
+  /** Key points / bullet list items */
+  @Column({ type: 'jsonb', name: 'key_points', nullable: true, default: [] })
+  keyPoints: string[];
+
   @ManyToOne(() => ModuleEntity, (module) => module.lessons, {
     nullable: true,
     onDelete: 'CASCADE',

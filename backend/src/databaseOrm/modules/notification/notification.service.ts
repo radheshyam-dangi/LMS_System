@@ -138,6 +138,26 @@ export class NotificationService {
     return result.affected ?? 0;
   }
 
+  /**
+   * Supersede: mark existing unread notifications for the same entity as read,
+   * then create a new one. Prevents notification duplication on resubmission cycles.
+   */
+  async supersede(dto: CreateNotificationDto): Promise<NotificationEntity> {
+    // Mark existing unread notifications for this entity as read
+    if (dto.relatedEntityType && dto.relatedEntityId) {
+      await this.repository.update(
+        {
+          userId: dto.userId,
+          isRead: false,
+          relatedEntityType: dto.relatedEntityType,
+          relatedEntityId: dto.relatedEntityId,
+        },
+        { isRead: true, readAt: new Date() },
+      );
+    }
+    return await this.create(dto);
+  }
+
   async deleteNotification(id: string, userId: string): Promise<boolean> {
     const note = await this.repository.findOne({
       where: { id, userId },

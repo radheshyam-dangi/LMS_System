@@ -19,6 +19,8 @@ export const Entities = {
   User: 'User',
   UserLessonProgress: 'UserLessonProgress',
   UserResourceVisit: 'UserResourceVisit',
+  LpDraft: 'LpDraft',
+  LessonContentCache: 'LessonContentCache',
 } as const;
 
 export const Junctions = {

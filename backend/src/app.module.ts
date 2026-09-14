@@ -24,6 +24,8 @@ import { NotificationModule } from './databaseOrm/modules/notification/notificat
 import { SearchModule } from './databaseOrm/modules/search/search.module';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { HealthModule } from './databaseOrm/modules/health/health.module';
+import { LpAuthoringModule } from './databaseOrm/modules/lpAuthoring/lpAuthoring.module';
+import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluation.module';
 
 @Module({
   imports: [
@@ -62,6 +64,10 @@ import { HealthModule } from './databaseOrm/modules/health/health.module';
     AnalyticsModule,
     NotificationModule,
     SearchModule,
+
+    // 🌟 New Tiptap Authoring + AI Evaluation modules
+    LpAuthoringModule,
+    AiEvaluationModule,
   ],
 })
 export class AppModule {}

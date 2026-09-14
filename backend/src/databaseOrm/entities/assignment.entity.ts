@@ -95,4 +95,80 @@ export class AssignmentEntity extends BaseEntity {
     default: [],
   })
   assignedToTraineeIds: string[];
+
+  // ────────────────────────────────────────────
+  // 🌟 Tiptap Authoring: Lock & AI Toggles
+  // ────────────────────────────────────────────
+
+  /** If true, assignment stays non-clickable until ALL preceding lessons are completed */
+  @Column({
+    type: 'boolean',
+    name: 'lock_until_lessons_complete',
+    default: true,
+  })
+  lockUntilLessonsComplete: boolean;
+
+  /** If true, submission goes through Groq AI evaluation pipeline */
+  @Column({
+    type: 'boolean',
+    name: 'auto_evaluate_with_ai',
+    default: false,
+  })
+  autoEvaluateWithAI: boolean;
+
+  /**
+   * Only relevant when autoEvaluateWithAI = true.
+   * If true, AI result is a draft pending trainer review.
+   * If false, AI result is auto-released immediately.
+   */
+  @Column({
+    type: 'boolean',
+    name: 'human_intervention_required',
+    default: true,
+  })
+  humanInterventionRequired: boolean;
+
+  /**
+   * For external assignment type: when does the countdown timer start?
+   * 'onAssignment' = when the LP/assignment is assigned to trainee
+   * 'onTraineeStart' = when the trainee explicitly starts the assignment
+   */
+  @Column({
+    type: 'varchar',
+    name: 'countdown_start',
+    nullable: true,
+    default: 'onAssignment',
+  })
+  countdownStart: string;
+
+  /**
+   * Structured questions array:
+   * [{ id, text, type: 'MCQ'|'Subjective', maxPoints, options?: string[], correctIndex?: number }]
+   */
+  @Column({
+    type: 'jsonb',
+    nullable: true,
+    default: null,
+  })
+  questions: Array<{
+    id: string;
+    text: string;
+    type: 'MCQ' | 'Subjective';
+    maxPoints: number;
+    options?: string[];
+    correctIndex?: number;
+  }>;
+
+  /**
+   * UUIDs of lessons this assignment depends on.
+   * Populated from authoring order — all lessons preceding this assignment
+   * in the same module are dependencies.
+   */
+  @Column({
+    type: 'jsonb',
+    name: 'depends_on_lesson_ids',
+    nullable: true,
+    default: [],
+  })
+  dependsOnLessonIds: string[];
 }

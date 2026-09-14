@@ -18,6 +18,8 @@ import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { EnrollmentEntity } from '../../entities/enrollment.entity';
 import { UserEntity } from '../../entities/user.entity';
 import { NotificationService } from '../notification/notification.service';
+// B1: Lazy import via forwardRef to avoid circular dependency
+import type { AiEvaluationService } from '../aiEvaluation/aiEvaluation.service';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -57,6 +59,10 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     @Optional()
     @Inject(forwardRef(() => NotificationService))
     private readonly notificationService?: NotificationService,
+    // B1: AiEvaluationService injected via forwardRef to avoid circular dep
+    @Optional()
+    @Inject(forwardRef(() => 'AiEvaluationService'))
+    private readonly aiEvaluationService?: AiEvaluationService,
   ) {
     super();
     this.repository =
@@ -710,6 +716,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     traineeId: string,
     submissionText: string,
     attachmentUrl?: string,
+    answers?: Array<{ questionId: string; answer: string }>,
   ): Promise<AssignmentSubmissionEntity> {
     const assignment = await this.findOne(assignmentId, traineeId);
     // Check if overdue? Wait, due date check is removed.
@@ -734,6 +741,16 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
 
     if (submission) {
+      // B4: Idempotency guard — if already SUBMITTED within 10 seconds, treat as duplicate
+      if (
+        submission.status === 'SUBMITTED' &&
+        submission.submittedAt &&
+        Date.now() - new Date(submission.submittedAt).getTime() < 10_000
+      ) {
+        // Return the existing submission — double-click / network retry
+        return submission;
+      }
+
       if (submission.deadline && new Date() > new Date(submission.deadline)) {
         throw new BadRequestException('Task submission deadline has passed. This task is overdue.');
       }
@@ -741,9 +758,14 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       submission.attachmentUrl = attachmentUrl || submission.attachmentUrl;
       submission.status = 'SUBMITTED';
       submission.submittedAt = new Date();
+      if (answers) submission.answers = answers;
     } else {
-      const hasDuration = (assignment.durationValue || 0) > 0;
-      if (hasDuration) {
+      // B3: Compute total duration from real entity fields — assignment.durationValue does not exist
+      const totalDurationMinutes =
+        (assignment.durationDays || 0) * 24 * 60 +
+        (assignment.durationHours || 0) * 60 +
+        (assignment.durationMinutes || 0);
+      if (totalDurationMinutes > 0) {
         throw new BadRequestException('You must start this task before submitting.');
       }
       submission = this.submissionRepository.create({
@@ -753,6 +775,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         attachmentUrl,
         status: 'SUBMITTED',
         submittedAt: new Date(),
+        answers: answers || undefined,
       });
     }
 
@@ -764,7 +787,21 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const trainee = await this.userRepository.findOne({ where: { id: traineeId } });
     const traineeName = trainee ? `${trainee.firstName || ''} ${trainee.lastName || ''}`.trim() || trainee.email : 'A trainee';
 
-    if (this.notificationService && assignerId) {
+    // B1: Trigger AI evaluation using the NestJS-injected service (no more require())
+    if (assignment.autoEvaluateWithAI && this.aiEvaluationService) {
+      // Fire-and-forget — trainee gets immediate "Submitted" response, evaluation is async
+      this.aiEvaluationService.evaluateSubmission(saved.id).catch((err: Error) => {
+        console.error(`AI evaluation failed for submission ${saved.id}:`, err.message);
+      });
+    } else if (assignment.autoEvaluateWithAI && !this.aiEvaluationService) {
+      // AI service not wired — fall through to manual notification and log warning
+      console.warn(
+        `[AssignmentService] autoEvaluateWithAI=true but AiEvaluationService not injected. ` +
+        `Ensure AiEvaluationModule is imported into AssignmentModule. Falling back to manual eval.`,
+      );
+    }
+
+    if (this.notificationService && assignerId && !assignment.autoEvaluateWithAI) {
       await this.notificationService.create({
         userId: assignerId,
         type: 'submission_pending',
@@ -836,8 +873,12 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       throw new ForbiddenException('Cannot restart a locked task.');
     }
 
-    const durationVal = assignment.durationValue || 0;
-    if (durationVal <= 0) {
+    // B3: durationValue does not exist — compute from the three real duration fields
+    const totalDurationMinutes =
+      (assignment.durationDays || 0) * 24 * 60 +
+      (assignment.durationHours || 0) * 60 +
+      (assignment.durationMinutes || 0);
+    if (totalDurationMinutes <= 0) {
       throw new BadRequestException('This task does not have a duration set, restart not required.');
     }
 
@@ -889,12 +930,6 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     });
     const moduleMap = new Map(modules.map(m => [m.id, m]));
 
-    // Fetch all lessons for these modules to check completion
-    const allModuleLessons = await this.lessonRepository.find({
-      where: moduleIds.map(id => ({ module: { id } })),
-      relations: ['module'],
-    });
-
     // Fetch user progress for these modules
     const userProgress = await this.datasource.getRepository('UserLessonProgressEntity').find({
       where: moduleIds.map(id => ({
@@ -904,7 +939,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       })),
       relations: ['lesson']
     });
-    
+
     const completedLessonIds = new Set(userProgress.map((p: any) => p.lesson?.id));
 
     const result = [];
@@ -912,25 +947,51 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       const modId = assignment.module?.id || assignment.lesson?.module?.id;
       const mod = modId ? moduleMap.get(modId) : null;
       const lp = mod?.learningPath;
-      
-      // 🌟 Check two-tier locking: LP level OR Module level
-      const lpLockEnabled = lp ? (lp.lockTasks !== false) : true;
+
+      // B2: Three independent lock layers (any one can lock the assignment):
+      // Layer 1 — LP-level global lock (lockTasks)
+      const lpLockEnabled = lp ? (lp.lockTasks !== false) : false;
+      // Layer 2 — Module-level lock (taskLocking)
       const modLockEnabled = mod ? (mod.taskLocking === true) : false;
-      const isLockEnabled = lpLockEnabled || modLockEnabled;
-      
-      if (!mod || !isLockEnabled) {
+      // Layer 3 — Per-assignment lock (lockUntilLessonsComplete)
+      const assignmentLockEnabled = (assignment as any).lockUntilLessonsComplete === true;
+
+      // If none of the three lock layers are active, assignment is always unlocked
+      const anyLockEnabled = lpLockEnabled || modLockEnabled || assignmentLockEnabled;
+      if (!anyLockEnabled) {
         result.push({ ...assignment, isLocked: false, lockReason: null });
         continue;
       }
 
-      const siblingLessons = allModuleLessons.filter(l => l.module?.id === mod.id);
-      
-      const incompleteLessons = siblingLessons.filter(l => !completedLessonIds.has(l.id));
-      if (incompleteLessons.length > 0) {
-        result.push({ 
-          ...assignment, 
-          isLocked: true, 
-          lockReason: `Complete all lessons in this module to unlock tasks.` 
+      // B2: Use dependsOnLessonIds for precise dependency checking when per-assignment lock is active.
+      // Fall back to all module lessons when LP/module-level lock is the reason.
+      let lessonIdsToCheck: string[];
+      const depLessonIds: string[] = (assignment as any).dependsOnLessonIds || [];
+
+      if (assignmentLockEnabled && depLessonIds.length > 0) {
+        // Precise: only require the specific dependent lessons to be complete
+        lessonIdsToCheck = depLessonIds;
+      } else if ((lpLockEnabled || modLockEnabled) && mod) {
+        // Coarse: require all lessons in the module to be complete
+        const siblingLessons = await this.lessonRepository.find({
+          where: { module: { id: mod.id } },
+          select: ['id'],
+        });
+        lessonIdsToCheck = siblingLessons.map(l => l.id);
+      } else {
+        // No lessons to check (e.g. assignment lock enabled but no deps yet) — treat as unlocked
+        result.push({ ...assignment, isLocked: false, lockReason: null });
+        continue;
+      }
+
+      const hasIncomplete = lessonIdsToCheck.some(id => !completedLessonIds.has(id));
+      if (hasIncomplete) {
+        result.push({
+          ...assignment,
+          isLocked: true,
+          lockReason: assignmentLockEnabled && depLessonIds.length > 0
+            ? `Complete the required lessons to unlock this assignment.`
+            : `Complete all lessons in this module to unlock tasks.`,
         });
       } else {
         result.push({ ...assignment, isLocked: false, lockReason: null });

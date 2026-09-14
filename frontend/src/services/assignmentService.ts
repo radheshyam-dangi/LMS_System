@@ -160,11 +160,18 @@ export const assignmentService = {
 
   /**
    * 9. SUBMIT ASSIGNMENT (Trainee Action)
-   * Sends submission text, code/drive attachments, or MCQ answer selections
+   * Sends submission text, code/drive attachments, or MCQ answer selections.
+   * F3: Also sends structured 'answers' array [{ questionId, answer }] for Tiptap-authored assignments.
    */
   submitAssignment: async (
     assignmentId: string,
-    payload: { submissionText?: string; attachmentUrl?: string; mcqAnswers?: Record<string, number> },
+    payload: {
+      submissionText?: string;
+      attachmentUrl?: string;
+      mcqAnswers?: Record<string, number>;
+      // F3: New structured answers format for Tiptap-authored assignments with questionIds
+      answers?: Array<{ questionId: string; answer: string }>;
+    },
     token: string
   ) => {
     const response = await axios.post(
