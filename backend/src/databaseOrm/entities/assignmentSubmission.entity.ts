@@ -62,12 +62,42 @@ export class AssignmentSubmissionEntity extends BaseEntity {
   evaluatedBy: UserEntity;
 
   // ────────────────────────────────────────────
-  // 🌟 AI Evaluation Pipeline Fields
+  // 🌟 AI Evaluation Pipeline Fields (From Spec)
   // ────────────────────────────────────────────
 
-  /** Structured answers: [{ questionId, answer }] */
+  /** Structured answers from Tiptap submission */
   @Column({ type: 'jsonb', nullable: true })
-  answers: Array<{ questionId: string; answer: string }>;
+  answers: any;
+
+  @Column({ type: 'jsonb', name: 'ai_question_scores', nullable: true })
+  aiQuestionScores: any;
+
+  @Column({ type: 'numeric', name: 'ai_total_score', nullable: true })
+  aiTotalScore: number;
+
+  @Column({ type: 'numeric', name: 'ai_total_max_score', nullable: true })
+  aiTotalMaxScore: number;
+
+  @Column({ type: 'text', name: 'ai_overall_remark', nullable: true })
+  aiOverallRemark: string;
+
+  @Column({ type: 'boolean', name: 'ai_context_incomplete', default: false })
+  aiContextIncomplete: boolean;
+
+  @Column({ type: 'boolean', name: 'ai_evaluation_error', default: false })
+  aiEvaluationError: boolean;
+
+  @Column({ type: 'jsonb', name: 'question_scores', nullable: true })
+  questionScores: any;
+
+  @Column({ type: 'numeric', name: 'total_score', nullable: true })
+  totalScore: number;
+
+  @Column({ type: 'numeric', name: 'total_max_score', nullable: true })
+  totalMaxScore: number;
+
+  @Column({ type: 'text', name: 'overall_remark', nullable: true })
+  overallRemark: string;
 
   /** How was this submission evaluated? 'manual' | 'ai_assisted' | 'ai_auto' */
   @Column({
@@ -76,38 +106,4 @@ export class AssignmentSubmissionEntity extends BaseEntity {
     nullable: true,
   })
   evaluationMethod: string;
-
-  /**
-   * Raw AI evaluation response stored for audit trail.
-   * Shape: { questionScores: [...], totalScore, totalMaxScore, overallRemark }
-   */
-  @Column({
-    type: 'jsonb',
-    name: 'ai_evaluation_result',
-    nullable: true,
-  })
-  aiEvaluationResult: Record<string, any>;
-
-  /** True if some dependent lesson content was unavailable during AI evaluation */
-  @Column({
-    type: 'boolean',
-    name: 'context_incomplete',
-    default: false,
-  })
-  contextIncomplete: boolean;
-
-  /**
-   * AI evaluation pipeline status:
-   * null — not AI-evaluated
-   * 'pending' — queued for evaluation
-   * 'ai_evaluated_pending_review' — AI done, awaiting trainer review
-   * 'ai_auto_released' — AI result auto-released to trainee
-   * 'ai_evaluation_failed' — AI evaluation failed, routed to manual
-   */
-  @Column({
-    type: 'varchar',
-    name: 'ai_evaluation_status',
-    nullable: true,
-  })
-  aiEvaluationStatus: string;
 }

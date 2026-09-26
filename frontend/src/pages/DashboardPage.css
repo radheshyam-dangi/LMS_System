@@ -1,0 +1,229 @@
+/* DashboardPage.css */
+
+.db-container {
+  padding: 32px 48px;
+  max-width: 1600px;
+  width: 95%;
+  margin: 0 auto;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #0f172a;
+}
+
+.db-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.db-header-title {
+  font-size: 28px;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+  color: #0f172a;
+}
+
+.db-header-subtitle {
+  color: #64748b;
+  font-size: 15px;
+  margin: 0;
+}
+
+.db-btn-primary {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #4f46e5, #6366f1);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 14px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+.db-btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(79, 70, 229, 0.35);
+}
+
+.db-btn-primary:active {
+  transform: translateY(1px);
+}
+
+/* Metric Grids */
+.db-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.db-metric-card {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.db-metric-card:hover {
+  box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.08);
+  border-color: #cbd5e1;
+  transform: translateY(-2px);
+}
+
+.db-metric-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.db-metric-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.db-metric-icon.blue { background: #eff6ff; color: #3b82f6; }
+.db-metric-icon.purple { background: #faf5ff; color: #a855f7; }
+.db-metric-icon.orange { background: #fff7ed; color: #f97316; }
+.db-metric-icon.green { background: #f0fdf4; color: #22c55e; }
+
+.db-metric-value {
+  font-size: 32px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 4px;
+  line-height: 1.2;
+}
+
+.db-metric-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.db-metric-hint {
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.db-metric-hint.positive { color: #16a34a; }
+.db-metric-hint.negative { color: #dc2626; }
+.db-metric-hint.neutral { color: #4f46e5; }
+.db-metric-hint.warning { color: #ea580c; }
+
+/* Quick Actions / Two Column Layout */
+.db-layout-split {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.db-panel {
+  background: #ffffff;
+  padding: 24px;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.db-panel-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 20px 0;
+  color: #0f172a;
+}
+
+.db-submission-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  background: #fafafa;
+  margin-bottom: 12px;
+  transition: all 0.2s;
+}
+
+.db-submission-item:last-child {
+  margin-bottom: 0;
+}
+
+.db-submission-item:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.db-submission-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.db-submission-task {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.db-status-badge {
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.db-status-badge.pending { background: #fef3c7; color: #b45309; }
+.db-status-badge.reviewed { background: #dcfce7; color: #15803d; }
+
+.db-quick-action-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.db-quick-action-item:last-child {
+  border-bottom: none;
+}
+
+.db-quick-action-label {
+  font-size: 14px;
+  color: #334155;
+  font-weight: 500;
+}
+
+.db-btn-link {
+  border: none;
+  background: none;
+  color: #4f46e5;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.db-btn-link:hover {
+  background: #eff6ff;
+}
+
+@media (max-width: 1024px) {
+  .db-layout-split {
+    grid-template-columns: 1fr;
+  }
+}

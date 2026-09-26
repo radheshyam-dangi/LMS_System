@@ -6,18 +6,16 @@ import Heading from '@tiptap/extension-heading';
 import Paragraph from '@tiptap/extension-paragraph';
 import Text from '@tiptap/extension-text';
 import Document from '@tiptap/extension-document';
-import History from '@tiptap/extension-history';
-import Dropcursor from '@tiptap/extension-dropcursor';
-import Gapcursor from '@tiptap/extension-gapcursor';
 import { useNavigate } from 'react-router-dom';
+
 
 import './TiptapLPEditor.css';
 import { Toolbar } from './Toolbar';
+import { SlashCommands, getSuggestionItems, renderSlashCommandList } from './slashCommands';
 // F6: Separate imports — parseLPDocument is in parseLPDocument.ts, validateLPDocument is in validateLPDocument.ts
 import { parseLPDocument } from './parseLPDocument';
-import { validateLPDocument, ValidationError } from './validateLPDocument';
+import { validateLPDocument, type ValidationError } from './validateLPDocument';
 import { lpAuthoringService } from '../../services/lpAuthoringService';
-import { useAuth } from '../../context/AuthContext';
 
 import {
   ModuleNode,
@@ -41,21 +39,95 @@ import {
 
 // Custom Document that allows title and modules
 const LPDocument = Document.extend({
-  content: 'heading paragraph module+',
+  content: '(heading | paragraph | module)*',
+  addAttributes() {
+    return {
+      level: { default: 'basic' },
+      status: { default: 'upcoming' },
+    };
+  },
 });
+
+const LPMetadataBar = ({ editor }: { editor: any }) => {
+  const [attrs, setAttrs] = useState(editor.state.doc.attrs);
+  
+  useEffect(() => {
+    const handler = () => setAttrs(editor.state.doc.attrs);
+    editor.on('update', handler);
+    // Also re-fetch on transaction just in case
+    editor.on('transaction', handler);
+    return () => {
+      editor.off('update', handler);
+      editor.off('transaction', handler);
+    };
+  }, [editor]);
+
+  const level = attrs.level || 'basic';
+  const status = attrs.status || 'upcoming';
+
+  const updateDocAttr = (key: string, value: string) => {
+    if (editor?.state?.doc?.attrs) {
+      // Direct mutation of the attrs object
+      editor.state.doc.attrs[key] = value;
+      
+      // Dispatch dummy transaction to notify editor of change
+      editor.commands.command(({ tr }: any) => {
+        tr.setMeta('docAttributeUpdate', true);
+        return true;
+      });
+
+      // Force React state update
+      setAttrs({ ...editor.state.doc.attrs });
+    }
+  };
+
+  return (
+    <div className="lp-metadata-bar">
+      <div className="lp-metadata-item">
+        <span className="lp-metadata-label">Level:</span>
+        <select 
+          className="styled-form-control"
+          value={level} 
+          onChange={(e) => updateDocAttr('level', e.target.value)}
+        >
+          <option value="basic">Basic</option>
+          <option value="intermediate">Intermediate</option>
+          <option value="advanced">Advanced</option>
+        </select>
+      </div>
+      <div className="lp-metadata-item">
+        <span className="lp-metadata-label">Status:</span>
+        <select 
+          className="styled-form-control"
+          value={status} 
+          onChange={(e) => updateDocAttr('status', e.target.value)}
+        >
+          <option value="active">Active</option>
+          <option value="upcoming">Upcoming</option>
+        </select>
+      </div>
+    </div>
+  );
+};
 
 interface TiptapLPEditorProps {
   initialDraftData?: any;
   draftId?: string;
+  pathId?: string;
+  focusAction?: string;
+  targetId?: string;
   onClose?: () => void;
 }
 
 export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({ 
   initialDraftData, 
   draftId,
+  pathId,
+  focusAction,
+  targetId,
   onClose 
 }) => {
-  const { token } = useAuth();
+  const token = localStorage.getItem('skillforge_access_token');
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<ValidationError[]>([]);
@@ -69,7 +141,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
       StarterKit.configure({
         document: false, // Override default document
         heading: false,  // We configure heading explicitly
-        history: false,  // Explicit history
+        dropcursor: { color: '#3b82f6', width: 2 },
       }),
       Heading.configure({ levels: [1, 2, 3] }),
       Placeholder.configure({
@@ -80,9 +152,12 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
           return '';
         },
       }),
-      History,
-      Dropcursor.configure({ color: '#3b82f6', width: 2 }),
-      Gapcursor,
+      SlashCommands.configure({
+        suggestion: {
+          items: getSuggestionItems,
+          render: renderSlashCommandList,
+        },
+      }),
 
       // Custom Structural Nodes
       ModuleNode.extend({ addNodeView() { return ReactNodeViewRenderer(ModuleNodeView) } }),
@@ -97,17 +172,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
       // Question Block
       QuestionBlockNode.extend({ addNodeView() { return ReactNodeViewRenderer(QuestionBlockView) } }),
     ],
-    content: initialDraftData || `
-      <h1>Untitled Learning Path</h1>
-      <p>A brief description of this learning path...</p>
-      <div data-type="module">
-        <h2>Module 1</h2>
-        <div data-type="lesson">
-          <h2>Lesson 1</h2>
-          <p>Welcome to lesson 1</p>
-        </div>
-      </div>
-    `,
+    content: initialDraftData || `<h1>Untitled Learning Path</h1><p>A brief description of this learning path...</p><div data-type="module"><h2>Module 1</h2><div data-type="lesson"><h2>Lesson 1</h2><p>Welcome to lesson 1</p></div></div>`,
     onUpdate: ({ editor }) => {
       // Clear errors on edit and mark dirty
       if (errors.length > 0) setErrors([]);
@@ -148,11 +213,56 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
     return () => clearInterval(interval);
   }, [editor, token, draftId, saveStatus, isDirty]);
 
+  // Handle deep-links for creating/editing modules and lessons
+  useEffect(() => {
+    if (editor && !editor.isDestroyed && focusAction) {
+      // Need a slight delay to ensure editor DOM is fully painted
+      setTimeout(() => {
+        if (focusAction === 'createModule') {
+          // Move cursor to the end and insert module
+          editor.commands.focus('end');
+          editor.commands.insertContent({
+            type: 'module',
+            content: [{ type: 'heading', attrs: { level: 2 } }, { type: 'paragraph' }]
+          });
+          return;
+        }
+
+        let found = false;
+        editor.state.doc.descendants((node, pos) => {
+          if ((node.type.name === 'module' || node.type.name === 'lesson' || node.type.name === 'assignment') && node.attrs.id === targetId) {
+            found = true;
+            if (focusAction === 'editModule') {
+              editor.commands.focus(pos);
+              const dom = editor.view.nodeDOM(pos) as HTMLElement;
+              if (dom && dom.scrollIntoView) {
+                dom.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            } else if (focusAction === 'addLesson') {
+              // Insert lesson at the end of the module
+              const endPos = pos + node.nodeSize - 1;
+              editor.commands.insertContentAt(endPos, {
+                type: 'lesson',
+                content: [{ type: 'heading', attrs: { level: 2 } }, { type: 'paragraph' }]
+              });
+              editor.commands.focus(endPos + 1);
+            }
+            return false; // Stop traversal once found
+          }
+        });
+
+        if (!found) {
+          editor.commands.focus('start'); // Fallback if ID not found
+        }
+      }, 300);
+    }
+  }, [editor, focusAction, targetId]);
+
   const handleSubmit = async () => {
     if (!editor || !token) return;
 
     const json = editor.getJSON();
-    const parsed = parseLPDocument(json, draftId);
+    const parsed = parseLPDocument(json, draftId, pathId);
     
     // Client-side validation
     const validationErrors = validateLPDocument(parsed);
@@ -177,7 +287,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
       if (onClose) {
         onClose();
       } else {
-        navigate(`/curriculum/learning-paths/${result.id}`);
+        navigate(`/learning-paths/${result.id}`);
       }
     } catch (err: any) {
       console.error('Submit failed', err);
@@ -206,6 +316,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
           </div>
         )}
         
+        {editor && <LPMetadataBar editor={editor} />}
         <EditorContent editor={editor} />
       </div>
 
@@ -225,7 +336,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
           onClick={handleSubmit}
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Publishing...' : 'Publish Learning Path'}
+          {isSubmitting ? (pathId ? 'Updating...' : 'Publishing...') : (pathId ? 'Update Learning Path' : 'Publish Learning Path')}
         </button>
       </div>
     </div>

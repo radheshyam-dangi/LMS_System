@@ -5,6 +5,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { DashboardPage } from './pages/DashboardPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './components/auth/LoginPage';
+import LPEditorPage from './pages/LPEditorPage';
 import { NotificationProvider, useNotifications } from './context/NotificationContext';
 import type { LoginResponse, RoleName, SessionUser } from './types/auth';
 import { normalizeUser, userFromToken } from './utils/auth';
@@ -236,6 +237,8 @@ function App() {
       <Route path="/dashboard" element={<ProtectedLayout section="Dashboard" />} />
       <Route path="/trainer/trainees/:traineeId" element={<ProtectedLayout section="TrainerTraineeDetail" />} />
       <Route path="/learning-paths" element={<ProtectedLayout section="Learning Paths" />} />
+      <Route path="/learning-paths/new" element={ currentUser && accessToken && activeRole !== 'Trainee' ? <LPEditorPage /> : <Navigate to="/dashboard" replace /> } />
+      <Route path="/learning-paths/:pathId/edit" element={ currentUser && accessToken && activeRole !== 'Trainee' ? <LPEditorPage /> : <Navigate to="/dashboard" replace /> } />
       <Route path="/learning-paths/:pathId" element={<ProtectedLayout section="Learning Paths" />} />
       <Route path="/modules" element={<ProtectedLayout section="Modules" />} />
       <Route path="/modules/:moduleId" element={<ProtectedLayout section="Module Details" />} />
@@ -247,6 +250,7 @@ function App() {
       <Route path="/progress" element={<ProtectedLayout section="Progress" />} />
       <Route path="/analytics" element={<ProtectedLayout section="Analytics" />} />
       <Route path="/settings" element={<ProtectedLayout section="Settings" />} />
+
 
       <Route path="*" element={<Navigate to={activeRole === 'Admin' ? "/users" : "/dashboard"} replace />} />
     </Routes>

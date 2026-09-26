@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, forwardRef, Inject } from '@nestjs/common';
 import { DataSource, Repository, IsNull, Not, In } from 'typeorm';
 import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
 import { UserResourceVisitEntity } from '../../entities/userResourceVisit.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { ResourceEntity } from '../../entities/resource.entity';
+import { ModuleKeyPointEntity } from '../../entities/moduleKeyPoint.entity';
+import { UserEntity } from '../../entities/user.entity';
+import { AssignmentEntityService } from '../assignment/assignment.service';
 import { AssignmentEntity } from '../../entities/assignment.entity';
 import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
@@ -18,7 +21,11 @@ export class ProgressEntityService {
   private submissionRepository: Repository<AssignmentSubmissionEntity>;
   private pathRepository: Repository<LearningPathEntity>;
 
-  constructor(private readonly datasource: DataSource) {
+  constructor(
+    private readonly datasource: DataSource,
+    @Inject(forwardRef(() => AssignmentEntityService))
+    private readonly assignmentService: AssignmentEntityService,
+  ) {
     this.repository = this.datasource.getRepository(UserLessonProgressEntity);
     this.visitRepository = this.datasource.getRepository(
       UserResourceVisitEntity,
@@ -80,7 +87,6 @@ export class ProgressEntityService {
     const savedProgress = await this.repository.save(progress);
 
     if (lesson.module) {
-      // Check if all lessons in this module are completed
       const allModuleLessons = await this.lessonRepository.find({
         where: { module: { id: lesson.module.id } },
       });
@@ -90,35 +96,48 @@ export class ProgressEntityService {
         where: { user: { id: userId }, lesson: { module: { id: lesson.module.id } }, isCompleted: true },
         relations: ['lesson'],
       });
-      const completedIds = new Set(userProgress.map(p => p.lesson?.id));
+      const completedLessonIds = userProgress.map(p => p.lesson?.id).filter(Boolean) as string[];
+      const traineeProgress = { completedLessonIds };
+
+      // Find all submissions for tasks in this module
+      const submissions = await this.submissionRepository.find({
+        where: { trainee: { id: userId }, assignment: { module: { id: lesson.module.id } } },
+        relations: ['assignment', 'assignment.module', 'assignment.learningPath'],
+      });
       
-      const allCompleted = allLessonIds.every(id => completedIds.has(id));
+      const now = new Date();
+      let changed = false;
       
-      if (allCompleted) {
-        // Find all submissions for tasks in this module
-        const submissions = await this.submissionRepository.find({
-          where: { trainee: { id: userId }, assignment: { module: { id: lesson.module.id } } },
-          relations: ['assignment'],
-        });
-        
-        const now = new Date();
-        for (const sub of submissions) {
-          const task = sub.assignment;
-          if (task.anchorType === 'TASK_UNLOCKED' && !sub.taskUnlockedAt) {
-            sub.taskUnlockedAt = now;
-            if ((task.durationDays || 0) > 0 || (task.durationHours || 0) > 0 || (task.durationMinutes || 0) > 0) {
-              sub.deadline = new Date(now.getTime());
-              if (task.durationDays) sub.deadline.setDate(sub.deadline.getDate() + task.durationDays);
-              if (task.durationHours) sub.deadline.setHours(sub.deadline.getHours() + task.durationHours);
-              if (task.durationMinutes) sub.deadline.setMinutes(sub.deadline.getMinutes() + task.durationMinutes);
+      for (const sub of submissions) {
+        const task = sub.assignment;
+        if (sub.status === 'LOCKED') {
+          const lockState = await this.assignmentService.evaluateLockState(task, userId);
+          if (!lockState.isLocked) {
+            sub.status = 'AVAILABLE';
+            changed = true;
+            // Ensure anchorType fallback safely handles standard unlocks as well, per user addendum logic.
+            // A task with countdownStart === 'onUnlock' triggering unlock means we trigger Type B computation.
+            const isUnlockAnchor = task.countdownStart === 'onUnlock' || task.countdownStart === 'onTraineeStart' || task.anchorType === 'TASK_UNLOCKED';
+            if (isUnlockAnchor && !sub.taskUnlockedAt) {
+              sub.taskUnlockedAt = now;
+              const totalMins = task.timerDuration || 0;
+              if (totalMins > 0) {
+                const computedDeadline = new Date(now.getTime());
+                const days = Math.floor(totalMins / (24 * 60));
+                const hours = Math.floor((totalMins % (24 * 60)) / 60);
+                const mins = totalMins % 60;
+                if (days) computedDeadline.setDate(computedDeadline.getDate() + days);
+                if (hours) computedDeadline.setHours(computedDeadline.getHours() + hours);
+                if (mins) computedDeadline.setMinutes(computedDeadline.getMinutes() + mins);
+                sub.deadline = computedDeadline;
+              }
             }
           }
-          if (sub.status === 'LOCKED') sub.status = 'AVAILABLE';
         }
-        
-        if (submissions.length > 0) {
-          await this.submissionRepository.save(submissions);
-        }
+      }
+      
+      if (changed) {
+        await this.submissionRepository.save(submissions);
       }
     }
 

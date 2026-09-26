@@ -31,6 +31,9 @@ export const ModuleNode = Node.create({
     return {
       id: { default: null, parseHTML: el => el.getAttribute('data-id') || uid() },
       sequentialLessonLock: { default: true },
+      learningObjectives: { default: [] },
+      learningOutcomes: { default: [] },
+      moduleResources: { default: [] },
     };
   },
 
@@ -91,7 +94,9 @@ export const AssignmentNode = Node.create({
       autoEvaluateWithAI: { default: false },
       humanInterventionRequired: { default: true },
       countdownStart: { default: 'onAssignment' },
-      timerDuration: { default: { days: 0, hours: 0, minutes: 0 } },
+      timerDuration: { default: { days: 3, hours: 0, minutes: 0 } },
+      dependsOnLessonIds: { default: null },
+      assignmentType: { default: 'Mixed' },
     };
   },
 
@@ -195,16 +200,20 @@ export const ResourceBlockNode = Node.create({
 export const QuestionBlockNode = Node.create({
   name: 'questionBlock',
   group: 'block',
-  atom: true,
+  content: 'paragraph bulletList?',
+  defining: true,
+  isolating: true,
 
   addAttributes() {
     return {
       id: { default: null, parseHTML: el => el.getAttribute('data-id') || uid() },
-      text: { default: '' },
       questionType: { default: 'Subjective' },
       maxPoints: { default: 10 },
-      options: { default: [] },
       correctIndex: { default: null },
+      expectedAnswerGuideline: { default: '' },
+      options: { default: ['', '', '', ''] },
+      requiresLessonGrounding: { default: true },
+      lessonDependencies: { default: [] },
     };
   },
 

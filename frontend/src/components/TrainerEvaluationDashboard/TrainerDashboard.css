@@ -94,3 +94,78 @@
 .btn-trainer-action-secondary:active {
   transform: translateY(1px);
 }
+
+/* --- Filter Pill Row --- */
+.filter-pill-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px; /* Room for scrollbar if needed */
+  margin-bottom: 24px;
+  scrollbar-width: none; /* Firefox */
+}
+.filter-pill-row::-webkit-scrollbar {
+  display: none; /* Safari/Chrome */
+}
+
+.filter-pill {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease-in-out;
+}
+
+.filter-pill.active {
+  background: #4f46e5;
+  color: #fff;
+  border-color: #4f46e5;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .filter-pill:not(.active):hover {
+    background: #e2e8f0;
+    color: #0f172a;
+  }
+}
+
+/* --- Evaluations Grid --- */
+.evaluations-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .evaluations-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .evaluations-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1440px) {
+  .pending-evaluations {
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+}
+
+/* --- Truncation Helpers --- */
+.text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

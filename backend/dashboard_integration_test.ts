@@ -1,5 +1,7 @@
 import { AppDataSource } from './src/config/data-source';
 import { AnalyticsEntityService } from './src/databaseOrm/modules/analytics/analytics.service';
+import { ProgressEntityService } from './src/databaseOrm/modules/progress/progress.service';
+import { AssignmentEntityService } from './src/databaseOrm/modules/assignment/assignment.service';
 import { UserEntity } from './src/databaseOrm/entities/user.entity';
 import { RoleEntity } from './src/databaseOrm/entities/role.entity';
 import { LearningPathEntity } from './src/databaseOrm/entities/learningPath.entity';
@@ -8,7 +10,9 @@ import { EnrollmentEntity } from './src/databaseOrm/entities/enrollment.entity';
 
 async function runTest() {
   await AppDataSource.initialize();
-  const analyticsService = new AnalyticsEntityService(AppDataSource);
+  const assignmentService = new AssignmentEntityService(AppDataSource);
+  const progressService = new ProgressEntityService(AppDataSource, assignmentService);
+  const analyticsService = new AnalyticsEntityService(AppDataSource, progressService);
 
   const userRepo = AppDataSource.getRepository(UserEntity);
   const roleRepo = AppDataSource.getRepository(RoleEntity);

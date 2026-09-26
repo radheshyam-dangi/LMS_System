@@ -53,28 +53,28 @@ const makeAssignmentNode = () => ({
       attrs: {
         id: uuidv4(),
         questionType: 'Subjective',
-        text: 'Question text...',
         maxPoints: 10,
-        options: [],
-        correctIndex: null,
+        correctIndex: 0,
+        options: ['', '', '', ''],
       },
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }]
     },
   ],
 });
 
-const makeVideoBlock = () => ({
+const makeVideoBlock = (url: string) => ({
   type: 'videoBlock',
-  attrs: { url: '', title: '' },
+  attrs: { url, title: '' },
 });
 
-const makeAudioBlock = () => ({
+const makeAudioBlock = (url: string) => ({
   type: 'audioBlock',
-  attrs: { url: '', title: '' },
+  attrs: { url, title: '' },
 });
 
-const makeResourceBlock = () => ({
+const makeResourceBlock = (url: string, label: string) => ({
   type: 'resourceBlock',
-  attrs: { url: '', label: 'Resource', type: 'Link' },
+  attrs: { url, label: label || 'Resource', type: 'Link' },
 });
 
 const makeQuestionBlock = () => ({
@@ -82,11 +82,13 @@ const makeQuestionBlock = () => ({
   attrs: {
     id: uuidv4(),
     questionType: 'Subjective',
-    text: 'Question text...',
     maxPoints: 10,
-    options: [],
-    correctIndex: null,
+    correctIndex: 0,
+    options: ['', '', '', ''],
   },
+  content: [
+    { type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }
+  ]
 });
 
 export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
@@ -137,21 +139,86 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
       {/* Structural Elements */}
       <div className="toolbar-group">
         <button
-          onClick={() => editor.chain().focus().insertContent(makeModuleNode()).run()}
+          onClick={() => {
+            const node = makeModuleNode();
+            editor.chain().focus('end').insertContent(node).run();
+          }}
           title="Add Module"
           className="structural-btn module-btn"
         >
           <Layers size={16} /> Add Module
         </button>
         <button
-          onClick={() => editor.chain().focus().insertContent(makeLessonNode()).run()}
+          onClick={() => {
+            let targetModulePos: number | null = null;
+            let targetModuleSize: number | null = null;
+            editor.state.doc.descendants((node, pos) => {
+              if (node.type.name === 'module') {
+                const { from, to } = editor.state.selection;
+                if (from >= pos && to <= pos + node.nodeSize) {
+                  targetModulePos = pos;
+                  targetModuleSize = node.nodeSize;
+                  return false;
+                }
+              }
+            });
+            if (targetModulePos === null) {
+              editor.state.doc.descendants((node, pos) => {
+                if (node.type.name === 'module') {
+                  targetModulePos = pos;
+                  targetModuleSize = node.nodeSize;
+                }
+              });
+            }
+            if (targetModulePos === null) {
+              const newModule: any = makeModuleNode();
+              newModule.content = [
+                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Module' }] },
+                makeLessonNode()
+              ];
+              editor.chain().focus('end').insertContent(newModule).run();
+            } else {
+              editor.commands.insertContentAt(targetModulePos! + targetModuleSize! - 1, makeLessonNode() as any);
+            }
+          }}
           title="Add Lesson (inside a Module)"
           className="structural-btn lesson-btn"
         >
           <PlaySquare size={16} /> Add Lesson
         </button>
         <button
-          onClick={() => editor.chain().focus().insertContent(makeAssignmentNode()).run()}
+          onClick={() => {
+            let targetModulePos: number | null = null;
+            let targetModuleSize: number | null = null;
+            editor.state.doc.descendants((node, pos) => {
+              if (node.type.name === 'module') {
+                const { from, to } = editor.state.selection;
+                if (from >= pos && to <= pos + node.nodeSize) {
+                  targetModulePos = pos;
+                  targetModuleSize = node.nodeSize;
+                  return false;
+                }
+              }
+            });
+            if (targetModulePos === null) {
+              editor.state.doc.descendants((node, pos) => {
+                if (node.type.name === 'module') {
+                  targetModulePos = pos;
+                  targetModuleSize = node.nodeSize;
+                }
+              });
+            }
+            if (targetModulePos === null) {
+              const newModule: any = makeModuleNode();
+              newModule.content = [
+                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Module' }] },
+                makeAssignmentNode()
+              ];
+              editor.chain().focus('end').insertContent(newModule).run();
+            } else {
+              editor.commands.insertContentAt(targetModulePos! + targetModuleSize! - 1, makeAssignmentNode() as any);
+            }
+          }}
           title="Add Assignment (after lessons in a Module)"
           className="structural-btn assignment-btn"
         >
@@ -164,19 +231,31 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
       {/* Content Blocks */}
       <div className="toolbar-group">
         <button
-          onClick={() => editor.chain().focus().insertContent(makeVideoBlock()).run()}
+          onClick={() => {
+            const url = window.prompt('Enter Video URL (YouTube or mp4):');
+            if (url) editor.chain().focus().insertContent(makeVideoBlock(url)).run();
+          }}
           title="Add Video Block (inside a Lesson)"
         >
           <Video size={16} />
         </button>
         <button
-          onClick={() => editor.chain().focus().insertContent(makeAudioBlock()).run()}
+          onClick={() => {
+            const url = window.prompt('Enter Audio URL (mp3, wav):');
+            if (url) editor.chain().focus().insertContent(makeAudioBlock(url)).run();
+          }}
           title="Add Audio Block (inside a Lesson)"
         >
           <Headphones size={16} />
         </button>
         <button
-          onClick={() => editor.chain().focus().insertContent(makeResourceBlock()).run()}
+          onClick={() => {
+            const url = window.prompt('Enter Resource URL (PDF or Webpage):');
+            if (url) {
+              const label = window.prompt('Enter a label for this resource:') || 'Resource';
+              editor.chain().focus().insertContent(makeResourceBlock(url, label)).run();
+            }
+          }}
           title="Add Resource/PDF (inside a Lesson)"
         >
           <Link2 size={16} />

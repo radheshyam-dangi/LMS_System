@@ -20,9 +20,11 @@ import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { ModuleEntity } from '../../entities/module.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { AssignmentEntity } from '../../entities/assignment.entity';
+import { QuestionLessonDependencyEntity } from '../../entities/questionLessonDependency.entity';
 import { ResourceEntity } from '../../entities/resource.entity';
 import { UserEntity } from '../../entities/user.entity';
 import { LpDraftEntity } from '../../entities/lpDraft.entity';
+import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
 import { ContentExtractionService } from '../aiEvaluation/contentExtraction.service';
 
 @Injectable()
@@ -64,34 +66,158 @@ export class LpAuthoringService {
     // Server-side validation
     this.validatePayload(payload);
 
-    const creator = await this.userRepo.findOne({ where: { id: creatorId } });
+    const creator = await this.userRepo.findOne({ where: { id: creatorId }, relations: ['primaryRole'] });
     if (!creator) {
       throw new BadRequestException(`Creator user with ID "${creatorId}" not found.`);
     }
 
     return await this.datasource.transaction(async manager => {
-      // 1. Create Learning Path
-      const lpData = manager.create(LearningPathEntity, {
-        title: payload.title,
-        description: payload.description || null,
-        difficulty: payload.difficulty || 'Intermediate',
-        duration: payload.duration || '12 weeks',
-        skillsTags: payload.skillsTags || [],
-        status: payload.status || 'Active',
-        imageUrl: payload.imageUrl || null,
-        createdBy: creator,
-        assignedToTraineeIds: [],
-        overallProgress: 0,
-        lockLessons: true,
-        lockTasks: true,
-      });
-      const savedLP = await manager.save(LearningPathEntity, lpData);
+      let savedLP: LearningPathEntity;
 
-      // 2. Create Modules
+      if (payload.id) {
+        // Upsert mode (Edit LP)
+        const existingLP = await manager.findOne(LearningPathEntity, {
+          where: { id: payload.id },
+          relations: ['modules', 'modules.lessons', 'modules.lessons.assignments', 'modules.assignments', 'createdBy']
+        });
+        
+        if (!existingLP) {
+          throw new NotFoundException(`LP with ID ${payload.id} not found for edit`);
+        }
+
+        // Authorization check: Only Admin or the original creator can edit
+        const ownerId = existingLP.createdBy?.id;
+        const isAdmin = String(creator.primaryRole?.name || '').toLowerCase() === 'admin' || (creator.roles || []).some((r: any) => String(r.name).toLowerCase() === 'admin');
+        if (!isAdmin && String(ownerId || '').toLowerCase() !== String(creatorId).toLowerCase()) {
+          const { ForbiddenException } = await import('@nestjs/common');
+          throw new ForbiddenException('Access Denied: Only the Learning Path Owner or an Admin can edit this path.');
+        }
+        
+        existingLP.title = payload.title;
+        existingLP.description = payload.description || null;
+        existingLP.difficulty = payload.level ? payload.level.charAt(0).toUpperCase() + payload.level.slice(1) : (payload.difficulty || 'Intermediate');
+        existingLP.status = payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : (existingLP.status || 'Active');
+        existingLP.duration = payload.duration || '12 weeks';
+        savedLP = await manager.save(LearningPathEntity, existingLP);
+        
+        // Find ids to keep
+        const incomingModuleIds = new Set(payload.modules?.map((m: any) => m.id).filter(Boolean));
+        const incomingLessonIds = new Set(payload.modules?.flatMap((m: any) => m.lessons?.map((l: any) => l.id)).filter(Boolean));
+        const incomingAssignmentIds = new Set(payload.modules?.flatMap((m: any) => m.assignments?.map((a: any) => a.id)).filter(Boolean));
+
+        // Collect all assignments that are going to be deleted
+        const assignmentsToDelete: string[] = [];
+
+        for (const mod of existingLP.modules || []) {
+          if (!incomingModuleIds.has(mod.id)) {
+            assignmentsToDelete.push(...(mod.assignments?.map((a: any) => a.id) || []));
+            for (const lesson of mod.lessons || []) {
+              assignmentsToDelete.push(...(lesson.assignments?.map((a: any) => a.id) || []));
+            }
+          } else {
+            for (const lesson of mod.lessons || []) {
+              if (!incomingLessonIds.has(lesson.id)) {
+                assignmentsToDelete.push(...(lesson.assignments?.map((a: any) => a.id) || []));
+              }
+            }
+            for (const assignment of mod.assignments || []) {
+              if (!incomingAssignmentIds.has(assignment.id)) {
+                assignmentsToDelete.push(assignment.id);
+              }
+            }
+          }
+        }
+
+        // Block if any submissions exist for these assignments
+        if (assignmentsToDelete.length > 0) {
+          const { In } = await import('typeorm');
+          const submissionCount = await manager.count(AssignmentSubmissionEntity, {
+            where: { assignment: { id: In(assignmentsToDelete) } }
+          });
+
+          if (submissionCount > 0) {
+            throw new BadRequestException(
+              'Cannot delete items that have existing trainee submissions. Please remove the trainee assignments or mark the items as deprecated instead.'
+            );
+          }
+        }
+
+        // Delete removed modules/lessons/assignments
+        for (const mod of existingLP.modules || []) {
+           if (!incomingModuleIds.has(mod.id)) {
+              await manager.remove(mod);
+           } else {
+             for (const lesson of mod.lessons || []) {
+               if (!incomingLessonIds.has(lesson.id)) {
+                 await manager.remove(lesson);
+               }
+             }
+             for (const assignment of mod.assignments || []) {
+               if (!incomingAssignmentIds.has(assignment.id)) {
+                 await manager.remove(assignment);
+               }
+             }
+           }
+        }
+      } else {
+        // Create mode
+        const lpData = manager.create(LearningPathEntity, {
+          title: payload.title,
+          description: payload.description || null,
+          difficulty: payload.level ? payload.level.charAt(0).toUpperCase() + payload.level.slice(1) : (payload.difficulty || 'Intermediate'),
+          duration: payload.duration || '12 weeks',
+          skillsTags: payload.skillsTags || [],
+          status: payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : 'Active',
+          imageUrl: payload.imageUrl || null,
+          createdBy: creator,
+          assignedToTraineeIds: [],
+          overallProgress: 0,
+          lockLessons: true,
+          lockTasks: true,
+        });
+        savedLP = await manager.save(LearningPathEntity, lpData);
+      }
+
+      // 2. Create/Update Modules
+      let totalLpDays = 0;
+
       for (let moduleIdx = 0; moduleIdx < (payload.modules || []).length; moduleIdx++) {
         const modulePayload = payload.modules[moduleIdx];
 
+        // 🌟 Duration Computation Logic
+        let durationLabel = 'Duration not yet determined';
+        let moduleDays = 0;
+        let maxAssignmentMinutes = 0;
+        
+        if (modulePayload.assignments?.length > 0) {
+          for (const a of modulePayload.assignments) {
+            const mins = ((a.timerDuration?.days || 0) * 24 * 60) + ((a.timerDuration?.hours || 0) * 60) + (a.timerDuration?.minutes || 0);
+            if (mins > maxAssignmentMinutes) {
+              maxAssignmentMinutes = mins;
+            }
+          }
+        }
+
+        if (maxAssignmentMinutes > 0) {
+          moduleDays = Math.ceil(maxAssignmentMinutes / (24 * 60));
+          durationLabel = `${moduleDays} Days`;
+        } else if (modulePayload.lessons?.length > 0) {
+          const lessonMins = modulePayload.lessons.reduce((acc: number, l: any) => acc + Number(l.durationMinutes || 15), 0);
+          if (lessonMins > 0) {
+            if (lessonMins >= 60) {
+              durationLabel = `${Math.round(lessonMins / 60)} Hours`;
+              moduleDays = Math.max(1, Math.ceil(lessonMins / (24 * 60)));
+            } else {
+              durationLabel = `${lessonMins} Minutes`;
+              moduleDays = 1;
+            }
+          }
+        }
+
+        totalLpDays += moduleDays;
+
         const moduleData = manager.create(ModuleEntity, {
+          ...(modulePayload.id && /^[0-9a-f]{8}-/i.test(modulePayload.id) ? { id: modulePayload.id } : {}),
           title: modulePayload.title || `Module ${moduleIdx + 1}`,
           description: modulePayload.description || null,
           lessonLocking: modulePayload.sequentialLessonLock !== false,
@@ -101,17 +227,23 @@ export class LpAuthoringService {
           status: 'Active',
           level: 'Beginner',
           difficultyLevel: 'Beginner',
+          durationLabel,
+          durationWeeks: Math.ceil(moduleDays / 7) || 0,
+          objectives: modulePayload.learningObjectives || [],
+          outcomes: modulePayload.learningOutcomes || [],
         });
         const savedModule = await manager.save(ModuleEntity, moduleData);
 
         // Track lesson IDs for assignment dependency computation
         const createdLessonIds: string[] = [];
+        const tempIdToRealId = new Map<string, string>();
 
-        // 3. Create Lessons
+        // 3. Create/Update Lessons
         for (let lessonIdx = 0; lessonIdx < (modulePayload.lessons || []).length; lessonIdx++) {
           const lessonPayload = modulePayload.lessons[lessonIdx];
 
           const lessonData = manager.create(LessonEntity, {
+            ...(lessonPayload.id && /^[0-9a-f]{8}-/i.test(lessonPayload.id) ? { id: lessonPayload.id } : {}),
             title: lessonPayload.title || `Lesson ${lessonIdx + 1}`,
             description: lessonPayload.description || null,
             videoUrl: lessonPayload.videos?.[0]?.url || null,
@@ -126,6 +258,13 @@ export class LpAuthoringService {
           });
           const savedLesson = await manager.save(LessonEntity, lessonData);
           createdLessonIds.push(savedLesson.id);
+          if (lessonPayload.id) {
+            tempIdToRealId.set(lessonPayload.id, savedLesson.id);
+          }
+
+          // We should ideally remove old resources and recreate, or ignore for now if resources are updated in array.
+          // For simplicity, if editing, we will just clear old resources for this lesson and recreate
+          await manager.delete(ResourceEntity, { lesson: { id: savedLesson.id } });
 
           // Create resources for this lesson
           for (const resource of lessonPayload.resources || []) {
@@ -138,18 +277,22 @@ export class LpAuthoringService {
             });
             await manager.save(ResourceEntity, resourceData);
           }
-
-          // Trigger content extraction asynchronously (after transaction commits)
-          // We'll trigger these after the transaction succeeds
         }
 
-        // 4. Create Assignments
+        // 4. Create/Update Assignments
         for (const assignmentPayload of modulePayload.assignments || []) {
-          // dependsOnLessonIds comes from the client parser (based on ordering)
-          // but we override with the actual created IDs for consistency
-          const depLessonIds = assignmentPayload.dependsOnLessonIds?.length
-            ? assignmentPayload.dependsOnLessonIds
-            : [...createdLessonIds]; // All lessons preceding this assignment
+          // dependsOnLessonIds comes from the client parser
+          let depLessonIds = [...createdLessonIds]; // fallback
+          if (assignmentPayload.dependsOnLessonIds?.length) {
+            depLessonIds = assignmentPayload.dependsOnLessonIds
+              .map((tempId: string) => tempIdToRealId.get(tempId) || tempId) // Use tempId directly if it didn't map (means it's a real UUID already)
+              .filter(Boolean) as string[];
+              
+            // If the map failed, fallback to all preceding lessons
+            if (depLessonIds.length === 0 && createdLessonIds.length > 0) {
+              depLessonIds = [...createdLessonIds];
+            }
+          }
 
           // Compute maxScore from questions
           let maxScore = 100;
@@ -161,6 +304,7 @@ export class LpAuthoringService {
           }
 
           const assignmentData = manager.create(AssignmentEntity, {
+            ...(assignmentPayload.id && /^[0-9a-f]{8}-/i.test(assignmentPayload.id) ? { id: assignmentPayload.id } : {}),
             title: assignmentPayload.title || 'Assignment',
             description: assignmentPayload.body || null,
             instructions: assignmentPayload.body || null,
@@ -175,16 +319,55 @@ export class LpAuthoringService {
             lockUntilLessonsComplete: assignmentPayload.lockConfig?.enabled !== false,
             autoEvaluateWithAI: assignmentPayload.evaluation?.autoEvaluateWithAI === true,
             humanInterventionRequired: assignmentPayload.evaluation?.humanInterventionRequired !== false,
-            durationDays: assignmentPayload.timerDuration?.days || 0,
-            durationHours: assignmentPayload.timerDuration?.hours || 0,
-            durationMinutes: assignmentPayload.timerDuration?.minutes || 0,
-            countdownStart: assignmentPayload.countdownStart || 'onAssignment',
-            anchorType: 'LP_ASSIGNED',
+            timerDuration: 
+              ((assignmentPayload.timerDuration?.days || 0) * 24 * 60) +
+              ((assignmentPayload.timerDuration?.hours || 0) * 60) +
+              (assignmentPayload.timerDuration?.minutes || 0),
+            anchorType: assignmentPayload.countdownStart === 'taskUnlocked' ? 'TASK_UNLOCKED' : 'LP_ASSIGNED',
             isExternal: false,
           });
           await manager.save(AssignmentEntity, assignmentData);
+          
+          const seenQuestionIds = new Set<string>();
+          if (assignmentPayload.questions && assignmentPayload.questions.length > 0) {
+            for (const q of assignmentPayload.questions) {
+              // Prevent duplicate question IDs from Tiptap copy-paste
+              if (seenQuestionIds.has(q.id)) {
+                const crypto = require('crypto');
+                q.id = crypto.randomUUID();
+              }
+              seenQuestionIds.add(q.id);
+
+              // Clear existing dependencies to prevent unique constraint violations on update
+              if (q.id) {
+                await manager.delete(QuestionLessonDependencyEntity, { questionId: q.id });
+              }
+
+              if (q.requiresLessonGrounding !== false && q.lessonDependencies && q.lessonDependencies.length > 0) {
+                // Save dependencies (deduplicated)
+                const validDeps = Array.from(new Set(q.lessonDependencies.filter((id: string) => depLessonIds.includes(id))));
+                const depsToSave = validDeps.map((lessonId: any) => 
+                  manager.create(QuestionLessonDependencyEntity, {
+                    questionId: q.id,
+                    lesson: { id: lessonId } as any,
+                    source: 'creator'
+                  })
+                );
+                if (depsToSave.length > 0) {
+                  await manager.save(QuestionLessonDependencyEntity, depsToSave);
+                }
+              }
+            }
+          }
+          
+          // Re-save assignment if we mutated any question IDs
+          assignmentData.questions = assignmentPayload.questions;
+          await manager.save(AssignmentEntity, assignmentData);
         }
       }
+
+      savedLP.duration = totalLpDays > 0 ? `${Math.ceil(totalLpDays / 7)} weeks` : '0 weeks';
+      await manager.save(LearningPathEntity, savedLP);
 
       return savedLP;
     }).then(async savedLP => {
@@ -208,6 +391,7 @@ export class LpAuthoringService {
         relations: [
           'createdBy',
           'modules',
+          'modules.resources',
           'modules.lessons',
           'modules.lessons.resources',
           'modules.assignments',

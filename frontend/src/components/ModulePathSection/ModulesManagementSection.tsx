@@ -6,6 +6,10 @@ import { progressService } from "../../services/lmsApi";
 import { assignmentService } from "../../services/assignmentService";
 import { useNotifications } from "../../context/NotificationContext";
 import { DeadlineDisplay } from "../DeadlineDisplay";
+import { ExpandableDescription } from "../ExpandableDescription/ExpandableDescription";
+import { LessonCard } from "../SharedCards/LessonCard";
+import { AssignmentCard } from "../SharedCards/AssignmentCard";
+import { RichText } from "../common/RichText";
 import "./ModulesManagement.css";
 
 interface ModulesProps {
@@ -39,6 +43,7 @@ export function ModulesManagementSection({
   const [openModuleId, setOpenModuleId] = useState<string | null>(null);
   const [openModuleData, setOpenModuleData] = useState<any | null>(null);
   const [moduleLoading, setModuleLoading] = useState(false);
+  const [isModuleDropdownOpen, setIsModuleDropdownOpen] = useState(false);
 
   // ── Progress state (for Trainee) ──────────────────────────────────────────
   const [progressStats, setProgressStats] = useState<any>(null);
@@ -88,7 +93,7 @@ export function ModulesManagementSection({
           setSelectedPathTitle(validPaths[0].title || validPaths[0].name);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [accessToken, isTrainee]);
 
   // ── Sync currentPathId to selectedPathId ──────────────────────────────────
@@ -107,7 +112,7 @@ export function ModulesManagementSection({
       .then((data: any) => {
         const mods = Array.isArray(data) ? data : [];
         setModules(mods);
-        
+
         // Open the module if urlModuleId changes, or open first module if none is open
         if (isTrainee && mods.length > 0) {
           if (urlModuleId && urlModuleId !== openModuleId) {
@@ -124,7 +129,7 @@ export function ModulesManagementSection({
   // ── Load progress stats once (for Trainee) ────────────────────────────────
   useEffect(() => {
     if (!isTrainee) return;
-    progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => {});
+    progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { });
   }, [accessToken, isTrainee]);
 
   // ── Drill into a module ───────────────────────────────────────────────────
@@ -163,7 +168,7 @@ export function ModulesManagementSection({
     try {
       await progressService.completeLesson(lessonId, accessToken);
       if (openModuleId) await openModule(openModuleId);
-      await progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => {});
+      await progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { });
       await refreshNotifications();
     } catch (err: any) {
       alert(err?.message || 'Could not mark lesson as watched.');
@@ -210,7 +215,7 @@ export function ModulesManagementSection({
   };
 
   const loadAssignments = async () => {
-      if (openModuleId) await openModule(openModuleId);
+    if (openModuleId) await openModule(openModuleId);
   }
 
   const handleStartTask = async (taskId: string) => {
@@ -245,14 +250,23 @@ export function ModulesManagementSection({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!submitTask || isSubmitting) return;
-    const questions = submitTask.mcqConfig?.questions || [];
+    const questions = submitTask.questions?.length > 0 ? submitTask.questions : (submitTask.mcqConfig?.questions || []);
     let text = submissionText;
     if (submitTask.assignmentType === 'MCQ' && questions.length) {
       text = JSON.stringify({ answers: mcqAnswers });
     } else if (questions.length) {
+      // For subjective with questions array, we check if answers exist and aren't completely empty
       text = JSON.stringify({ answers: subjectiveAnswers });
+      const hasMeaningfulAnswers = Object.values(subjectiveAnswers).some(val => val.trim().length > 0);
+      if (!hasMeaningfulAnswers) {
+        alert('Please answer at least one question before submitting.');
+        return;
+      }
     }
-    if (!text.trim() || text === '{"answers":{}}') { alert('Please answer the questions before submitting.'); return; }
+    if (!text.trim() || text === '{"answers":{}}') {
+      alert('Please provide a submission before submitting.');
+      return;
+    }
     setIsSubmitting(true);
     try {
       await curriculumService.submitAssignment({ assignmentId: submitTask.id, submissionText: text }, accessToken);
@@ -328,7 +342,7 @@ export function ModulesManagementSection({
     const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
     const visitedResourcesCount = resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
-    
+
     // Dynamic Weighted Progress Calculation
     const W_L = 40; const W_T = 50; const W_R = 10;
     const current_W_L = lessons.length > 0 ? W_L : 0;
@@ -350,11 +364,11 @@ export function ModulesManagementSection({
       : typeof rawObj === 'string' && rawObj.trim()
         ? rawObj.split('\n').filter(Boolean)
         : [
-            'Understand RESTful architecture principles',
-            'Design clean, versioned API endpoints',
-            'Implement JWT-based authentication flows',
-            'Write comprehensive API documentation',
-          ];
+          'Understand RESTful architecture principles',
+          'Design clean, versioned API endpoints',
+          'Implement JWT-based authentication flows',
+          'Write comprehensive API documentation',
+        ];
 
     const rawOut = openModuleData?.outcomes;
     const outcomes: string[] = Array.isArray(rawOut) && rawOut.length
@@ -362,11 +376,11 @@ export function ModulesManagementSection({
       : typeof rawOut === 'string' && rawOut.trim()
         ? rawOut.split('\n').filter(Boolean)
         : [
-            'Build a fully functional REST API with CRUD operations',
-            'Secure endpoints with JWT authentication',
-            'Handle errors gracefully with proper status codes',
-            'Document APIs using OpenAPI / Swagger',
-          ];
+          'Build a fully functional REST API with CRUD operations',
+          'Secure endpoints with JWT authentication',
+          'Handle errors gracefully with proper status codes',
+          'Document APIs using OpenAPI / Swagger',
+        ];
 
     const tabLabels: Array<['Lessons' | 'Tasks' | 'Resources', string]> = [
       ['Lessons', `Lessons (${completedLessons}/${lessons.length})`],
@@ -389,30 +403,83 @@ export function ModulesManagementSection({
             </button>
             <span>›</span>
             {modules.length > 1 ? (
-              <select
-                value={openModuleId || ''}
-                onChange={(e) => void openModule(e.target.value)}
-                style={{
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 6,
-                  background: '#f8fafc',
-                  color: '#0f172a',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  padding: '2px 24px 2px 8px',
-                  cursor: 'pointer',
-                  outline: 'none',
-                  appearance: 'none',
-                  backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2364748b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E")`,
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'right 4px center',
-                  backgroundSize: '12px'
+              <div
+                style={{ position: 'relative' }}
+                tabIndex={-1}
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setIsModuleDropdownOpen(false);
+                  }
                 }}
               >
-                {modules.map((m: any) => (
-                  <option key={m.id} value={m.id}>{m.title}</option>
-                ))}
-              </select>
+                <button
+                  type="button"
+                  onClick={() => setIsModuleDropdownOpen(!isModuleDropdownOpen)}
+                  style={{
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 6,
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    padding: '6px 32px 6px 12px',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    position: 'relative'
+                  }}
+                >
+                  {modules.find((m: any) => m.id === openModuleId)?.title || 'Select Module'}
+                  <svg style={{ position: 'absolute', right: 8, transition: 'transform 0.2s', transform: isModuleDropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                {isModuleDropdownOpen && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    marginTop: 4,
+                    background: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 6,
+                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                    zIndex: 50,
+                    minWidth: 200,
+                    maxHeight: 300,
+                    overflowY: 'auto'
+                  }}>
+                    {modules.map((m: any) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          void openModule(m.id);
+                          setIsModuleDropdownOpen(false);
+                        }}
+                        style={{
+                          display: 'block',
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '10px 16px',
+                          border: 'none',
+                          background: m.id === openModuleId ? '#e0e7ff' : '#fff',
+                          color: m.id === openModuleId ? '#4f46e5' : '#334155',
+                          fontSize: 13,
+                          fontWeight: m.id === openModuleId ? 600 : 400,
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #f1f5f9',
+                          transition: 'all 0.1s ease-in-out'
+                        }}
+                        onMouseEnter={(e) => { if (m.id !== openModuleId) e.currentTarget.style.background = '#f8fafc'; }}
+                        onMouseLeave={(e) => { if (m.id !== openModuleId) e.currentTarget.style.background = '#fff'; }}
+                      >
+                        {m.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
               <span style={{ color: '#0f172a', fontWeight: 600 }}>{openModuleData.title}</span>
             )}
@@ -421,10 +488,10 @@ export function ModulesManagementSection({
 
         {/* ── Premium Hero Banner ── */}
         <div style={{ margin: '0 24px', position: 'relative' }}>
-          <div style={{ 
-            background: 'linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #8b5cf6 100%)', 
-            color: '#fff', 
-            borderRadius: 24, 
+          <div style={{
+            background: 'linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #8b5cf6 100%)',
+            color: '#fff',
+            borderRadius: 24,
             padding: '48px 48px 64px 48px',
             position: 'relative',
             overflow: 'hidden',
@@ -433,7 +500,7 @@ export function ModulesManagementSection({
             {/* Decorative background circles */}
             <div style={{ position: 'absolute', top: -50, right: -50, width: 300, height: 300, background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%' }} />
             <div style={{ position: 'absolute', bottom: -100, left: 100, width: 250, height: 250, background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%' }} />
-            
+
             <p style={{ position: 'relative', fontSize: 12, opacity: 0.9, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 800, color: '#e0e7ff' }}>
               MODULE · {(openModuleData.level || 'Beginner').toUpperCase()} · {selectedPathTitle.toUpperCase()}
             </p>
@@ -449,7 +516,7 @@ export function ModulesManagementSection({
                 <div style={{ fontSize: 48, fontWeight: 900, lineHeight: 1 }}>{progressPercent}%</div>
               </div>
             </div>
-            
+
             {/* Progress bar */}
             <div style={{ position: 'relative', width: '100%', height: 8, background: 'rgba(255,255,255,0.2)', borderRadius: 999, marginTop: 32, overflow: 'hidden' }}>
               <div style={{ width: `${progressPercent}%`, height: '100%', background: '#10b981', borderRadius: 999, transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 0 10px rgba(16,185,129,0.5)' }} />
@@ -457,10 +524,10 @@ export function ModulesManagementSection({
           </div>
 
           {/* Overlapping Stats Row */}
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(4,1fr)', 
-            gap: 20, 
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4,1fr)',
+            gap: 20,
             padding: '0 32px',
             marginTop: -32,
             position: 'relative',
@@ -472,25 +539,25 @@ export function ModulesManagementSection({
               { icon: '🎯', label: 'Tasks', value: isTrainee ? `${tasksSubmitted}/${tasks.length} submitted` : `${tasks.length} assigned` },
               { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
             ].map((m) => (
-              <div key={m.label} style={{ 
-                background: 'rgba(255, 255, 255, 0.95)', 
+              <div key={m.label} style={{
+                background: 'rgba(255, 255, 255, 0.95)',
                 backdropFilter: 'blur(10px)',
-                padding: '20px', 
-                borderRadius: 16, 
+                padding: '20px',
+                borderRadius: 16,
                 border: '1px solid rgba(255,255,255,0.8)',
                 boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01)',
-                display: 'flex', 
-                alignItems: 'center', 
+                display: 'flex',
+                alignItems: 'center',
                 gap: 16,
                 transition: 'transform 0.2s',
                 cursor: 'default'
               }}
-              onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
-              onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
+                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
               >
-                <div style={{ 
-                  width: 48, height: 48, borderRadius: 12, 
-                  background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 
+                <div style={{
+                  width: 48, height: 48, borderRadius: 12,
+                  background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24
                 }}>
                   {m.icon}
                 </div>
@@ -508,13 +575,13 @@ export function ModulesManagementSection({
 
           {/* Objectives + Outcomes */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 40, marginTop: 12 }}>
-            <div style={{ 
-              background: 'linear-gradient(to right, #ffffff, #f8fafc)', 
-              padding: 32, 
-              borderRadius: 20, 
-              border: '1px solid #e2e8f0', 
+            <div style={{
+              background: 'linear-gradient(to right, #ffffff, #f8fafc)',
+              padding: 32,
+              borderRadius: 20,
+              border: '1px solid #e2e8f0',
               borderLeft: '6px solid #4f46e5',
-              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' 
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
@@ -531,13 +598,13 @@ export function ModulesManagementSection({
                 ))}
               </ul>
             </div>
-            <div style={{ 
-              background: 'linear-gradient(to right, #ffffff, #f8fafc)', 
-              padding: 32, 
-              borderRadius: 20, 
-              border: '1px solid #e2e8f0', 
+            <div style={{
+              background: 'linear-gradient(to right, #ffffff, #f8fafc)',
+              padding: 32,
+              borderRadius: 20,
+              border: '1px solid #e2e8f0',
               borderLeft: '6px solid #10b981',
-              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' 
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 10, background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
@@ -559,7 +626,7 @@ export function ModulesManagementSection({
           </div>
 
           {/* Modern Tabs */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 24, background: '#f1f5f9', padding: 6, borderRadius: 14, width: 'fit-content' }}>
+          <div className="modules-management-tabs-container" style={{ display: 'flex', gap: 8, marginBottom: 24, background: '#f1f5f9', padding: 6, borderRadius: 14, overflowX: 'auto', maxWidth: '100%' }}>
             {tabLabels.map(([key, label]) => (
               <button
                 key={key}
@@ -595,131 +662,15 @@ export function ModulesManagementSection({
               {lessons.map((lesson: any, lIdx: number) => {
                 const isDone = completedLessonIds.has(String(lesson.id));
                 return (
-                  <div
-                    key={lesson.id}
-                    style={{
-                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '20px 24px', background: '#fff',
-                      border: `1px solid ${isDone ? '#bbf7d0' : '#e2e8f0'}`,
-                      borderRadius: 16,
-                      borderLeft: isDone ? '5px solid #10b981' : '5px solid #e2e8f0',
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                      boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 10px 20px -5px rgba(0,0,0,0.05)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)';
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-                      {/* Checkbox indicator */}
-                      <div
-                        style={{
-                          width: 28, height: 28, borderRadius: 8,
-                          border: isDone ? 'none' : '2px solid #cbd5e1',
-                          background: isDone ? '#10b981' : '#f8fafc',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0, cursor: isTrainee && !isDone && !lesson.isLocked ? 'pointer' : 'default',
-                          boxShadow: isDone ? '0 0 0 4px rgba(16,185,129,0.15)' : 'inset 0 2px 4px rgba(0,0,0,0.02)',
-                          transition: 'all 0.2s',
-                          opacity: lesson.isLocked ? 0.5 : 1
-                        }}
-                        onClick={() => isTrainee && !isDone && !lesson.isLocked ? void markLessonWatched(lesson.id) : undefined}
-                        title={lesson.isLocked ? lesson.lockReason : (isTrainee && !isDone ? 'Click to mark as watched' : isDone ? 'Completed' : 'Not completed')}
-                      >
-                        {isDone && (
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                            <path d="M3 8l3 3 7-7" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </div>
-
-                      {/* Lesson number badge */}
-                      <div style={{
-                        width: 36, height: 36, borderRadius: '50%',
-                        background: isDone ? '#dcfce7' : '#f1f5f9',
-                        color: isDone ? '#166534' : '#475569',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 14, fontWeight: 800, flexShrink: 0,
-                      }}>
-                        {lIdx + 1}
-                      </div>
-
-                      <div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: isDone ? '#64748b' : '#0f172a', textDecoration: isDone ? 'line-through' : 'none', marginBottom: 4 }}>
-                          {lesson.title}
-                        </div>
-                        <div style={{ fontSize: 13, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {isDone ? (
-                            <span style={{ color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg> Watched
-                            </span>
-                          ) : (
-                            <span>Pending</span>
-                          )}
-                          <span style={{ color: '#cbd5e1' }}>•</span>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            {lesson.durationMinutes || 15} min
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      {lesson.videoUrl && (
-                        <a href={lesson.isLocked ? undefined : lesson.videoUrl} target={lesson.isLocked ? undefined : "_blank"} rel="noreferrer"
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: lesson.isLocked ? '#f1f5f9' : '#e0e7ff', borderRadius: 8, transition: 'background 0.2s', pointerEvents: lesson.isLocked ? 'none' : 'auto', opacity: lesson.isLocked ? 0.5 : 1 }}
-                          onMouseEnter={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#c7d2fe')}
-                          onMouseLeave={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#e0e7ff')}
-                        >
-                          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Video
-                        </a>
-                      )}
-                      {lesson.articleUrl && (
-                        <a href={lesson.isLocked ? undefined : lesson.articleUrl} target={lesson.isLocked ? undefined : "_blank"} rel="noreferrer"
-                          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#4f46e5', fontWeight: 700, textDecoration: 'none', padding: '8px 14px', background: lesson.isLocked ? '#f1f5f9' : '#e0e7ff', borderRadius: 8, transition: 'background 0.2s', pointerEvents: lesson.isLocked ? 'none' : 'auto', opacity: lesson.isLocked ? 0.5 : 1 }}
-                          onMouseEnter={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#c7d2fe')}
-                          onMouseLeave={(e) => !lesson.isLocked && (e.currentTarget.style.background = '#e0e7ff')}
-                        >
-                          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg> Article
-                        </a>
-                      )}
-
-                      {/* Action button */}
-                      {isTrainee ? (
-                        isDone ? (
-                          <span style={{ fontSize: 13, color: '#166534', fontWeight: 800, padding: '8px 16px', background: '#dcfce7', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg> Done
-                          </span>
-                        ) : lesson.isLocked ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#94a3b8', fontWeight: 700, padding: '8px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }} title={lesson.lockReason}>
-                            <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg> Locked
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => void markLessonWatched(lesson.id)}
-                            style={{ padding: '9px 20px', background: 'linear-gradient(135deg, #4f46e5, #3b82f6)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 800, cursor: 'pointer', boxShadow: '0 4px 12px rgba(79,70,229,0.3)', transition: 'all 0.2s' }}
-                            onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(79,70,229,0.4)'; }}
-                            onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(79,70,229,0.3)'; }}
-                          >
-                            {lIdx === 0 || completedLessons > 0 ? 'Continue' : 'Start'}
-                          </button>
-                        )
-                      ) : (
-                        <span style={{
-                          fontSize: 13, fontWeight: 700, padding: '8px 16px', borderRadius: 10,
-                          background: '#f8fafc', color: '#94a3b8', border: '1px solid #e2e8f0',
-                        }}>
-                          {isDone ? 'Watched' : 'Not watched'}
-                        </span>
-                      )}
-                    </div>
+                  <div key={lesson.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <LessonCard
+                      lesson={{ ...lesson, title: `${lIdx + 1}. ${lesson.title}` }}
+                      isDone={isDone}
+                      isLocked={lesson.isLocked}
+                      isTrainee={isTrainee}
+                      onMarkWatched={markLessonWatched}
+                      onClickLocked={() => lesson.isLocked && alert(lesson.lockReason)}
+                    />
                   </div>
                 );
               })}
@@ -745,66 +696,16 @@ export function ModulesManagementSection({
                   };
                   const sc = statusColors[status] || statusColors['Not Started'];
                   return (
-                    <div key={task.id} 
-                      style={{ padding: '20px 24px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, transition: 'all 0.2s', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 10px 20px -5px rgba(0,0,0,0.05)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.02)';
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: 12, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', flexShrink: 0 }}>
-                          <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
-                        </div>
-                        <div>
-                          <h4 style={{ margin: '0 0 6px', fontSize: 16, color: '#0f172a', fontWeight: 800 }}>{task.title}</h4>
-                          <div style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ background: '#e2e8f0', padding: '2px 8px', borderRadius: 6, fontWeight: 600, color: '#475569', fontSize: 11, textTransform: 'uppercase' }}>{task.assignmentType}</span>
-                            <span>{task.lessonTitle || 'Module task'}</span>
-                            <span style={{ color: '#cbd5e1' }}>•</span>
-                            <DeadlineDisplay task={task} submission={sub} />
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, padding: '6px 14px', borderRadius: 999, background: sc.bg, color: sc.color }}>
-                          {status === 'Approved' ? 'Approved' : status}
-                          {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
-                        </span>
-                        {isTrainee && status !== 'Approved' && (
-                          <button
-                            type="button"
-                            disabled={task.isLocked}
-                            onClick={() => { if (!task.isLocked) { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); } }}
-                            style={{ 
-                              padding: '9px 20px', 
-                              background: task.isLocked ? '#f1f5f9' : 'linear-gradient(135deg,#6366f1,#4f46e5)', 
-                              color: task.isLocked ? '#94a3b8' : '#fff', 
-                              border: task.isLocked ? '1px solid #e2e8f0' : 'none', 
-                              borderRadius: 10, 
-                              fontSize: 14, 
-                              fontWeight: 800, 
-                              cursor: task.isLocked ? 'not-allowed' : 'pointer', 
-                              boxShadow: task.isLocked ? 'none' : '0 4px 12px rgba(79,70,229,0.3)', 
-                              transition: 'all 0.2s',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 8
-                            }}
-                            title={task.isLocked ? task.lockReason || 'Complete all lessons in this module to unlock tasks.' : ''}
-                            onMouseEnter={(e) => { if (!task.isLocked) { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(79,70,229,0.4)'; } }}
-                            onMouseLeave={(e) => { if (!task.isLocked) { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(79,70,229,0.3)'; } }}
-                          >
-                            {task.isLocked && <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>}
-                            {task.isLocked ? 'Locked' : (sub ? 'Resubmit' : 'Submit Task')}
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                    <AssignmentCard
+                      key={task.id}
+                      task={task}
+                      submission={sub}
+                      isLocked={task.isLocked}
+                      lockReason={task.lockReason}
+                      isTrainee={isTrainee}
+                      onClickLocked={(r) => alert(r || 'Locked')}
+                      onAttempt={(t) => { setSubmitTask(t); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
+                    />
                   );
                 })
               )}
@@ -875,11 +776,11 @@ export function ModulesManagementSection({
                   {tasks.map((task: any) => {
                     const sub = subByAssignment.get(task.id);
                     const isLocked = task.isLocked;
-                    
+
                     let timeLeftStr = '';
                     let isOverdue = false;
                     const status = task.status || (sub ? sub.status : 'not_started');
-                    
+
                     if (status === 'started' && task.computedDeadline) {
                       const deadline = new Date(task.computedDeadline);
                       const diff = deadline.getTime() - currentTime.getTime();
@@ -926,7 +827,7 @@ export function ModulesManagementSection({
                               {sub.score}/{task.maxScore || 100}
                             </span>
                           )}
-                          
+
                           {isTrainee && !isLocked && (
                             <>
                               {!canSubmit && status !== 'started' && (
@@ -942,7 +843,27 @@ export function ModulesManagementSection({
                               {canSubmit && (!sub || (sub.status !== 'Approved' && sub.status !== 'Evaluated')) && (
                                 <button
                                   type="button"
-                                  onClick={() => { setSubmitTask(task); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
+                                  onClick={() => {
+                                    setSubmitTask(task);
+
+                                    let prefilledMcq = {};
+                                    let prefilledSubj = {};
+                                    let prefilledText = '';
+                                    if (sub?.submissionText) {
+                                      try {
+                                        prefilledText = sub.submissionText;
+                                        if (sub.submissionText.startsWith('{')) {
+                                          const parsed = JSON.parse(sub.submissionText);
+                                          prefilledMcq = parsed.answers || {};
+                                          prefilledSubj = parsed.textAnswers || {};
+                                        }
+                                      } catch (e) { }
+                                    }
+
+                                    setSubmissionText(prefilledText);
+                                    setSubjectiveAnswers(prefilledSubj);
+                                    setMcqAnswers(prefilledMcq);
+                                  }}
                                   disabled={isOverdue || status === 'Overdue'}
                                   style={{ padding: '6px 14px', background: isOverdue || status === 'Overdue' ? '#cbd5e1' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: isOverdue || status === 'Overdue' ? 'not-allowed' : 'pointer' }}
                                 >
@@ -967,7 +888,7 @@ export function ModulesManagementSection({
           const sub = subByAssignment.get(submitTask.id);
           const deadlineAt = submitTask.deadlineAt || sub?.deadlineAt;
           const status = submitTask.status || sub?.status || 'not_started';
-          
+
           let timeLeftStr = '';
           let isOverdue = false;
           if (status === 'started' && deadlineAt) {
@@ -1000,9 +921,54 @@ export function ModulesManagementSection({
                   </div>
                 )}
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
                   <div style={{ flex: 1 }}>
                     <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 800, color: '#0f172a' }}>{submitTask.title}</h3>
+                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                      {submitTask.assignmentType} · {submitTask.lessonTitle || 'Module Task'}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+                      {submitTask.dependsOnLessonIds?.length > 0 && (
+                        <div>
+                          <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Depends On</strong>
+                          <div style={{ fontSize: 13, color: '#334155' }}>
+                            {submitTask.dependsOnLessonIds.length} Prerequisite lessons
+                          </div>
+                        </div>
+                      )}
+
+                      {submitTask.createdBy?.firstName && (
+                        <div>
+                          <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Assigned By</strong>
+                          <div style={{ fontSize: 13, color: '#334155' }}>{submitTask.createdBy.firstName} {submitTask.createdBy.lastName}</div>
+                        </div>
+                      )}
+
+                      {submitTask.countdownStart === 'onAssignment' ? (
+                        <div>
+                          <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>LP Assigned Time</strong>
+                          <div style={{ fontSize: 13, color: '#334155' }}>
+                            {sub?.lpAssignedAt ? new Date(sub.lpAssignedAt).toLocaleString(undefined, { timeZoneName: 'short' }) : new Date(submitTask.createdAt).toLocaleString(undefined, { timeZoneName: 'short' })}
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>Unlocked Time</strong>
+                          <div style={{ fontSize: 13, color: '#334155' }}>
+                            {sub?.taskUnlockedAt ? new Date(sub.taskUnlockedAt).toLocaleString(undefined, { timeZoneName: 'short' }) : 'Unlocks after prerequisite lessons'}
+                          </div>
+                        </div>
+                      )}
+
+                      {deadlineAt && (
+                        <div>
+                          <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Due Date</strong>
+                          <DeadlineDisplay task={submitTask} submission={sub} />
+                        </div>
+                      )}
+                    </div>
+
                     {timeLeftStr && (
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: isOverdue ? '#fee2e2' : '#fef3c7', color: isOverdue ? '#b91c1c' : '#b45309', borderRadius: 6, fontSize: 13, fontWeight: 700 }}>
                         ⏳ {timeLeftStr}
@@ -1011,62 +977,80 @@ export function ModulesManagementSection({
                   </div>
                   <button type="button" onClick={() => setSubmitTask(null)} style={{ border: 'none', background: '#f1f5f9', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 18, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
                 </div>
-              {submitTask.instructions && (
-                <p style={{ fontSize: 13, color: '#64748b', background: '#f8fafc', padding: 12, borderRadius: 8, marginBottom: 16, lineHeight: 1.6 }}>{submitTask.instructions}</p>
-              )}
 
-              {(submitTask.mcqConfig?.questions || []).length > 0 ? (
-                (submitTask.mcqConfig.questions as any[]).map((q: any, idx: number) => (
-                  <div key={idx} style={{ marginBottom: 16, padding: '16px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
-                    <p style={{ margin: '0 0 12px', fontWeight: 700, fontSize: 14, color: '#0f172a' }}>
-                      Q{idx + 1}. {q.questionText || q.question}
-                    </p>
-                    {submitTask.assignmentType === 'MCQ' ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {(q.options || ['', '', '', '']).map((opt: string, oi: number) => (
-                          <label key={oi} style={{
-                            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
-                            background: mcqAnswers[idx] === oi ? '#ede9fe' : '#fff',
-                            border: `1.5px solid ${mcqAnswers[idx] === oi ? '#6366f1' : '#e2e8f0'}`,
-                            fontWeight: mcqAnswers[idx] === oi ? 600 : 400, fontSize: 13, color: '#0f172a', transition: 'all 0.15s',
-                          }}>
-                            <input type="radio" name={`q-${idx}`} checked={mcqAnswers[idx] === oi} onChange={() => setMcqAnswers(prev => ({ ...prev, [idx]: oi }))} style={{ accentColor: '#6366f1' }} />
-                            <span style={{ width: 22, height: 22, borderRadius: 6, background: mcqAnswers[idx] === oi ? '#6366f1' : '#e2e8f0', color: mcqAnswers[idx] === oi ? '#fff' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                              {String.fromCharCode(65 + oi)}
-                            </span>
-                            {opt || `Option ${oi + 1}`}
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <textarea
-                        rows={4} value={subjectiveAnswers[idx] || ''}
-                        onChange={(e) => setSubjectiveAnswers(prev => ({ ...prev, [idx]: e.target.value }))}
-                        placeholder="Write your answer here..."
-                        style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
-                      />
-                    )}
+                {submitTask.instructions && (
+                  <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '16px', marginBottom: '24px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                      Instructions
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#0c4a6e', margin: 0, fontFamily: 'inherit', lineHeight: 1.6 }}>
+                      <RichText content={submitTask.instructions} emptyStateText="No instructions provided." />
+                    </div>
                   </div>
-                ))
-              ) : (
-                <textarea
-                  required rows={6} value={submissionText}
-                  onChange={(e) => setSubmissionText(e.target.value)}
-                  placeholder="Write your submission..."
-                  style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, resize: 'vertical', marginBottom: 16, outline: 'none', boxSizing: 'border-box' }}
-                />
-              )}
+                )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 20, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
-                <button type="button" onClick={() => setSubmitTask(null)} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#f1f5f9', fontWeight: 600, fontSize: 13, cursor: 'pointer', color: '#475569' }}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={isSubmitting || isOverdue} style={{ padding: '10px 24px', border: 'none', borderRadius: 10, background: (isSubmitting || isOverdue) ? '#a5b4fc' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: (isSubmitting || isOverdue) ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.3)' }}>
-                  {isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
-                </button>
-              </div>
-            </form>
-          </div>
+                {(() => {
+                  const questionsArray = submitTask.questions?.length > 0 ? submitTask.questions : (submitTask.mcqConfig?.questions || []);
+                  return questionsArray.length > 0 ? (
+                    questionsArray.map((q: any, idx: number) => (
+                      <div key={idx} style={{ marginBottom: 16, padding: '16px 18px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                          <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: '#0f172a' }}>
+                            Q{idx + 1}. {q.text || q.questionText || q.question}
+                          </p>
+                          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, background: '#e2e8f0', padding: '2px 8px', borderRadius: 12, whiteSpace: 'nowrap' }}>
+                            {q.maxPoints || 10} pts
+                          </span>
+                        </div>
+                        {submitTask.assignmentType === 'MCQ' || q.type === 'MCQ' ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {(q.options || ['', '', '', '']).map((opt: string, oi: number) => (
+                              <label key={oi} style={{
+                                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, cursor: 'pointer',
+                                background: mcqAnswers[idx] === oi ? '#ede9fe' : '#fff',
+                                border: `1.5px solid ${mcqAnswers[idx] === oi ? '#6366f1' : '#e2e8f0'}`,
+                                fontWeight: mcqAnswers[idx] === oi ? 600 : 400, fontSize: 13, color: '#0f172a', transition: 'all 0.15s',
+                              }}>
+                                <input type="radio" name={`q-${idx}`} checked={mcqAnswers[idx] === oi} onChange={() => setMcqAnswers(prev => ({ ...prev, [idx]: oi }))} style={{ accentColor: '#6366f1' }} />
+                                <span style={{ width: 22, height: 22, borderRadius: 6, background: mcqAnswers[idx] === oi ? '#6366f1' : '#e2e8f0', color: mcqAnswers[idx] === oi ? '#fff' : '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                  {String.fromCharCode(65 + oi)}
+                                </span>
+                                {opt || `Option ${oi + 1}`}
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <textarea
+                            rows={4} value={subjectiveAnswers[idx] || ''}
+                            onChange={(e) => setSubjectiveAnswers(prev => ({ ...prev, [idx]: e.target.value }))}
+                            placeholder="Write your answer here..."
+                            style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                          />
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <textarea
+                      required rows={6} value={submissionText}
+                      onChange={(e) => setSubmissionText(e.target.value)}
+                      placeholder="Write your submission..."
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 13, resize: 'vertical', marginBottom: 16, outline: 'none', boxSizing: 'border-box' }}
+                    />
+                  );
+                })()}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 20, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+                  <button type="button" onClick={() => setSubmitTask(null)} style={{ padding: '10px 20px', border: 'none', borderRadius: 10, background: '#f1f5f9', fontWeight: 600, fontSize: 13, cursor: 'pointer', color: '#475569' }}>
+                    Cancel
+                  </button>
+                  {!isOverdue && (
+                    <button type="submit" disabled={isSubmitting} style={{ padding: '10px 24px', border: 'none', borderRadius: 10, background: isSubmitting ? '#a5b4fc' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: isSubmitting ? 'not-allowed' : 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.3)' }}>
+                      {isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
+                    </button>
+                  )}
+                </div>
+              </form>
+            </div>
           );
         })()}
       </div>
@@ -1302,9 +1286,9 @@ export function ModulesManagementSection({
                 const currentLP = allPaths.find(p => p.id === selectedPathId);
                 const lpLessonLock = currentLP?.lockLessons === true;
                 const lpTaskLock = currentLP?.lockTasks === true;
-                
+
                 if (lpLessonLock && lpTaskLock) return null;
-                
+
                 return (
                   <div style={{ display: 'flex', gap: 24, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', marginTop: 8 }}>
                     {!lpLessonLock && (

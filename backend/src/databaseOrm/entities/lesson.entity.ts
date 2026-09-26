@@ -78,12 +78,6 @@ export class LessonEntity extends BaseEntity {
   })
   assignments: AssignmentEntity[];
 
-  // 🌟 Alias for backward compatibility
-  @OneToMany(() => AssignmentEntity, (assignment) => assignment.lesson, {
-    cascade: true,
-    onDelete: 'CASCADE',
-  })
-  tasks: AssignmentEntity[];
 
   @OneToMany(() => UserLessonProgressEntity, (progress) => progress.lesson, {
     cascade: true,

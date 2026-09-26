@@ -50,6 +50,7 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
         .leftJoinAndSelect('lp.createdBy', 'createdBy')
         .leftJoinAndSelect('lp.modules', 'modules')
         .leftJoinAndSelect('modules.lessons', 'lessons')
+        .leftJoinAndSelect('modules.assignments', 'assignments')
         .where('lp.deletedAt IS NULL')
         .andWhere(
            new Brackets(qb => {
@@ -73,7 +74,7 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       }
     } else {
       paths = await this.repository.find({
-        relations: ['createdBy', 'modules', 'modules.lessons'],
+        relations: ['createdBy', 'modules', 'modules.lessons', 'modules.assignments'],
         order: { createdAt: 'DESC' },
       });
     }
@@ -131,6 +132,7 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
         'modules.lessons',
         'modules.lessons.assignments',
         'modules.lessons.resources',
+        'modules.assignments',
       ],
       order: {
         createdAt: 'DESC',
@@ -306,33 +308,40 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       const now = new Date();
 
       for (const task of allAssignmentsInPath) {
-        const parentModule = (task as any).module || (task as any).lesson?.module;
-        const isGated = parentModule && parentModule.taskLocking === true && (parentModule.lessons?.length > 0 || (task as any).lesson);
+        // Read directly from the task configuration
+        const isUnlockAnchor = (task as any).countdownStart === 'onUnlock' || (task as any).countdownStart === 'onTraineeStart';
         
-        let deadlineMode = 'assignment_anchored';
-        let deadlineAnchorAt: Date | null = now;
+        let lpAssignedAt: Date | null = now;
+        let taskUnlockedAt: Date | null = null;
         let computedDeadline: Date | null = null;
+        
+        // Ensure timer duration falls back to 0 if null
+        const totalMins = (task as any).timerDuration || 0;
 
-        if (isGated) {
-          deadlineMode = 'unlock_anchored';
-          deadlineAnchorAt = null;
-        } else if ((task as any).durationValue) {
-           const durationVal = (task as any).durationValue;
-           const durationUnit = (task as any).durationUnit || 'days';
-           const totalMs = durationUnit === 'minutes' ? durationVal * 60000 
-                         : durationUnit === 'hours' ? durationVal * 3600000 
-                         : durationVal * 86400000;
-           computedDeadline = new Date(now.getTime() + totalMs);
+        if (isUnlockAnchor) {
+          // Type B: Unlock (lesson-locked) - clock starts on unlock
+          lpAssignedAt = null;
+          taskUnlockedAt = null; // Stays null until progress unlocks it
+        } else {
+          // Type A: LP Assignment - clock starts instantly
+          if (totalMins > 0) {
+            computedDeadline = new Date(now.getTime());
+            const days = Math.floor(totalMins / (24 * 60));
+            const hours = Math.floor((totalMins % (24 * 60)) / 60);
+            const mins = totalMins % 60;
+            if (days) computedDeadline.setDate(computedDeadline.getDate() + days);
+            if (hours) computedDeadline.setHours(computedDeadline.getHours() + hours);
+            if (mins) computedDeadline.setMinutes(computedDeadline.getMinutes() + mins);
+          }
         }
 
         submissions.push(submissionRepo.create({
           assignment: { id: (task as any).id } as any,
           trainee: { id: traineeId } as any,
           status: 'LOCKED',
-          deadlineMode,
-          deadlineAnchorAt,
-          computedDeadline,
-          unlockedAt: null
+          lpAssignedAt: lpAssignedAt,
+          taskUnlockedAt: taskUnlockedAt,
+          deadline: computedDeadline
         }));
       }
 

@@ -20,6 +20,10 @@ import { DataSource, Repository } from 'typeorm';
 import { LessonContentCacheEntity } from '../../entities/lessonContentCache.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { ResourceEntity } from '../../entities/resource.entity';
+import { YoutubeTranscript } from 'youtube-transcript';
+import { LessonContentChunkEntity } from '../../entities/lessonContentChunk.entity';
+import { LessonRubricEntity } from '../../entities/lessonRubric.entity';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class ContentExtractionService {
@@ -27,11 +31,15 @@ export class ContentExtractionService {
   private cacheRepo: Repository<LessonContentCacheEntity>;
   private lessonRepo: Repository<LessonEntity>;
   private resourceRepo: Repository<ResourceEntity>;
+  private chunkRepo: Repository<LessonContentChunkEntity>;
+  private rubricRepo: Repository<LessonRubricEntity>;
 
   constructor(private readonly datasource: DataSource) {
     this.cacheRepo = this.datasource.getRepository(LessonContentCacheEntity);
     this.lessonRepo = this.datasource.getRepository(LessonEntity);
     this.resourceRepo = this.datasource.getRepository(ResourceEntity);
+    this.chunkRepo = this.datasource.getRepository(LessonContentChunkEntity);
+    this.rubricRepo = this.datasource.getRepository(LessonRubricEntity);
   }
 
   /**
@@ -63,15 +71,38 @@ export class ContentExtractionService {
       return null;
     }
 
-    // Upsert cache entry
+    // Calculate source hash
+    const hashData = [
+      lesson.description || '',
+      ...(lesson.videos || []).map(v => v?.url || ''),
+      lesson.videoUrl || '',
+      ...(lesson.audios || []).map(a => a?.url || ''),
+      ...(lesson.resources || []).map(r => r?.url || ''),
+      ...(lesson.keyPoints || []),
+    ].join('|');
+    const sourceHash = crypto.createHash('sha256').update(hashData).digest('hex');
+
     let cache = await this.cacheRepo.findOne({ where: { lessonId } });
     if (!cache) {
       cache = this.cacheRepo.create({
         lessonId,
         extractionStatus: 'pending',
+        contentVersion: 1,
       });
-      cache = await this.cacheRepo.save(cache);
     }
+
+    // If source hasn't changed and we already extracted it successfully, skip extraction
+    if (cache.sourceHash === sourceHash && ['completed', 'partial'].includes(cache.extractionStatus)) {
+      this.logger.log(`Skipping extraction for lesson ${lessonId} - no content changes`);
+      return cache;
+    }
+
+    if (cache.sourceHash && cache.sourceHash !== sourceHash) {
+      cache.contentVersion = (cache.contentVersion || 1) + 1;
+    }
+    cache.sourceHash = sourceHash;
+    cache.extractionStatus = 'pending';
+    cache = await this.cacheRepo.save(cache);
 
     const failures: string[] = [];
     let hasContent = false;
@@ -81,6 +112,8 @@ export class ContentExtractionService {
       if (lesson.description) {
         cache.descriptionText = this.stripHtmlToText(lesson.description);
         hasContent = true;
+      } else {
+        cache.descriptionText = '';
       }
     } catch (e) {
       const err = e as Error;
@@ -91,11 +124,7 @@ export class ContentExtractionService {
     try {
       const videoTexts: string[] = [];
       const videos = lesson.videos || [];
-
-      // Also include legacy single videoUrl
-      if (lesson.videoUrl) {
-        videos.push({ url: lesson.videoUrl });
-      }
+      if (lesson.videoUrl) videos.push({ url: lesson.videoUrl });
 
       for (const video of videos) {
         if (!video?.url) continue;
@@ -112,6 +141,8 @@ export class ContentExtractionService {
       if (videoTexts.length > 0) {
         cache.videoTranscript = videoTexts.join('\n\n---\n\n');
         hasContent = true;
+      } else {
+        cache.videoTranscript = '';
       }
     } catch (e) {
       const err = e as Error;
@@ -138,6 +169,8 @@ export class ContentExtractionService {
       if (audioTexts.length > 0) {
         cache.audioTranscript = audioTexts.join('\n\n---\n\n');
         hasContent = true;
+      } else {
+         cache.audioTranscript = '';
       }
     } catch (e) {
       const err = e as Error;
@@ -164,6 +197,8 @@ export class ContentExtractionService {
       if (resourceTexts.length > 0) {
         cache.resourceText = resourceTexts.join('\n\n---\n\n');
         hasContent = true;
+      } else {
+        cache.resourceText = '';
       }
     } catch (e) {
       const err = e as Error;
@@ -193,7 +228,122 @@ export class ContentExtractionService {
     cache.extractedAt = new Date();
     cache.failureReason = failures.length > 0 ? failures.join('; ') : '';
 
-    return await this.cacheRepo.save(cache);
+    cache = await this.cacheRepo.save(cache);
+
+    // Chunk and distill asynchronously
+    if (cache.extractionStatus === 'completed' || cache.extractionStatus === 'partial') {
+      this.chunkAndDistillRubric(cache).catch(e => {
+        this.logger.error(`Chunk and distill failed for lesson ${lessonId}: ${e.message}`);
+      });
+    }
+
+    return cache;
+  }
+
+  /**
+   * Chunks content and generates rubric via LLM
+   */
+  private async chunkAndDistillRubric(cache: LessonContentCacheEntity) {
+    const fullTextParts = [];
+    if (cache.descriptionText) fullTextParts.push(cache.descriptionText);
+    if (cache.videoTranscript) fullTextParts.push(cache.videoTranscript);
+    if (cache.audioTranscript) fullTextParts.push(cache.audioTranscript);
+    if (cache.resourceText) fullTextParts.push(cache.resourceText);
+
+    const fullText = fullTextParts.join('\n\n');
+    if (!fullText.trim()) return;
+
+    // 1. Chunking (~150 words respecting paragraphs/sentences)
+    const rawParagraphs = fullText.split(/\n\n+/);
+    const chunks: string[] = [];
+    let currentChunk = '';
+    for (const p of rawParagraphs) {
+      if ((currentChunk.split(' ').length + p.split(' ').length) > 150 && currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = p;
+      } else {
+        currentChunk += (currentChunk ? ' ' : '') + p;
+      }
+    }
+    if (currentChunk) chunks.push(currentChunk.trim());
+
+    // Delete old chunks for this lesson/version
+    await this.chunkRepo.delete({ lesson: { id: cache.lessonId }, contentVersion: cache.contentVersion });
+
+    // Save chunks
+    const chunkEntities = chunks.map((c, i) => this.chunkRepo.create({
+      lesson: { id: cache.lessonId },
+      contentVersion: cache.contentVersion,
+      chunkIndex: i,
+      chunkText: c,
+    }));
+    await this.chunkRepo.save(chunkEntities);
+
+    // Update tsvector (Postgres specific) using raw query
+    try {
+      await this.datasource.query(
+        `UPDATE "LessonContentChunk" SET search_vector = to_tsvector('english', chunk_text) WHERE lesson_id = $1 AND content_version = $2`,
+        [cache.lessonId, cache.contentVersion]
+      );
+    } catch (e) {
+      const err = e as Error;
+      this.logger.warn(`Failed to update tsvector for chunks: ${err.message}`);
+    }
+
+    // 2. Distill Rubric
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!groqKey) {
+      this.logger.warn('GROQ_API_KEY not set - skipping rubric distillation');
+      return;
+    }
+
+    let rubric = await this.rubricRepo.findOne({ where: { lesson: { id: cache.lessonId }, rubricVersion: cache.contentVersion } });
+    if (!rubric) {
+      rubric = this.rubricRepo.create({
+        lesson: { id: cache.lessonId },
+        contentVersion: cache.contentVersion,
+        rubricVersion: cache.contentVersion,
+        generationStatus: 'PENDING',
+        keyPoints: []
+      });
+      rubric = await this.rubricRepo.save(rubric);
+    }
+
+    const systemPrompt = 'You are creating a grading rubric for an educator.\n\nFrom the following lesson content, extract 5–10 concise, factual teaching points that a subject-matter expert would use to grade a student\'s answer about this lesson. Focus on concrete facts, concepts, and definitions — not tone or delivery style.\n\nReturn ONLY a JSON array: [{"point": "...", "weight": 0.1}, ...]\nWeights should sum to 1.0 across all points. DO NOT wrap in markdown, return RAW JSON array only.';
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Lesson content:\n${fullText.substring(0, 15000)}` }
+          ],
+          temperature: 0.2
+        }),
+      });
+
+      if (!response.ok) throw new Error(`Groq returned ${response.status}`);
+      const data = (await response.json()) as any;
+      let contentStr = data.choices?.[0]?.message?.content || '[]';
+      
+      contentStr = contentStr.replace(/^\s*```json/i, '').replace(/```\s*$/, '').trim();
+      const points = JSON.parse(contentStr);
+      if (!Array.isArray(points)) throw new Error('Groq did not return an array');
+
+      rubric.keyPoints = points;
+      rubric.generationStatus = 'SUCCESS';
+      rubric.generatedAt = new Date();
+      await this.rubricRepo.save(rubric);
+
+    } catch (e) {
+      const err = e as Error;
+      this.logger.error(`Failed to distill rubric for ${cache.lessonId}: ${err.message}`);
+      rubric.generationStatus = 'FAILED';
+      await this.rubricRepo.save(rubric);
+    }
   }
 
   /**
@@ -249,11 +399,15 @@ export class ContentExtractionService {
   private async extractVideoTranscript(url: string): Promise<string | null> {
     const youtubeId = this.extractYouTubeId(url);
     if (youtubeId) {
-      return await this.fetchYouTubeCaptions(youtubeId);
+      const transcript = await this.fetchYouTubeCaptions(youtubeId);
+      if (!transcript) throw new Error("YouTube transcript returned empty");
+      return transcript;
     }
 
     // For non-YouTube videos, attempt Groq Whisper transcription
-    return await this.transcribeWithGroqWhisper(url);
+    const transcript = await this.transcribeWithGroqWhisper(url);
+    if (!transcript) throw new Error("Whisper transcript returned empty");
+    return transcript;
   }
 
   /** Extract YouTube video ID from various URL formats */
@@ -276,31 +430,15 @@ export class ContentExtractionService {
    */
   private async fetchYouTubeCaptions(videoId: string): Promise<string | null> {
     try {
-      // Attempt to fetch captions via YouTube's timedtext API
-      const captionUrl = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`;
-      const response = await fetch(captionUrl, {
-        headers: { 'User-Agent': 'SkillForge-LMS/1.0' },
-        signal: AbortSignal.timeout(10000),
-      });
-
-      if (response.ok) {
-        const xml = await response.text();
-        // Parse simple caption XML: <text>...</text>
-        const texts = xml.match(/<text[^>]*>(.*?)<\/text>/g);
-        if (texts?.length) {
-          return texts
-            .map(t => t.replace(/<[^>]+>/g, '').trim())
-            .filter(Boolean)
-            .join(' ');
-        }
+      const transcriptList = await YoutubeTranscript.fetchTranscript(videoId);
+      if (transcriptList && transcriptList.length > 0) {
+        return transcriptList.map(t => t.text).join(' ');
       }
-
-      this.logger.debug(`No captions available for YouTube video ${videoId}`);
-      return null;
+      throw new Error(`No captions found for video ${videoId}`);
     } catch (e) {
       const err = e as Error;
       this.logger.debug(`YouTube caption fetch failed for ${videoId}: ${err.message}`);
-      return null;
+      throw new Error(`YouTube transcript failed: ${err.message}`);
     }
   }
 
@@ -313,8 +451,7 @@ export class ContentExtractionService {
     try {
       const groqKey = process.env.GROQ_API_KEY;
       if (!groqKey) {
-        this.logger.warn('GROQ_API_KEY not set — skipping Whisper transcription');
-        return null;
+        throw new Error('GROQ_API_KEY not set — skipping Whisper transcription');
       }
 
       // Fetch the audio/video file
@@ -322,15 +459,13 @@ export class ContentExtractionService {
         signal: AbortSignal.timeout(30000),
       });
       if (!mediaResponse.ok) {
-        this.logger.warn(`Failed to fetch media from ${url}: ${mediaResponse.status}`);
-        return null;
+        throw new Error(`Failed to fetch media from ${url}: ${mediaResponse.status}`);
       }
 
       const blob = await mediaResponse.blob();
       // Groq Whisper has a 25MB limit
       if (blob.size > 25 * 1024 * 1024) {
-        this.logger.warn(`Media file ${url} exceeds 25MB limit for Whisper transcription`);
-        return null;
+        throw new Error(`Media file ${url} exceeds 25MB limit for Whisper transcription`);
       }
 
       const formData = new FormData();
@@ -351,17 +486,16 @@ export class ContentExtractionService {
       );
 
       if (whisperResponse.ok) {
-        return await whisperResponse.text();
+        const text = await whisperResponse.text();
+        if (!text) throw new Error("Whisper returned empty transcript");
+        return text;
       }
 
-      this.logger.warn(
-        `Groq Whisper transcription failed: ${whisperResponse.status} ${await whisperResponse.text()}`,
-      );
-      return null;
+      throw new Error(`Groq Whisper transcription failed: ${whisperResponse.status} ${await whisperResponse.text()}`);
     } catch (e) {
       const err = e as Error;
       this.logger.warn(`Whisper transcription error for ${url}: ${err.message}`);
-      return null;
+      throw new Error(`Whisper transcription error: ${err.message}`);
     }
   }
 
@@ -394,7 +528,7 @@ export class ContentExtractionService {
   private async extractPdfText(url: string): Promise<string | null> {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const buffer = await response.arrayBuffer();
       // Simple PDF text extraction — look for text between BT and ET operators
@@ -407,11 +541,12 @@ export class ContentExtractionService {
         .replace(/\s+/g, ' ')
         .trim();
 
-      return readable.length > 50 ? readable.slice(0, 50000) : null;
+      if (readable.length <= 50) throw new Error("Extracted text too short (less than 50 chars)");
+      return readable.slice(0, 50000);
     } catch (e) {
       const err = e as Error;
       this.logger.warn(`PDF extraction failed for ${url}: ${err.message}`);
-      return null;
+      throw new Error(`PDF extraction failed: ${err.message}`);
     }
   }
 
@@ -425,16 +560,17 @@ export class ContentExtractionService {
         headers: { 'User-Agent': 'SkillForge-LMS/1.0' },
         signal: AbortSignal.timeout(10000),
       });
-      if (!response.ok) return null;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const html = await response.text();
       const plainText = this.stripHtmlToText(html);
 
-      return plainText.length > 50 ? plainText.slice(0, 50000) : null;
+      if (plainText.length <= 50) throw new Error("Extracted text too short (less than 50 chars)");
+      return plainText.slice(0, 50000);
     } catch (e) {
       const err = e as Error;
       this.logger.warn(`Webpage extraction failed for ${url}: ${err.message}`);
-      return null;
+      throw new Error(`Webpage extraction failed: ${err.message}`);
     }
   }
 }

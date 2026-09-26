@@ -8,6 +8,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useSearch } from '../../context/SearchContext';
 import { useSearchParams } from 'react-router-dom';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
+import { SubmissionDetailView } from './SubmissionDetailView';
 import './TrainerDashboard.css';
 
 interface TrainerEvaluationDashboardProps {
@@ -30,6 +31,7 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; border: string;
   Accepted: { bg: '#dcfce7', color: '#166534', border: '#86efac', dot: '#22c55e' },
   Approved: { bg: '#dcfce7', color: '#166534', border: '#86efac', dot: '#22c55e' },
   Rejected: { bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5', dot: '#ef4444' },
+  'Needs Improvement': { bg: '#ffedd5', color: '#c2410c', border: '#fed7aa', dot: '#ea580c' },
 };
 
 const formatDuration = (d?: number, h?: number, m?: number) => {
@@ -70,32 +72,6 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
   const [editAssignment, setEditAssignment] = useState<any | null>(null);
 
-  // ─── New Assignment modal state ────────────────────────────────────────
-  const [showNewModal, setShowNewModal] = useState(false);
-  const [learningPaths, setLearningPaths] = useState<any[]>([]);
-  const [pathModules, setPathModules] = useState<any[]>([]);
-  const [allTrainees, setAllTrainees] = useState<any[]>([]);
-  const [isLoadingTrainees, setIsLoadingTrainees] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-
-  // Form fields
-  const [formTitle, setFormTitle] = useState('');
-  const [formPathId, setFormPathId] = useState('');
-  const [formModuleId, setFormModuleId] = useState('');
-  const [formLessonId, setFormLessonId] = useState('');
-  const [formDurationValue, setFormDurationValue] = useState<number>(0);
-  const [formDurationUnit, setFormDurationUnit] = useState<'minutes' | 'hours' | 'days'>('days');
-  const [formAnchorType, setFormAnchorType] = useState<'MODULE_UNLOCK' | 'TASK_START' | 'PREVIOUS_TASK_SUBMIT' | 'ASSIGNMENT'>('ASSIGNMENT');
-  const [formPriority, setFormPriority] = useState<'High' | 'Medium' | 'Low'>('Medium');
-  const [formDescription, setFormDescription] = useState('');
-  const [formResourceUrl, setFormResourceUrl] = useState('');
-  const [formAssignmentType, setFormAssignmentType] = useState<'Subjective' | 'MCQ' | 'External'>('Subjective');
-  const [formExternalUrl, setFormExternalUrl] = useState('');
-  const [formSelectedTrainees, setFormSelectedTrainees] = useState<string[]>([]);
-  const [formQuestions, setFormQuestions] = useState<{ questionText: string; points: number; options?: string[]; correctIndex?: number }[]>([
-    { questionText: '', points: 10 },
-  ]);
-
   // ─── Active main tab ───────────────────────────────────────────────────
   const currentTab = (activeSection === 'Evaluations' || window.location.pathname.includes('/evaluations')) ? 'evaluations' : 'assignments';
   const isAdminView = activeRole?.toLowerCase() === 'admin';
@@ -107,7 +83,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     try {
       const [subs, allAssign] = await Promise.all([
         curriculumService.fetchPendingSubmissions(accessToken, activeRole).catch(() => []),
-        assignmentService.fetchAllAssignments(accessToken, activeRole, localFiltersState).catch(() => []),
+        assignmentService.fetchAllAssignments(accessToken, activeRole).catch(() => []),
       ]);
       setPendingSubmissions(Array.isArray(subs) ? subs : []);
       setAssignments(Array.isArray(allAssign) ? allAssign : []);
@@ -121,34 +97,6 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  // ─── Load Trainees when Modal Opens ──────────────────
-  useEffect(() => {
-    if (!showNewModal) {
-      setAllTrainees([]);
-      return;
-    }
-    setIsLoadingTrainees(true);
-    (async () => {
-      try {
-        const users = await userService.fetchAllUsers(accessToken).catch(() => []);
-        const trainees = (users || []).filter((u: any) => {
-          const roles: string[] = [];
-          if (typeof u.role === 'string') roles.push(u.role.toLowerCase());
-          if (typeof u.primaryRole === 'string') roles.push(u.primaryRole.toLowerCase());
-          if (u.primaryRole?.name) roles.push(u.primaryRole.name.toLowerCase());
-          if (Array.isArray(u.roles)) u.roles.forEach((r: any) => {
-            if (typeof r === 'string') roles.push(r.toLowerCase());
-            if (r?.name) roles.push(r.name.toLowerCase());
-          });
-          return roles.includes('trainee');
-        });
-        setAllTrainees(trainees);
-      } catch { } finally {
-        setIsLoadingTrainees(false);
-      }
-    })();
-  }, [showNewModal, accessToken]);
-
   // ─── Filter assignments by active role ────────────────────────────────
   const roleFilteredAssignments = useMemo(() => {
     return assignments;
@@ -161,7 +109,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     if (val === 'All') {
       delete newFilters.status;
     } else {
-      newFilters.status = val;
+      newFilters.status = val.toLowerCase();
     }
     setSearchParams(newFilters);
   };
@@ -178,29 +126,79 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
       });
     }
 
+    const normalize = (v: any) => String(v ?? '').trim().toLowerCase();
+
+    if (Object.keys(localFiltersState).length > 0) {
+      result = result.filter(assignment =>
+        Object.entries(localFiltersState).every(([category, selectedValuesStr]) => {
+          if (category === 'evaluationMode') return true;
+          const selectedValues = selectedValuesStr.split(',').map(s => normalize(s));
+          if (selectedValues.length === 0) return true;
+          
+          if (category === 'status') {
+            const status = normalize(assignment.status || 'pending');
+            if (selectedValues.includes('pending')) {
+              if (status !== 'accepted' && status !== 'approved' && status !== 'evaluated' && status !== 'rejected' && status !== 'needs_improvement') return true;
+            }
+            if (selectedValues.includes('approved') && status === 'evaluated') return true;
+            if (selectedValues.includes('needs improvement') && status === 'needs_improvement') return true;
+            if (selectedValues.includes('rejected') && status === 'rejected') return true;
+            return selectedValues.includes(status);
+          }
+          if (category === 'type') {
+            const type = assignment.isExternal ? 'external' : 'learning path';
+            return selectedValues.includes(normalize(type));
+          }
+          if (category === 'difficulty') {
+            const diff = normalize(assignment.difficultyLevel || 'medium');
+            return selectedValues.includes(diff);
+          }
+          return true;
+        })
+      );
+    }
+
     return result;
-  }, [roleFilteredAssignments, searchQuery]);
+  }, [roleFilteredAssignments, searchQuery, localFiltersState]);
+
+  const getActiveFilterCount = (filters: Record<string, string>, excludeKeys: string[] = []) => {
+    return Object.entries(filters).reduce((count, [key, value]) => {
+      if (excludeKeys.includes(key)) return count;
+      if (typeof value === 'string') {
+        return count + value.split(',').filter(Boolean).length;
+      }
+      if (typeof value === 'boolean') {
+        return count + (value ? 1 : 0);
+      }
+      return count;
+    }, 0);
+  };
+
+  const activeFilterCount = getActiveFilterCount(localFiltersState, ['status', 'evaluationMode']);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Approved: 0, Rejected: 0 };
+    const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Approved: 0, Rejected: 0, 'Needs Improvement': 0 };
     roleFilteredAssignments.forEach((a: any) => {
       let st = (a.status || 'Pending').toLowerCase();
       
-      if (st === 'accepted' || st === 'approved') {
+      if (st === 'accepted' || st === 'approved' || st === 'evaluated') {
         counts['Approved'] = (counts['Approved'] || 0) + 1;
+      } else if (st === 'needs_improvement') {
+        counts['Needs Improvement'] = (counts['Needs Improvement'] || 0) + 1;
       } else if (st === 'rejected') {
         counts['Rejected'] = (counts['Rejected'] || 0) + 1;
-      } else if (st === 'submitted') {
+      } else {
         counts['Pending'] = (counts['Pending'] || 0) + 1;
       }
     });
     return counts;
-  }, [assignments]);
+  }, [roleFilteredAssignments]);
 
   const summaryCards = [
     { title: 'Pending', count: statusCounts['Pending'] || 0, key: 'Pending' },
-    { title: 'Needs Improvement', count: statusCounts['Rejected'] || 0, key: 'Needs Improvement' },
+    { title: 'Needs Improvement', count: statusCounts['Needs Improvement'] || 0, key: 'Needs Improvement' },
     { title: 'Approved', count: statusCounts['Approved'] || 0, key: 'Approved' },
+    { title: 'Rejected', count: statusCounts['Rejected'] || 0, key: 'Rejected' },
   ];
 
   const filteredPendingSubmissions = useMemo(() => {
@@ -212,10 +210,10 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   const closeViewEditModals = () => { setExpandedAssignmentId(null); setEditAssignment(null); };
 
   // ─── Evaluation handlers ───────────────────────────────────────────────
-  const handleOpenReview = async (sub: any) => {
+    const handleOpenReview = async (sub: any) => {
     setSelectedSub(sub);
-    setEvalScore(sub.assignment?.maxScore || 100);
-    setEvalFeedback('');
+    setEvalScore(sub.aiEvaluationResult?.totalScore ?? (sub.assignment?.maxScore || 100));
+    setEvalFeedback(sub.aiEvaluationResult?.overallRemark || '');
     // Opening evaluation decreases trainer bell counter without page reload
     try {
       await assignmentService.openSubmissionForEvaluation(sub.id, accessToken);
@@ -227,6 +225,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   };
 
   const handleEvaluate = async (status: 'Approved' | 'Rejected') => {
+    // This unused handler has been kept for compatibility if called from elsewhere.
+    // Real logic is handled in SubmissionDetailView component itself now.
     if (status === 'Rejected' && !evalFeedback.trim()) {
       alert('Feedback is mandatory when rejecting a submission.');
       return;
@@ -235,14 +235,14 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     try {
       await curriculumService.evaluateSubmission(
         selectedSub.id,
-        { score: status === 'Rejected' ? 0 : evalScore, feedback: evalFeedback, status },
+        { score: evalScore, feedback: evalFeedback, status },
         accessToken
       );
       setSelectedSub(null);
       await loadAll();
       await refreshNotifications();
     } catch (err: any) {
-      alert(err.message || 'Evaluation failed.');
+      alert(err.response?.data?.message || err.message || 'Evaluation failed.');
     } finally {
       setIsEvaluating(false);
     }
@@ -317,94 +317,6 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     );
   };
 
-  // ─── New Assignment submission ─────────────────────────────────────────
-  const handleCreateAssignment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formTitle.trim()) { alert('Title is required.'); return; }
-
-    const isExternal = formAssignmentType === 'External';
-
-    if (formSelectedTrainees.length === 0) {
-      alert('Select at least one trainee for this assignment.');
-      return;
-    }
-
-    setIsCreating(true);
-    try {
-      const mcqConfig = formAssignmentType === 'MCQ'
-        ? { questions: formQuestions.map(q => ({ ...q, options: q.options || ['', '', '', ''] })) }
-        : { questions: formQuestions };
-
-      const payload: any = {
-        title: formTitle,
-        instructions: formDescription,
-        assignmentType: formAssignmentType,
-        externalUrl: isExternal ? formExternalUrl : undefined,
-        mcqConfig: isExternal ? undefined : mcqConfig,
-        durationDays: formDurationUnit === 'days' ? formDurationValue : 0,
-        durationHours: formDurationUnit === 'hours' ? formDurationValue : 0,
-        durationMinutes: formDurationUnit === 'minutes' ? formDurationValue : 0,
-        anchorType: formAnchorType,
-        priority: formPriority,
-        resourceUrl: formResourceUrl || undefined,
-        traineeIds: formSelectedTrainees,
-      };
-
-      await assignmentService.createTask(payload, accessToken);
-      setShowNewModal(false);
-      resetForm();
-      await loadAll();
-      await refreshNotifications();
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err.message || 'Failed to create assignment.');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const resetForm = () => {
-    setFormTitle('');
-    setFormPathId('');
-    setFormModuleId('');
-    setFormLessonId('');
-    setFormDurationValue(0);
-    setFormDurationUnit('days');
-    setFormAnchorType('ASSIGNMENT');
-    setFormPriority('Medium');
-    setFormDescription('');
-    setFormResourceUrl('');
-    setFormAssignmentType('Subjective');
-    setFormExternalUrl('');
-    setFormSelectedTrainees([]);
-    setFormQuestions([{ questionText: '', points: 10 }]);
-  };
-
-  const addQuestion = () => setFormQuestions(prev => [
-    ...prev,
-    formAssignmentType === 'MCQ'
-      ? { questionText: '', points: 10, options: ['', '', '', ''], correctIndex: 0 }
-      : { questionText: '', points: 10 },
-  ]);
-
-  const updateQuestion = (idx: number, field: string, value: any) => {
-    setFormQuestions(prev => prev.map((q, i) => i === idx ? { ...q, [field]: value } : q));
-  };
-
-  const updateOption = (qIdx: number, optIdx: number, value: string) => {
-    setFormQuestions(prev => prev.map((q, i) => {
-      if (i !== qIdx) return q;
-      const opts = [...(q.options || ['', '', '', ''])];
-      opts[optIdx] = value;
-      return { ...q, options: opts };
-    }));
-  };
-
-  const toggleTrainee = (id: string) => {
-    setFormSelectedTrainees(prev =>
-      prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
-    );
-  };
-
   // ─── Render ─────────────────────────────────────────────────────────────
   return (
     <div style={{ padding: '24px 32px', width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -419,11 +331,6 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
             {currentTab === 'evaluations' ? 'Review and grade trainee submissions' : 'Manage, assign, and evaluate trainee tasks'}
           </p>
         </div>
-        {currentTab === 'assignments' && (
-          <button onClick={() => setShowNewModal(true)} className="fab-trainer-primary">
-            + New Assignment
-          </button>
-        )}
       </div>
 
       {/* ═══ TAB 1: ASSIGNMENTS ═══ */}
@@ -496,13 +403,13 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
             >
               <Filter size={18} />
               Filters
-              {Object.keys(localFiltersState).filter(k => k !== 'status').length > 0 && (
+              {activeFilterCount > 0 && (
                 <span style={{
                   background: '#4f46e5', color: '#fff', padding: '2px 8px',
                   borderRadius: '99px', fontSize: '12px', marginLeft: '2px',
                   fontWeight: 700
                 }}>
-                  {Object.keys(localFiltersState).filter(k => k !== 'status').length}
+                  {activeFilterCount}
                 </span>
               )}
             </button>
@@ -516,7 +423,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 id: 'status', label: 'Status', options: [
                   { label: 'Pending Evaluation', value: 'pending' },
                   { label: 'Approved', value: 'approved' },
-                  { label: 'Needs Improvement', value: 'needs improvement' }
+                  { label: 'Needs Improvement', value: 'needs improvement' },
+                  { label: 'Rejected', value: 'rejected' }
                 ]
               },
               {
@@ -538,24 +446,38 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           />
 
           {/* Active Filter Chips */}
-          {Object.keys(localFiltersState).length > 0 && (
+          {activeFilterCount > 0 && (
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
               {Object.entries(localFiltersState).map(([key, value]) => {
-                if (!value) return null;
+                if (!value || key === 'status' || key === 'evaluationMode') return null;
                 // Map category labels manually since filterCategories is hardcoded in the panel component above
                 let categoryLabel = key;
                 if (key === 'status') categoryLabel = 'Status';
                 if (key === 'type') categoryLabel = 'Type';
                 if (key === 'difficulty') categoryLabel = 'Difficulty';
                 
+                const filterOptions: Record<string, { label: string, value: string }[]> = {
+                  difficulty: [
+                    { label: 'Basic', value: 'basic' },
+                    { label: 'Medium', value: 'medium' },
+                    { label: 'Hard', value: 'hard' }
+                  ],
+                  type: [
+                    { label: 'Learning Path', value: 'learning path' },
+                    { label: 'External', value: 'external' }
+                  ]
+                };
+                
                 return value.split(',').map(v => {
+                  const opt = filterOptions[key]?.find(o => String(o.value).toLowerCase() === String(v).toLowerCase().trim());
+                  const valLabel = opt ? opt.label : v;
                   return (
                     <div key={`${key}-${v}`} style={{
                       display: 'flex', alignItems: 'center', gap: '6px',
                       padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5',
                       borderRadius: '99px', fontSize: '12px', fontWeight: 600
                     }}>
-                      <span>{categoryLabel}: {v}</span>
+                      <span>{categoryLabel}: {valLabel}</span>
                       <button 
                         onClick={() => {
                           const currentVals = value.split(',');
@@ -590,7 +512,15 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
             <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading assignments...</div>
           ) : filteredAssignments.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>No assignments match these filters</h3>
+              <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>
+                {localFiltersState.difficulty ? `No assignments available at the ${
+                  localFiltersState.difficulty.split(',').map(d => [
+                    { label: 'Basic', value: 'basic' },
+                    { label: 'Medium', value: 'medium' },
+                    { label: 'Hard', value: 'hard' }
+                  ].find(o => String(o.value).toLowerCase() === String(d).toLowerCase().trim())?.label || d).join(', ')
+                } level.` : 'No assignments match these filters'}
+              </h3>
               <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px' }}>Try adjusting or clearing your filters to see more assignments.</p>
               <button 
                 onClick={() => setSearchParams({})}
@@ -606,6 +536,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 let displayStatus = 'Pending';
                 if (rawStatus === 'accepted' || rawStatus === 'approved') {
                   displayStatus = 'Approved';
+                } else if (rawStatus === 'needs_improvement') {
+                  displayStatus = 'Needs Improvement';
                 } else if (rawStatus === 'rejected') {
                   displayStatus = 'Rejected';
                 }
@@ -660,8 +592,25 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                           </div>
                         )}
 
-                        {/* Action Buttons — Edit only for Admin */}
+                        {/* Action Buttons */}
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {displayStatus === 'Pending' && assign.latestSubmission && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const fullSub = await curriculumService.fetchSubmissionDetails(accessToken, assign.latestSubmission.id);
+                                  setSelectedSub(fullSub);
+                                } catch (err) {
+                                  console.error("Failed to load submission details", err);
+                                  setSelectedSub(assign.latestSubmission);
+                                }
+                              }}
+                              className="btn-trainer-action-primary"
+                            >
+                              Review & Grade
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setExpandedAssignmentId(isExpanded ? null : assign.id)}
@@ -795,7 +744,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
               <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>No pending submissions to evaluate.</div>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {(() => {
                 const filteredSubs = filteredPendingSubmissions.filter((sub: any) => {
                   if (!searchQuery.trim()) return true;
@@ -810,382 +759,162 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                   return <div style={{ fontSize: '13px', color: '#64748b', padding: '10px' }}>No matches found for "{searchQuery}".</div>;
                 }
 
-                return filteredSubs.map((sub: any) => (
-                  <div key={sub.id} className="trainer-list-card" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }}>
-                        👤 {sub.trainee?.firstName} {sub.trainee?.lastName || ''}
-                        <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 400, marginLeft: '8px' }}>({sub.trainee?.email})</span>
+                const aiEvaluated = filteredSubs.filter((s: any) => s.status === 'ai_evaluated_pending_review' || s.aiTotalScore != null);
+                const manualPending = filteredSubs.filter((s: any) => s.status !== 'ai_evaluated_pending_review' && s.aiTotalScore == null);
+
+                const renderSubmissionList = (subs: any[], actionText: string) => (
+                  <div className="evaluations-grid">
+                    {subs.map((sub: any) => (
+                      <div key={sub.id} className="trainer-list-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }} className="text-truncate">
+                            👤 {sub.trainee?.firstName} {sub.trainee?.lastName || ''}
+                            <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 400, marginLeft: '8px' }}>({sub.trainee?.email})</span>
+                          </div>
+                          <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px' }}>
+                            Submitted: <strong className="text-truncate" style={{ display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom' }}>"{sub.assignment?.title}"</strong><br/>
+                            Max Score: {sub.assignment?.maxScore || 100} pts
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
+                            {sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'Date unknown'}
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 'auto' }}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const fullSub = await curriculumService.fetchSubmissionDetails(accessToken, sub.id);
+                                setSelectedSub(fullSub);
+                              } catch (err) {
+                                console.error("Failed to load submission details", err);
+                                setSelectedSub(sub);
+                              }
+                            }}
+                            className="btn-trainer-action-primary"
+                            style={{ width: '100%', padding: '10px 0' }}
+                          >
+                            {actionText}
+                          </button>
+                        </div>
                       </div>
-                      <div style={{ fontSize: '13px', color: '#334155', marginTop: '4px' }}>
-                        Submitted: <strong>"{sub.assignment?.title}"</strong> · Max Score: {sub.assignment?.maxScore || 100} pts
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
-                        {sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'Date unknown'}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenReview(sub)}
-                      className="btn-trainer-action-primary"
-                    >
-                      Review & Grade
-                    </button>
+                    ))}
                   </div>
-                ));
+                );
+
+                const activeMode = localFiltersState['evaluationMode'] || undefined;
+                const setEvaluationMode = (mode: string | null) => {
+                  const newFilters = { ...localFiltersState };
+                  if (!mode) {
+                    delete newFilters.evaluationMode;
+                  } else {
+                    newFilters.evaluationMode = mode;
+                  }
+                  setSearchParams(newFilters);
+                };
+
+                return (
+                  <div className="pending-evaluations">
+                    <div className="filter-pill-row" role="tablist" aria-label="Filter pending evaluations">
+                      <button
+                        role="tab"
+                        aria-selected={!activeMode}
+                        className={`filter-pill ${!activeMode ? 'active' : ''}`}
+                        onClick={() => setEvaluationMode(null)}
+                      >
+                        All ({filteredSubs.length})
+                      </button>
+                      <button
+                        role="tab"
+                        aria-selected={activeMode === 'ai-assisted'}
+                        className={`filter-pill ${activeMode === 'ai-assisted' ? 'active' : ''}`}
+                        onClick={() => setEvaluationMode('ai-assisted')}
+                      >
+                        AI Evaluated ({aiEvaluated.length})
+                      </button>
+                      <button
+                        role="tab"
+                        aria-selected={activeMode === 'manual'}
+                        className={`filter-pill ${activeMode === 'manual' ? 'active' : ''}`}
+                        onClick={() => setEvaluationMode('manual')}
+                      >
+                        Direct Evaluation ({manualPending.length})
+                      </button>
+                    </div>
+
+                    {filteredSubs.length === 0 ? (
+                      <div style={{ fontSize: '13px', color: '#64748b', padding: '10px' }}>No matches found for "{searchQuery}".</div>
+                    ) : (
+                      <>
+                        {(!activeMode || activeMode === 'ai-assisted') && (
+                          <div style={{ marginBottom: '32px' }}>
+                            {aiEvaluated.length > 0 ? (
+                              <>
+                                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#3730a3', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  🤖 AI Evaluated (Needs Trainer Review)
+                                </h4>
+                                {renderSubmissionList(aiEvaluated, 'Review & Grade')}
+                              </>
+                            ) : (
+                              activeMode === 'ai-assisted' && (
+                                <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#475569', fontSize: '14px' }}>
+                                  No AI-evaluated submissions pending review.
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+
+                        {(!activeMode || activeMode === 'manual') && (
+                          <div style={{ marginBottom: '32px' }}>
+                            {manualPending.length > 0 ? (
+                              <>
+                                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#b45309', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  ✍️ Pending Manual Evaluation
+                                </h4>
+                                {renderSubmissionList(manualPending, 'Evaluate')}
+                              </>
+                            ) : (
+                              activeMode === 'manual' && (
+                                <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#475569', fontSize: '14px' }}>
+                                  No direct submissions pending evaluation.
+                                </div>
+                              )
+                            )}
+                          </div>
+                        )}
+                        
+                        {!activeMode && aiEvaluated.length === 0 && manualPending.length === 0 && (
+                          <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#475569', fontSize: '14px' }}>
+                            All caught up! No pending evaluations.
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
               })()}
             </div>
           )}
         </>
       )}
 
-      {/* EDIT MODAL REMOVED (No longer used for Trainers in this view) */}
-
       {/* ═══ EVALUATION MODAL ═══ */}
       {selectedSub && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', width: '640px', padding: '28px', borderRadius: '16px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>Evaluate: {selectedSub.assignment?.title}</h3>
-                <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0' }}>Trainee: {selectedSub.trainee?.firstName} ({selectedSub.trainee?.email})</p>
-                {isAdminView && (
-                  <div style={{ fontSize: '12px', color: '#64748b', margin: '6px 0 0 0', padding: '6px', background: '#f1f5f9', borderRadius: '6px' }}>
-                    <div style={{ fontWeight: 600, marginBottom: '2px', color: '#334155' }}>Admin Details:</div>
-                    <p style={{ margin: '2px 0' }}>Assigned by: {selectedSub.assignedBy ? `${selectedSub.assignedBy.firstName} ${selectedSub.assignedBy.lastName}` : 'N/A'}</p>
-                    <p style={{ margin: '2px 0' }}>Author: {selectedSub.assignment?.createdBy ? `${selectedSub.assignment.createdBy.firstName} ${selectedSub.assignment.createdBy.lastName}` : 'N/A'}</p>
-                    <p style={{ margin: '2px 0' }}>Evaluated by: {selectedSub.evaluatedBy ? `${selectedSub.evaluatedBy.firstName} ${selectedSub.evaluatedBy.lastName}` : 'Pending evaluation'}</p>
-                    <p style={{ margin: '2px 0' }}>Status: <span style={{ fontWeight: 600 }}>{selectedSub.status || 'Submitted'}</span></p>
-                  </div>
-                )}
-                {isAdminView && selectedSub.score !== undefined && selectedSub.score !== null && (
-                  <p style={{ fontSize: '12px', color: '#64748b', margin: '4px 0 0 0', fontWeight: 600 }}>
-                    Score Gained: {selectedSub.score} / {selectedSub.assignment?.maxScore || 100}
-                  </p>
-                )}
-              </div>
-              <button onClick={() => setSelectedSub(null)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>×</button>
-            </div>
-
-            <div style={{ marginBottom: '16px', background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-              <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block', marginBottom: '10px' }}>Trainee Solution Breakdown:</strong>
-              {renderParsedSubmission(selectedSub)}
-            </div>
-
-            {selectedSub.attachmentUrl && (
-              <div style={{ marginBottom: '14px', fontSize: '13px' }}>
-                📎 <strong>Attachment:</strong>{' '}
-                <a href={selectedSub.attachmentUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb', fontWeight: 600 }}>{selectedSub.attachmentUrl}</a>
-              </div>
-            )}
-
-            <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
-                Overall Score (Max: {selectedSub.assignment?.maxScore || 100}) *
-              </label>
-              <input
-                type="number" min={0} max={selectedSub.assignment?.maxScore || 100}
-                value={evalScore} onChange={e => setEvalScore(Number(e.target.value))}
-                style={{ width: '100%', padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', fontWeight: 700, outline: 'none' }}
-              />
-            </div>
-
-            <div style={{ marginBottom: '18px' }}>
-              <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px' }}>
-                Trainer Feedback <span style={{ color: '#dc2626' }}>* (Mandatory if Rejecting)</span>
-              </label>
-              <textarea
-                rows={3} value={evalFeedback} onChange={e => setEvalFeedback(e.target.value)}
-                placeholder="Write clear, constructive feedback for the trainee..."
-                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', resize: 'vertical', outline: 'none' }}
-              />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button type="button" onClick={() => setSelectedSub(null)} style={{ padding: '9px 18px', background: '#f1f5f9', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
-              <button type="button" disabled={isEvaluating} onClick={() => handleEvaluate('Rejected')} style={{ padding: '9px 18px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Reject ❌</button>
-              <button type="button" disabled={isEvaluating} onClick={() => handleEvaluate('Approved')} style={{ padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700 }}>Accept ✅</button>
-            </div>
-          </div>
-        </div>
+        <SubmissionDetailView 
+          submission={selectedSub}
+          accessToken={accessToken}
+          isAdminView={isAdminView}
+          onClose={() => setSelectedSub(null)}
+          onEvaluated={() => {
+            setSelectedSub(null);
+            loadAll();
+            refreshNotifications();
+          }}
+        />
       )}
 
-      {/* ═══ NEW ASSIGNMENT MODAL ═══ */}
-      {showNewModal && (
-        <div className="modal-backdrop">
-          <div className="modal-container">
-            <div style={{ padding: '24px 28px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderRadius: '20px 20px 0 0' }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#0f172a' }}>New Assignment</h2>
-                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>Create and assign a task to a trainee or group.</p>
-              </div>
-              <button onClick={() => { setShowNewModal(false); resetForm(); }} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', width: '32px', height: '32px', cursor: 'pointer', fontSize: '18px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-            </div>
 
-            <form onSubmit={handleCreateAssignment} className="modal-content-scroll" style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-
-              {/* Assignment Title */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assignment Title *</label>
-                <input
-                  required value={formTitle} onChange={e => setFormTitle(e.target.value)}
-                  placeholder="e.g. Build a REST API with authentication"
-                  className="touch-target focus-ring hover-effect"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '14px', outline: 'none', transition: 'border-color 0.2s', minHeight: '44px' }}
-                />
-              </div>
-
-              {/* Assignment Type */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assignment Type</label>
-                <select
-                  value={formAssignmentType}
-                  onChange={e => setFormAssignmentType(e.target.value as any)}
-                  className="touch-target focus-ring hover-effect"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', cursor: 'pointer', outline: 'none', minHeight: '44px' }}
-                >
-                  <option value="Subjective">📝 Subjective Questions</option>
-                  <option value="MCQ">🔘 Multiple Choice Quiz (MCQ)</option>
-                  <option value="External">🔗 External Assignment</option>
-                </select>
-                <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b' }}>
-                  Assignments created here are standalone and will be sent directly to the selected trainees.
-                </p>
-              </div>
-
-              {/* External URL conditional */}
-              {formAssignmentType === 'External' && (
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>External Resource / Test URL</label>
-                  <input
-                    type="url" value={formExternalUrl} onChange={e => setFormExternalUrl(e.target.value)}
-                    placeholder="https://docs.google.com/forms/..."
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                  />
-                </div>
-              )}
-
-              {/* Due Date + Priority */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                {formAssignmentType !== 'External' ? (
-                  <>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Duration</label>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <input
-                          type="number" min={0} value={formDurationValue} onChange={e => setFormDurationValue(Number(e.target.value) || 0)}
-                          className="touch-target focus-ring hover-effect"
-                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none', minHeight: '44px' }}
-                        />
-                        <select
-                          value={formDurationUnit} onChange={e => setFormDurationUnit(e.target.value as any)}
-                          className="touch-target focus-ring hover-effect"
-                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none', minHeight: '44px' }}
-                        >
-                          <option value="minutes">Minutes</option>
-                          <option value="hours">Hours</option>
-                          <option value="days">Days</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Anchor Type</label>
-                      <select
-                        value={formAnchorType} onChange={e => setFormAnchorType(e.target.value as any)}
-                        style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none' }}
-                      >
-                        <option value="ASSIGNMENT">When Assigned</option>
-                        <option value="TASK_START">When Trainee clicks Start</option>
-                      </select>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Duration</label>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <input
-                          type="number" min={0} value={formDurationValue} onChange={e => setFormDurationValue(Number(e.target.value) || 0)}
-                          className="touch-target focus-ring hover-effect"
-                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none', minHeight: '44px' }}
-                        />
-                        <select
-                          value={formDurationUnit} onChange={e => setFormDurationUnit(e.target.value as any)}
-                          className="touch-target focus-ring hover-effect"
-                          style={{ width: '50%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none', minHeight: '44px' }}
-                        >
-                          <option value="minutes">Minutes</option>
-                          <option value="hours">Hours</option>
-                          <option value="days">Days</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Countdown Starts</label>
-                      <select
-                        value={formAnchorType} onChange={e => setFormAnchorType(e.target.value as any)}
-                        style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', outline: 'none' }}
-                      >
-                        <option value="ASSIGNMENT">On Assignment</option>
-                        <option value="TASK_START">On Trainee Start</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-                <div>
-                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Priority</label>
-                  <select
-                    value={formPriority} onChange={e => setFormPriority(e.target.value as any)}
-                    className="touch-target focus-ring hover-effect"
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', background: '#fff', cursor: 'pointer', outline: 'none', minHeight: '44px' }}
-                  >
-                    <option>High</option><option>Medium</option><option>Low</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Resource URL */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Resource URL (for trainee upskilling)</label>
-                <input
-                  type="url" value={formResourceUrl} onChange={e => setFormResourceUrl(e.target.value)}
-                  placeholder="https://docs.example.com/guide"
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description / Instructions (optional)</label>
-                <textarea
-                  rows={3} value={formDescription} onChange={e => setFormDescription(e.target.value)}
-                  placeholder="Describe the assignment objectives and requirements..."
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', resize: 'vertical', outline: 'none' }}
-                />
-              </div>
-
-              {/* Questions builder */}
-              {formAssignmentType !== 'External' && (
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <label style={{ fontSize: '12px', fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {formAssignmentType === 'MCQ' ? 'MCQ Questions' : 'Subjective Questions'}
-                    </label>
-                    <button
-                      type="button" onClick={addQuestion}
-                      style={{ fontSize: '12px', fontWeight: 600, color: '#4f46e5', background: '#ede9fe', border: 'none', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer' }}
-                    >
-                      + Add Question
-                    </button>
-                  </div>
-                  {formQuestions.map((q, qIdx) => (
-                    <div key={qIdx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', marginBottom: '10px' }}>
-                      <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
-                        <input
-                          value={q.questionText} onChange={e => updateQuestion(qIdx, 'questionText', e.target.value)}
-                          placeholder={`Q${qIdx + 1}: Enter question text`}
-                          style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                        />
-                        <input
-                          type="number" min={1} max={100} value={q.points}
-                          onChange={e => updateQuestion(qIdx, 'points', Number(e.target.value))}
-                          style={{ width: '70px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', textAlign: 'center', outline: 'none' }}
-                          placeholder="Pts"
-                        />
-                      </div>
-                      {formAssignmentType === 'MCQ' && (
-                        <div>
-                          {(q.options || ['', '', '', '']).map((opt, optIdx) => (
-                            <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                              <input
-                                type="radio" name={`correct_${qIdx}`}
-                                checked={q.correctIndex === optIdx}
-                                onChange={() => updateQuestion(qIdx, 'correctIndex', optIdx)}
-                                title="Mark as correct answer"
-                              />
-                              <input
-                                value={opt} onChange={e => updateOption(qIdx, optIdx, e.target.value)}
-                                placeholder={`Option ${optIdx + 1}`}
-                                style={{ flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none' }}
-                              />
-                            </div>
-                          ))}
-                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>🔘 Select radio button to mark correct answer</div>
-                        </div>
-                      )}
-                      {formQuestions.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setFormQuestions(prev => prev.filter((_, i) => i !== qIdx))}
-                          style={{ fontSize: '11px', color: '#dc2626', background: 'none', border: 'none', cursor: 'pointer', marginTop: '4px', fontWeight: 600 }}
-                        >
-                          Remove Question
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Trainee Assignment Checklist */}
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#374151', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Assign to Trainees ({formSelectedTrainees.length} selected)
-                </label>
-                <div style={{ border: '1.5px solid #e2e8f0', borderRadius: '10px', maxHeight: '200px', overflowY: 'auto' }}>
-                  {isLoadingTrainees ? (
-                    <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>Loading trainees...</div>
-                  ) : allTrainees.length === 0 ? (
-                    <div style={{ padding: '16px', textAlign: 'center', color: '#94a3b8' }}>No trainees found.</div>
-                  ) : (
-                    allTrainees.map((t: any) => {
-                      const name = `${t.firstName || ''} ${t.lastName || ''}`.trim() || t.email;
-                      const isChecked = formSelectedTrainees.includes(t.id);
-                      return (
-                        <label
-                          key={t.id}
-                          style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f8fafc', background: isChecked ? '#f0f9ff' : '#fff', transition: 'background 0.15s' }}
-                        >
-                          <input
-                            type="checkbox" checked={isChecked} onChange={() => toggleTrainee(t.id)}
-                            style={{ width: '16px', height: '16px', accentColor: '#4f46e5', cursor: 'pointer' }}
-                          />
-                          <div>
-                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#1e293b' }}>{name}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b' }}>{t.email}</div>
-                          </div>
-                          {isChecked && (
-                            <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '2px 8px', borderRadius: '4px' }}>
-                              Selected
-                            </span>
-                          )}
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-              {/* Form Footer */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '8px', borderTop: '1px solid #f1f5f9', marginTop: '4px' }}>
-                <button
-                  type="button" onClick={() => { setShowNewModal(false); resetForm(); }}
-                  style={{ padding: '10px 22px', background: '#f1f5f9', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', color: '#475569' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit" disabled={isCreating}
-                  className="hover-effect active-effect touch-target focus-ring"
-                  style={{ padding: '10px 22px', background: isCreating ? '#a5b4fc' : 'linear-gradient(135deg, #6366f1, #4f46e5)', color: '#fff', border: 'none', borderRadius: '10px', cursor: isCreating ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: '13px', boxShadow: '0 2px 8px rgba(99,102,241,0.35)' }}
-                >
-                  {isCreating ? 'Creating...' : 'Create Assignment'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { assignmentService } from '../../services/assignmentService';
 import { useNotifications } from '../../context/NotificationContext';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { DeadlineDisplay } from '../DeadlineDisplay';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
 import { Filter, X } from 'lucide-react';
+import { RichText } from '../common/RichText';
+import './TraineeAssignments.css';
 
 type Props = {
   accessToken: string;
@@ -37,16 +41,19 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const [submitTarget, setSubmitTarget] = useState<any | null>(null);
   const [viewDetailsTarget, setViewDetailsTarget] = useState<any | null>(null);
   const [submissionText, setSubmissionText] = useState('');
-  const [selectedMcqAnswers, setSelectedMcqAnswers] = useState<Record<number, number>>({});
+  const [selectedMcqAnswers, setSelectedMcqAnswers] = useState<Record<number, number | number[]>>({});
   const [subjectiveAnswers, setSubjectiveAnswers] = useState<Record<number, string>>({});
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(true);
+
+  useScrollLock(!!submitTarget || !!viewDetailsTarget);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [mine, mySubs] = await Promise.all([
-        assignmentService.fetchMyAssignments(accessToken, activeRole, localFiltersState).catch(() => []),
+        assignmentService.fetchMyAssignments(accessToken, activeRole).catch(() => []),
         assignmentService.fetchMySubmissions(accessToken, activeRole).catch(() => []),
       ]);
       setAssignments(Array.isArray(mine) ? mine : []);
@@ -74,8 +81,54 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         return titleMatch || descMatch;
       });
     }
+    
+    // Apply filters from localFiltersState
+    const normalize = (v: any) => String(v ?? '').trim().toLowerCase();
+
+    if (Object.keys(localFiltersState).length > 0) {
+      result = result.filter(assignment =>
+        Object.entries(localFiltersState).every(([category, selectedValuesStr]) => {
+          if (category === 'evaluationMode') return true; // Handled separately
+          const selectedValues = selectedValuesStr.split(',').map(s => normalize(s));
+          if (selectedValues.length === 0) return true;
+          
+          if (category === 'status') {
+            const sub = submissionByAssignment.get(assignment.id);
+            let status = normalize(sub?.status || 'pending');
+            if (assignment.isLocked) status = 'locked';
+            
+            if (selectedValues.includes('pending')) {
+              if (status !== 'submitted' && status !== 'approved' && status !== 'evaluated' && status !== 'rejected' && status !== 'ai_evaluated_pending_review' && status !== 'pending_manual_review' && status !== 'needs_improvement') {
+                return true;
+              }
+            }
+            if (selectedValues.includes('submitted')) {
+              if (status === 'ai_evaluated_pending_review' || status === 'pending_manual_review') return true;
+            }
+            if (selectedValues.includes('approved') && status === 'evaluated') return true;
+            if (selectedValues.includes('needs improvement') && status === 'needs_improvement') return true;
+            if (selectedValues.includes('rejected') && status === 'rejected') return true;
+            return selectedValues.includes(status);
+          }
+          if (category === 'type') {
+            const type = assignment.isExternal ? 'external' : 'learning path';
+            return selectedValues.includes(normalize(type));
+          }
+          if (category === 'difficulty') {
+            const diff = normalize(assignment.difficultyLevel || 'basic');
+            return selectedValues.includes(diff);
+          }
+          if (category === 'lockState') {
+            const isLocked = !!assignment.isLocked;
+            const state = isLocked ? 'locked' : 'unlocked';
+            return selectedValues.includes(state);
+          }
+          return true;
+        })
+      );
+    }
     return result;
-  }, [assignments, searchQuery]);
+  }, [assignments, searchQuery, localFiltersState, submissionByAssignment]);
 
   const filterCategories = [
     {
@@ -83,7 +136,8 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         { label: 'Pending', value: 'pending' },
         { label: 'Submitted', value: 'submitted' },
         { label: 'Approved', value: 'approved' },
-        { label: 'Needs Improvement', value: 'needs improvement' }
+        { label: 'Needs Improvement', value: 'needs improvement' },
+        { label: 'Rejected', value: 'rejected' }
       ]
     },
     {
@@ -168,7 +222,6 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       setSubjectiveAnswers({});
       await loadData();
       await refreshNotifications();
-      alert('Submitted for evaluation. Your trainer has been notified.');
     } catch (err: any) {
       alert(err?.response?.data?.message || err.message || 'Submission failed.');
     } finally {
@@ -179,6 +232,21 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   if (loading) {
     return <div style={{ padding: 24, color: '#64748b' }}>Loading your assignments...</div>;
   }
+
+  const getActiveFilterCount = (filters: Record<string, string>) => {
+    return Object.entries(filters).reduce((count, [key, value]) => {
+      if (key === 'evaluationMode') return count; // Handled outside the filter panel
+      if (typeof value === 'string') {
+        return count + value.split(',').filter(Boolean).length;
+      }
+      if (typeof value === 'boolean') {
+        return count + (value ? 1 : 0);
+      }
+      return count;
+    }, 0);
+  };
+
+  const activeFilterCount = getActiveFilterCount(localFiltersState);
 
   return (
     <div style={{ width: '100%' }}>
@@ -229,13 +297,13 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         >
           <Filter size={18} />
           Filters
-          {Object.keys(localFiltersState).length > 0 && (
+          {activeFilterCount > 0 && (
             <span style={{
               background: '#4f46e5', color: '#fff', padding: '2px 8px',
               borderRadius: '99px', fontSize: '12px', marginLeft: '2px',
               fontWeight: 700
             }}>
-              {Object.keys(localFiltersState).length}
+              {activeFilterCount}
             </span>
           )}
         </button>
@@ -250,14 +318,14 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       />
 
       {/* Active Filter Chips */}
-      {Object.keys(localFiltersState).length > 0 && (
+      {activeFilterCount > 0 && (
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
           {Object.entries(localFiltersState).map(([key, value]) => {
-            if (!value) return null;
+            if (!value || key === 'evaluationMode') return null;
             const category = filterCategories.find(c => c.id === key);
             const label = category ? category.label : key;
             return value.split(',').map(v => {
-              const opt = category?.options.find(o => o.value === v);
+              const opt = category?.options.find(o => String(o.value).toLowerCase() === String(v).toLowerCase());
               const valLabel = opt ? opt.label : v;
               return (
                 <div key={`${key}-${v}`} style={{
@@ -298,7 +366,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       {/* Empty State */}
       {filtered.length === 0 && !loading && (
         <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>No assignments match these filters</h3>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>
+            {localFiltersState.difficulty ? `No assignments available at the ${
+              localFiltersState.difficulty.split(',').map(d => filterCategories.find(c => c.id === 'difficulty')?.options.find(o => String(o.value).toLowerCase() === String(d).toLowerCase().trim())?.label || d).join(', ')
+            } level.` : 'No assignments match these filters'}
+          </h3>
           <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px' }}>Try adjusting or clearing your filters to see more assignments.</p>
           <button 
             onClick={() => setSearchParams({})}
@@ -346,8 +418,16 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 displayStatus = 'Approved';
                 priority = 4;
               }
-            } else if (rawStatus === 'REJECTED') {
+            } else if (rawStatus === 'NEEDS_IMPROVEMENT') {
               displayStatus = 'Needs Improvement';
+              priority = 1;
+              if (deadlineDate && now > deadlineDate) {
+                displayStatus = 'Missed/Overdue';
+                isOverdue = true;
+                priority = 5;
+              }
+            } else if (rawStatus === 'REJECTED') {
+              displayStatus = 'Rejected';
               priority = 1;
               if (deadlineDate && now > deadlineDate) {
                 displayStatus = 'Missed/Overdue';
@@ -367,11 +447,16 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
               }
             }
             
+            const isExpired = sub?.deadline 
+              ? new Date(sub.deadline).getTime() < now.getTime() 
+              : (deadlineDate ? now > deadlineDate : false);
+
             return {
               a,
               sub,
               displayStatus,
               isOverdue,
+              isExpired,
               isBelowCutoff,
               priority,
               deadlineDate,
@@ -412,7 +497,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             return 0;
           });
 
-          return enrichedCards.map(({ a, sub, displayStatus, isOverdue, isBelowCutoff, deadlineDate, submittedAt, rawStatus }) => {
+          return enrichedCards.map(({ a, sub, displayStatus, isOverdue, isExpired, isBelowCutoff, deadlineDate, submittedAt, rawStatus }) => {
             const isExternal =
               String(a.assignmentType || '').toLowerCase() === 'external' ||
               (!a.lesson && !a.module && !a.learningPath);
@@ -423,7 +508,8 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
               if (isBelowCutoff) { bg = '#ffedd5'; color = '#c2410c'; } // Orange
               else { bg = '#dcfce7'; color = '#166534'; } // Green
             }
-            else if (displayStatus === 'Needs Improvement') { bg = '#fee2e2'; color = '#b91c1c'; }
+            else if (displayStatus === 'Needs Improvement') { bg = '#ffedd5'; color = '#c2410c'; }
+            else if (displayStatus === 'Rejected') { bg = '#fee2e2'; color = '#b91c1c'; }
             else if (displayStatus === 'Submitted') { bg = '#fef3c7'; color = '#b45309'; }
             else if (displayStatus === 'Missed/Overdue') { bg = '#fecaca'; color = '#991b1b'; }
 
@@ -432,6 +518,8 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             return (
               <div
                 key={a.id}
+                className={displayStatus === 'Locked' ? 'locked-item interactive-lock' : ''}
+                title={displayStatus === 'Locked' ? a.lockReason || 'Locked task' : ''}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -440,8 +528,8 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   padding: '14px 16px',
                   border: '1px solid #e2e8f0',
                   borderRadius: 12,
-                  background: displayStatus === 'Locked' ? '#f8fafc' : '#fff',
-                  opacity: displayStatus === 'Locked' ? 0.7 : 1
+                  background: '#fff',
+                  opacity: displayStatus === 'Locked' ? 0.6 : 1,
                 }}
               >
                 <div style={{ minWidth: 0 }}>
@@ -479,7 +567,14 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                     )}
 
                     {displayStatus === 'Needs Improvement' && sub?.feedback && (
-                      <span style={{ color: '#b91c1c' }}>Feedback: {sub.feedback}</span>
+                      <span style={{ color: '#c2410c' }}>Feedback: {sub.feedback}</span>
+                    )}
+
+                    {displayStatus === 'Rejected' && (
+                      <>
+                        <span style={{ color: '#b91c1c', fontWeight: 600 }}>Rejected{sub?.evaluatedBy ? ` by ${sub.evaluatedBy.firstName || ''} ${sub.evaluatedBy.lastName || ''}`.trim() : ''}</span>
+                        {sub?.feedback && <span style={{ color: '#b91c1c' }}>Reason: {sub.feedback}</span>}
+                      </>
                     )}
 
                     {a.externalUrl && displayStatus !== 'Locked' && (
@@ -504,10 +599,10 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                     }}
                   >
                     {displayStatus}
-                    {typeof sub?.score === 'number' && (displayStatus === 'Approved' || displayStatus === 'Needs Improvement') ? ` · ${sub.score} marks` : ''}
+                    {typeof sub?.score === 'number' && (displayStatus === 'Approved' || displayStatus === 'Needs Improvement' || displayStatus === 'Rejected') ? ` · ${sub.score} marks` : ''}
                   </span>
                   
-                  {(displayStatus === 'Approved' || displayStatus === 'Needs Improvement' || rawStatus === 'EVALUATED') && sub && (
+                  {(displayStatus === 'Approved' || displayStatus === 'Needs Improvement' || displayStatus === 'Rejected' || rawStatus === 'EVALUATED') && sub && (
                     <button
                       type="button"
                       onClick={() => setViewDetailsTarget({ assignment: a, submission: sub })}
@@ -526,7 +621,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                     </button>
                   )}
 
-                  {!isOverdue && displayStatus !== 'Locked' && (displayStatus !== 'Approved' || isBelowCutoff) && displayStatus !== 'Submitted' && (
+                  {!isExpired && !isOverdue && displayStatus !== 'Locked' && (displayStatus !== 'Approved' || isBelowCutoff) && displayStatus !== 'Submitted' && (
                     <>
                       {rawStatus === 'AVAILABLE' && a.anchorType === 'TASK_START' ? (
                         <button
@@ -558,7 +653,25 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                           type="button"
                           onClick={() => {
                             setSubmitTarget(a);
-                            setSubmissionText('');
+                            
+                            let prefilledMcq = {};
+                            let prefilledSubj = {};
+                            let prefilledText = '';
+                            const sub = submissionByAssignment.get(a.id);
+                            if (sub?.submissionText) {
+                              try {
+                                prefilledText = sub.submissionText;
+                                if (sub.submissionText.startsWith('{')) {
+                                  const parsed = JSON.parse(sub.submissionText);
+                                  prefilledMcq = parsed.answers || {};
+                                  prefilledSubj = parsed.textAnswers || {};
+                                }
+                              } catch(e) {}
+                            }
+
+                            setSubmissionText(prefilledText);
+                            setSelectedMcqAnswers(prefilledMcq);
+                            setSubjectiveAnswers(prefilledSubj);
                             setAttachmentUrl(a.externalUrl || '');
                           }}
                           style={{
@@ -572,7 +685,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                             cursor: 'pointer',
                           }}
                         >
-                          {displayStatus === 'Needs Improvement' || isBelowCutoff ? 'Resubmit' : 'Submit'}
+                          {displayStatus === 'Needs Improvement' || displayStatus === 'Rejected' || isBelowCutoff ? 'Resubmit' : 'Submit'}
                         </button>
                       )}
                     </>
@@ -590,244 +703,171 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         )}
       </div>
 
-      {submitTarget && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(15,23,42,0.6)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            backdropFilter: 'blur(4px)',
-          }}
-        >
-          <div
-            style={{
-              background: '#fff',
-              width: '600px',
-              borderRadius: '20px',
-              maxHeight: '92vh',
-              overflowY: 'auto',
-              boxShadow: '0 25px 80px rgba(0,0,0,0.22)',
-            }}
-          >
-            {/* Modal header */}
-            <div
-              style={{
-                padding: '22px 26px',
-                borderBottom: '1px solid #f1f5f9',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                position: 'sticky',
-                top: 0,
-                background: '#fff',
-                zIndex: 10,
-                borderRadius: '20px 20px 0 0',
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>
-                  📝 {submitTarget.title}
-                </h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>
-                  Max Score: {submitTarget.maxScore ?? 100} pts · Type:{' '}
-                  {submitTarget.assignmentType || 'Subjective'}
-                </p>
-                {submitTarget.createdBy && (
-                  <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#4f46e5', fontWeight: 600 }}>
-                    Assigned by: {submitTarget.createdBy.firstName} {submitTarget.createdBy.lastName}
-                  </p>
+      {submitTarget && createPortal(
+        <div className="assignment-modal-overlay">
+          <div className="assignment-modal-container">
+            {/* Context Panel */}
+            <div className="assignment-modal-context">
+              <h3 style={{ margin: '0 0 4px', fontSize: 18, color: '#0f172a' }}>{submitTarget.title}</h3>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                {submitTarget.assignmentType} · {submitTarget.lessonTitle || 'Module Task'}
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {submitTarget.dependsOnLessonIds?.length > 0 && (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Depends On</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>
+                      {submitTarget.dependsOnLessonIds.length} Prerequisite lessons
+                    </div>
+                  </div>
+                )}
+                {submitTarget.createdBy?.firstName && (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Assigned By</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>{submitTarget.createdBy.firstName} {submitTarget.createdBy.lastName}</div>
+                  </div>
+                )}
+                
+                {submitTarget.countdownStart === 'onAssignment' ? (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>LP Assigned Time</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>
+                      {submissionByAssignment.get(submitTarget.id)?.lpAssignedAt ? new Date(submissionByAssignment.get(submitTarget.id)!.lpAssignedAt!).toLocaleString(undefined, { timeZoneName: 'short' }) : new Date(submitTarget.createdAt).toLocaleString(undefined, { timeZoneName: 'short' })}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>Unlocked Time</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>
+                      {submissionByAssignment.get(submitTarget.id)?.taskUnlockedAt ? new Date(submissionByAssignment.get(submitTarget.id)!.taskUnlockedAt!).toLocaleString(undefined, { timeZoneName: 'short' }) : 'Unlocks after prerequisite lessons'}
+                    </div>
+                  </div>
+                )}
+                
+                {submissionByAssignment.get(submitTarget.id)?.deadline && (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Due Date</strong>
+                    <DeadlineDisplay task={submitTarget} submission={submissionByAssignment.get(submitTarget.id)!} />
+                  </div>
                 )}
               </div>
-              <button
-                onClick={() => setSubmitTarget(null)}
-                style={{
-                  background: '#f1f5f9',
-                  border: 'none',
-                  borderRadius: '8px',
-                  width: '32px',
-                  height: '32px',
-                  cursor: 'pointer',
-                  fontSize: '18px',
-                  color: '#64748b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                ×
-              </button>
             </div>
 
-            <form
-              onSubmit={handleSubmit}
-              style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: '16px' }}
-            >
-              {/* Instructions Banner */}
-              {submitTarget.instructions && (
-                <div
-                  style={{
-                    background: '#f0f9ff',
-                    border: '1px solid #bae6fd',
-                    borderRadius: '10px',
-                    padding: '12px 16px',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: '#0369a1',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.04em',
-                      marginBottom: '4px',
-                    }}
+            {/* Main Form Content */}
+            <form onSubmit={handleSubmit} className="assignment-modal-content">
+              <div className="assignment-modal-scroll">
+                
+                {/* Instructions Banner */}
+                {submitTarget.instructions && (
+                  <div className="instructions-box" style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '16px', marginBottom: '24px' }}>
+                    <button type="button" onClick={() => setInstructionsOpen(!instructionsOpen)} style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', width: '100%', padding: 0, cursor: 'pointer', textAlign: 'left', minHeight: '32px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {instructionsOpen ? '▾ Instructions' : '▸ Instructions'}
+                      </div>
+                    </button>
+                    {instructionsOpen && (
+                      <div style={{ fontSize: '14px', color: '#0c4a6e', margin: '8px 0 0 0', fontFamily: 'inherit', lineHeight: 1.6 }}>
+                        <RichText content={submitTarget.instructions} emptyStateText="No instructions provided." />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Resource URL */}
+                {submitTarget.externalUrl && (
+                  <a
+                    href={submitTarget.externalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', textDecoration: 'none', fontSize: '14px', color: '#2563eb', fontWeight: 600, marginBottom: '24px' }}
                   >
-                    Instructions
-                  </div>
-                  <p style={{ fontSize: '13px', color: '#0c4a6e', margin: 0 }}>
-                    {submitTarget.instructions}
-                  </p>
-                </div>
-              )}
+                    🔗 Reference Resource: {submitTarget.externalUrl}
+                  </a>
+                )}
 
-              {/* Resource URL */}
-              {submitTarget.externalUrl && (
-                <a
-                  href={submitTarget.externalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 14px',
-                    background: '#eff6ff',
-                    border: '1px solid #bfdbfe',
-                    borderRadius: '10px',
-                    textDecoration: 'none',
-                    fontSize: '13px',
-                    color: '#2563eb',
-                    fontWeight: 600,
-                  }}
-                >
-                  🔗 Reference Resource: {submitTarget.externalUrl}
-                </a>
-              )}
-
-              {/* F1: Questions — support both new Tiptap 'questions' JSONB and legacy 'mcqConfig.questions' */}
-              {(() => {
-                // Normalize: use new questions array first, fall back to mcqConfig
-                const questions: any[] = submitTarget.questions || submitTarget.mcqConfig?.questions || [];
-                if (questions.length > 0) {
-                  return (
-                    <div>
-                      {questions.map((q: any, qIdx: number) => {
-                      // Support both field name conventions
-                      const qText = q.text || q.questionText || q.question || '';
-                      const qType = (q.type || q.questionType || '').toUpperCase();
-                      const qPoints = q.maxPoints || q.points || 10;
-                      const qOptions: string[] = q.options || [];
-                      const isMCQ = qType === 'MCQ' && qOptions.length > 0;
-
+                {(() => {
+                  const questionsArray = submitTarget.questions?.length > 0 ? submitTarget.questions : (submitTarget.mcqConfig?.questions || []);
+                  return questionsArray.length > 0 ? (
+                    questionsArray.map((q: any, idx: number) => {
+                      const hasOptions = q.options && q.options.length > 0;
                       return (
-                        <div
-                          key={qIdx}
-                          style={{
-                            background: '#f8fafc',
-                            padding: '14px',
-                            borderRadius: '10px',
-                            marginBottom: '12px',
-                            border: '1px solid #e2e8f0',
-                          }}
-                        >
-                          <p style={{ fontSize: '13px', fontWeight: 700, margin: '0 0 10px 0', color: '#0f172a' }}>
-                            Q{qIdx + 1}: {qText}{' '}
-                            <span style={{ color: '#4f46e5', fontWeight: 600 }}>({qPoints} pts)</span>
-                          </p>
-                          {isMCQ ? (
-                            // MCQ options
-                            qOptions.map((opt: string, optIdx: number) => (
-                              <label
-                                key={optIdx}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '10px',
-                                  fontSize: '13px',
-                                  marginTop: '8px',
-                                  cursor: 'pointer',
-                                  padding: '8px 12px',
-                                  borderRadius: '8px',
-                                  background: selectedMcqAnswers[qIdx] === optIdx ? '#ede9fe' : '#fff',
-                                  border: '1px solid',
-                                  borderColor: selectedMcqAnswers[qIdx] === optIdx ? '#6366f1' : '#e2e8f0',
-                                  transition: 'all 0.15s',
-                                }}
-                              >
-                                <input
-                                  type="radio"
-                                  name={`q_${qIdx}`}
-                                  checked={selectedMcqAnswers[qIdx] === optIdx}
-                                  onChange={() => setSelectedMcqAnswers((prev) => ({ ...prev, [qIdx]: optIdx }))}
-                                  style={{ accentColor: '#4f46e5' }}
-                                />
-                                {opt}
-                              </label>
-                            ))
-                          ) : (
-                            // Subjective text answer
-                            <textarea
-                              rows={3}
-                              placeholder="Write your answer here..."
-                              value={subjectiveAnswers[qIdx] || ''}
-                              onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [qIdx]: e.target.value }))}
-                              style={{
-                                width: '100%',
-                                padding: '10px 12px',
-                                borderRadius: '8px',
-                                border: '1.5px solid #e2e8f0',
-                                fontSize: '13px',
-                                resize: 'vertical',
-                                outline: 'none',
-                              }}
-                            />
-                          )}
+                      <div key={idx} style={{ marginBottom: 20, padding: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                            <strong style={{ fontSize: 15, color: '#0f172a' }}>Q{idx + 1}.</strong>
+                            <div style={{ fontSize: 15, color: '#0f172a', fontWeight: 'bold' }}>
+                              <RichText content={String(q.text || q.questionText || q.question || '').replace(/\\n/g, '<br/>')} emptyStateText="No question text" />
+                            </div>
+                          </div>
+                          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, background: '#e2e8f0', padding: '2px 8px', borderRadius: 12, whiteSpace: 'nowrap', marginLeft: 12 }}>
+                            {q.maxPoints || 10} pts
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                );
-                }
-
-                return (
-                  /* Single textarea fallback */
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: '#374151' }}>
-                      Your Solution / Answer *
-                    </label>
+                        
+                        {(q.type || q.questionType || '').toUpperCase() === 'MCQ' || (submitTarget.assignmentType === 'MCQ' && hasOptions) ? (
+                          !hasOptions ? (
+                            <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                              Invalid question configuration: no options provided.
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {(q.options || []).map((opt: string, oi: number) => (
+                                <label key={oi} style={{ fontSize: 14, display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                  <input
+                                    type={q.allowMultipleCorrect ? "checkbox" : "radio"}
+                                    name={`q-${idx}`}
+                                    checked={
+                                      q.allowMultipleCorrect 
+                                        ? (Array.isArray(selectedMcqAnswers[idx]) ? (selectedMcqAnswers[idx] as any as number[]).includes(oi) : false)
+                                        : selectedMcqAnswers[idx] === oi
+                                    }
+                                    onChange={() => {
+                                      if (q.allowMultipleCorrect) {
+                                        setSelectedMcqAnswers(prev => {
+                                          const current = Array.isArray(prev[idx]) ? (prev[idx] as any as number[]) : [];
+                                          if (current.includes(oi)) {
+                                            return { ...prev, [idx]: current.filter(o => o !== oi) };
+                                          } else {
+                                            return { ...prev, [idx]: [...current, oi] };
+                                          }
+                                        });
+                                      } else {
+                                        setSelectedMcqAnswers(prev => ({ ...prev, [idx]: oi }));
+                                      }
+                                    }}
+                                    style={{ width: 16, height: 16, cursor: 'pointer' }}
+                                  />
+                                  <div style={{ display: 'inline-block' }}>
+                                    <RichText content={opt || `Option ${oi + 1}`} emptyStateText={`Option ${oi + 1}`} />
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          )
+                        ) : (
+                          <textarea
+                            className="answer-textarea"
+                            rows={4}
+                            value={subjectiveAnswers[idx] || ''}
+                            onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [idx]: e.target.value }))}
+                            placeholder="Type your answer here..."
+                            style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                          />
+                        )}
+                      </div>
+                    )})
+                  ) : (
                     <textarea
-                      rows={5}
                       required
-                      placeholder="Type your response here..."
+                      rows={8}
                       value={submissionText}
                       onChange={(e) => setSubmissionText(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '12px',
-                        borderRadius: '10px',
-                        border: '1.5px solid #e2e8f0',
-                        fontSize: '13px',
-                        resize: 'vertical',
-                        outline: 'none',
-                      }}
+                      placeholder="Write your submission..."
+                      style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #cbd5e1', marginBottom: 12, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
                     />
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
               {/* Attachment URL */}
               <div>
@@ -836,60 +876,45 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 </label>
                 <input
                   type="url"
+                  className="attachment-field"
                   placeholder="https://github.com/..."
                   value={attachmentUrl}
                   onChange={(e) => setAttachmentUrl(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1.5px solid #e2e8f0',
-                    fontSize: '13px',
-                    outline: 'none',
-                  }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
                 />
               </div>
-
-              {/* Submit actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
-                <button
-                  type="button"
-                  onClick={() => setSubmitTarget(null)}
-                  style={{
-                    padding: '10px 20px',
-                    background: '#f1f5f9',
-                    border: 'none',
-                    borderRadius: '10px',
-                    cursor: 'pointer',
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    color: '#475569',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  style={{
-                    padding: '10px 24px',
-                    background: isSubmitting ? '#a5b4fc' : 'linear-gradient(135deg,#6366f1,#4f46e5)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '10px',
-                    cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                    fontWeight: 700,
-                    fontSize: '13px',
-                    boxShadow: '0 2px 8px rgba(99,102,241,0.35)',
-                  }}
-                >
-                  {isSubmitting ? 'Submitting...' : 'Submit Task'}
-                </button>
+              </div>
+              
+              <div className="assignment-modal-footer">
+                {(() => {
+                  const deadlineDate = submissionByAssignment.get(submitTarget.id)?.deadline ? new Date(submissionByAssignment.get(submitTarget.id)!.deadline!).getTime() : null;
+                  const isExpired = deadlineDate && new Date().getTime() > deadlineDate;
+                  
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSubmitTarget(null);
+                        }}
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || !!isExpired}
+                        style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: isExpired ? '#94a3b8' : '#4f46e5', color: '#fff', fontWeight: 700, cursor: isExpired ? 'not-allowed' : 'pointer' }}
+                      >
+                        {isExpired ? 'Expired' : isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             </form>
           </div>
-        </div>
-      )}
+        </div>, document.body)}
 
       {/* View Details Modal for Approved Assignments */}
       {viewDetailsTarget && (() => {

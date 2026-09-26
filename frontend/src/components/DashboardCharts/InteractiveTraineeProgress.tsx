@@ -118,6 +118,7 @@ export const InteractiveTraineeProgress: React.FC<InteractiveTraineeProgressProp
                 dataKey="progressPercent" 
                 name="Progress %" 
                 radius={[4, 4, 0, 0]} 
+                maxBarSize={60}
                 style={{ cursor: 'pointer', transition: 'all 0.2s' }} 
                 minPointSize={3}
                 onClick={(data: any) => {

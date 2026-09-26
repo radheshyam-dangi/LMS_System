@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppDataSource } from './config/data-source'; // Import our new data source
 
@@ -33,6 +34,7 @@ import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluat
       isGlobal: true,
       envFilePath: '.env',
     }),
+    ScheduleModule.forRoot(),
 
     // Pass the AppDataSource options directly into TypeOrmModule
     TypeOrmModule.forRoot(AppDataSource.options),
@@ -64,8 +66,6 @@ import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluat
     AnalyticsModule,
     NotificationModule,
     SearchModule,
-
-    // 🌟 New Tiptap Authoring + AI Evaluation modules
     LpAuthoringModule,
     AiEvaluationModule,
   ],

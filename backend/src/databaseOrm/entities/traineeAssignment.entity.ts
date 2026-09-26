@@ -23,4 +23,11 @@ export class TraineeAssignmentEntity extends BaseEntity {
     default: () => 'CURRENT_TIMESTAMP',
   })
   assignedAt: Date;
+
+  @Column({
+    type: 'timestamp',
+    name: 'unlocked_at',
+    nullable: true,
+  })
+  unlockedAt: Date | null;
 }

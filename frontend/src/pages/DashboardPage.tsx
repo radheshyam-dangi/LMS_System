@@ -8,6 +8,7 @@ import { CurriculumManager } from '../components/CurriculumManager/CurriculumMan
 import { TraineeCurriculumView } from '../components/TraineeSubmissionsView/TraineeCurriculumView';
 import { TrainerEvaluationDashboard } from '../components/TrainerEvaluationDashboard/TrainerEvaluationDashboard';
 import { useScrollLock } from '../hooks/useScrollLock';
+import './DashboardPage.css';
 import { TraineeSubmissionsView } from '../components/TraineeSubmissionsView/TraineeSubmissionsView';
 import { TraineeAssignmentsView } from '../components/TraineeSubmissionsView/TraineeAssignmentsView';
 import { ProgressAnalyticsSection } from '../components/ProgressAnalyticsSection/ProgressAnalyticsSection';
@@ -25,6 +26,7 @@ import type { RoleName, SessionUser } from '../types/auth';
 import confetti from 'canvas-confetti';
 import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts';
 import { InteractiveTraineeProgress } from '../components/DashboardCharts/InteractiveTraineeProgress';
+import { TraineeHeroCard, UpcomingDeadlinesWidget, RecentFeedbackWidget } from '../components/TraineeDashboardWidgets/TraineeDashboardWidgets';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 const truncateLabel = (name: string, maxLen = 14) => {
@@ -210,7 +212,10 @@ function TraineeProgressRing({
         onClick={onPathClick}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onPathClick(); }}
         tabIndex={0}
-        role="button"
+        role="progressbar"
+        aria-valuenow={progressPercent}
+        aria-valuemin={0}
+        aria-valuemax={100}
         aria-label={`${currentPathTitle}: ${progressPercent}% complete`}
       >
         <svg width="130" height="130" viewBox="0 0 100 100">
@@ -338,22 +343,23 @@ function StreakCard({ currentStreak, activeToday, onCelebrate }: { currentStreak
   }, [currentStreak, activeToday, onCelebrate]);
 
   return (
-    <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-      <div
-        ref={flameRef}
-        style={{
-          width: '36px', height: '36px', borderRadius: '10px', background: '#f0fdf4',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a',
-          transform: bounce ? 'scale(1.3)' : 'scale(1)',
-          transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-        }}>
-        🔥
+    <div className="db-metric-card">
+      <div className="db-metric-card-header">
+        <div
+          ref={flameRef}
+          className="db-metric-icon green"
+          style={{
+            transform: bounce ? 'scale(1.3)' : 'scale(1)',
+            transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+          }}>
+          🔥
+        </div>
       </div>
-      <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+      <div className="db-metric-value">
         {animatedStreak} days
       </div>
-      <div style={{ fontSize: '12px', color: '#64748b' }}>Current Streak</div>
-      <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
+      <div className="db-metric-label">Current Streak</div>
+      <div className="db-metric-hint positive">
         {milestoneMsg ? milestoneMsg : (currentStreak === 0 ? 'Submit a task to start!' : 'Keep it up!')}
       </div>
     </div>
@@ -900,37 +906,46 @@ export function DashboardPage({
     }
 
     return (
-      <div className="dashboard-content" style={{ padding: '24px 32px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
-        <header style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
+      <div className="db-container dashboard-content">
+        <header className="db-header workspace-heading" style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-start' }}>
           {isTrainerDrillDown && (
             <button
               onClick={() => window.history.back()}
-              className="hover-effect touch-target"
-              style={{
-                background: 'none', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px',
-                cursor: 'pointer', color: '#475569', fontWeight: 600, fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px'
-              }}
+              className="db-btn-back hover-effect touch-target"
+              style={{ marginBottom: 0, display: 'flex', alignItems: 'center', gap: '8px' }}
             >
               <span>&larr;</span> Back
             </button>
           )}
           <div>
-            <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+            <h1 className="db-header-title">
               {isTrainerDrillDown ? `Trainee Progress` : `Good morning, ${firstName}`}
             </h1>
-            <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px', margin: 0 }}>
+            <p className="db-header-subtitle">
               You're {progressPercent}% through {currentPathTitle}. Keep the momentum!
             </p>
           </div>
         </header>
 
+        {/* Hero Card */}
+        {!isTrainerDrillDown && (
+          <TraineeHeroCard 
+            isLoading={isLoadingMetrics} 
+            hasProgress={(progressPercent > 0 || (dbData.activityTimestamps?.length ?? 0) > 0)} 
+            lastAccessedTitle={currentPathTitle} 
+            pathId={traineePath?.id} 
+          />
+        )}
+
         {/* Row 2: Key stat strip */}
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-          <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ea580c' }}>⭐</div>
-            <div style={{ fontSize: '28px', fontWeight: '800', marginTop: '12px', color: '#0f172a' }}>{Math.round((progressStats.completedLessons / Math.max(1, progressStats.totalLessons)) * 100)}%</div>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Lesson Progress</div>
-            <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>
+        <section className="db-metrics-grid">
+          <div className="db-metric-card">
+            <div className="db-metric-card-header">
+              <div className="db-metric-icon orange">⭐</div>
+            </div>
+            <div className="db-metric-value">{Math.round((progressStats.completedLessons / Math.max(1, progressStats.totalLessons)) * 100)}%</div>
+            <div className="db-metric-label">Lesson Progress</div>
+            <div className="db-metric-hint positive">
               {progressStats.completedLessons}/{progressStats.totalLessons} lessons
             </div>
           </div>
@@ -966,9 +981,23 @@ export function DashboardPage({
           />
         </section>
 
+        {/* Row 2.5: Trainee Dashboard Widgets */}
+        {!isTrainerDrillDown && (
+          <div className="db-widgets-row">
+            <UpcomingDeadlinesWidget 
+              isLoading={isLoadingMetrics} 
+              assignments={[]} // Mocked data array, real implementation would hook up to assignmentService or similar 
+            />
+            <RecentFeedbackWidget 
+              isLoading={isLoadingMetrics} 
+              feedback={mySubmissions.filter(s => s.status === 'GRADED' || s.evaluation)} 
+            />
+          </div>
+        )}
+
         {/* Row 3: Two columns */}
-        <section className="analytics-grid-two-col">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <section className="db-layout-split">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             <DashboardCharts
               title={'Daily Activity Trend'}
               subtitle={'Daily activity points (last 30 days)'}
@@ -978,11 +1007,11 @@ export function DashboardPage({
               targetTraineeId={targetTraineeId}
               scopedToTrainerId={scopedToTrainerId}
             />
-            <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>
+            <div className="db-panel" style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                 <div>
-                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>Daily Activity Heatmap</h3>
-                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: 0 }}>Submissions and activity</p>
+                  <h3 className="db-panel-title" style={{ margin: '0 0 4px 0' }}>Daily Activity Heatmap</h3>
+                  <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>Submissions and activity</p>
                 </div>
                 <select
                   value={heatmapRange}
@@ -994,41 +1023,47 @@ export function DashboardPage({
                   <option value={90}>Last 90 days</option>
                 </select>
               </div>
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '16px 0', overflowX: 'auto', minHeight: '180px' }}>
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', padding: '16px 0', overflowX: 'auto', minHeight: '360px' }}>
                 <DailyActivityHeatmap submissions={mySubmissions} daysToDispay={heatmapRange} />
               </div>
             </div>
           </div>
 
-          <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0', color: '#0f172a' }}>
+          <div className="db-panel" style={{ display: 'flex', flexDirection: 'column' }}>
+            <h3 className="db-panel-title" style={{ margin: '0 0 4px 0' }}>
               Skill Profile (Path Growth)
             </h3>
-            <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 12px 0' }}>
+            <p style={{ fontSize: '13px', color: '#94a3b8', margin: '0 0 12px 0' }}>
               Your performance across paths
             </p>
-            <div style={{ flex: 1, display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ width: '100%', height: '100%', minHeight: '200px' }}>
+            <div style={{ flex: 1, display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center', marginTop: '24px' }}>
+              <div style={{ width: '100%', height: '100%', minHeight: '360px' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius={typeof window !== 'undefined' && window.innerWidth < 640 ? "50%" : "65%"} data={skillData}>
+                  <RadarChart cx="50%" cy="50%" outerRadius={typeof window !== 'undefined' && window.innerWidth < 640 ? "55%" : "75%"} data={skillData}>
                     <PolarGrid stroke="#e2e8f0" gridType="polygon" polarRadius={[20, 40, 60, 80, 100]} />
                     <PolarAngleAxis
                       dataKey="name"
                       tick={({ x, y, payload, textAnchor }: any) => {
                         if (!payload.value || payload.value === ' ') return <g />;
-                        const label = payload.value.length > 15 ? payload.value.substring(0, 15) + '...' : payload.value;
+                        // Use multiple lines for long path titles
+                        const words = payload.value.split(' ');
+                        const midpoint = Math.ceil(words.length / 2);
+                        const line1 = words.length > 1 ? words.slice(0, midpoint).join(' ') : words[0];
+                        const line2 = words.length > 1 ? words.slice(midpoint).join(' ') : '';
+                        
                         return (
                           <g transform={`translate(${x},${y})`}>
                             <title>{payload.value}</title>
                             <text
-                              x={0} y={0} dy={4}
+                              x={0} y={0} dy={0}
                               textAnchor={textAnchor || "middle"}
                               fill="#334155"
                               fontSize={12}
                               fontWeight={600}
                               style={{ cursor: 'pointer' }}
                             >
-                              {label}
+                              <tspan x={0} dy="0">{line1.length > 20 ? line1.substring(0, 18) + '...' : line1}</tspan>
+                              {line2 && <tspan x={0} dy="16">{line2.length > 20 ? line2.substring(0, 18) + '...' : line2}</tspan>}
                             </text>
                           </g>
                         );
@@ -1135,12 +1170,12 @@ export function DashboardPage({
 
   // 🔵 B. TRAINER / ADMIN DASHBOARD VIEW
   return (
-    <div className="dashboard-content" style={{ padding: '24px 32px', maxWidth: '1320px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div className="db-container dashboard-content">
 
-      <section className="workspace-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <section className="db-header workspace-heading">
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Good morning, {firstName}</h1>
-          <p style={{ color: '#64748b', fontSize: '14px', marginTop: '4px', margin: 0 }}>
+          <h1 className="db-header-title">Good morning, {firstName}</h1>
+          <p className="db-header-subtitle">
             {isAdmin ? 'System overview: Total active learning paths, user roles & review pipelines.' : "Here's what's happening in your cohort today."}
           </p>
         </div>
@@ -1148,9 +1183,8 @@ export function DashboardPage({
 
           {isAdmin && (
             <button
-              className="primary-button"
+              className="db-btn-primary primary-button"
               type="button"
-              style={{ fontSize: '0.8125rem', padding: '0.5rem 1rem', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
               onClick={() => setShowInviteModal(true)}
             >
               + Add User
@@ -1161,49 +1195,49 @@ export function DashboardPage({
 
       {isAdmin ? (
         <>
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5', fontSize: '18px' }}>👥</div>
+          <section className="db-metrics-grid">
+            <div className="db-metric-card">
+              <div className="db-metric-card-header">
+                <div className="db-metric-icon blue">👥</div>
               </div>
-              <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : dbData.totalTrainees}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Total Trainees</div>
-              <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '6px' }}>{dbData.totalTrainers} trainers</div>
+              <div className="db-metric-label">Total Trainees</div>
+              <div className="db-metric-hint positive">{dbData.totalTrainers} trainers</div>
             </div>
 
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7c3aed', fontSize: '18px' }}>📋</div>
+            <div className="db-metric-card">
+              <div className="db-metric-card-header">
+                <div className="db-metric-icon purple">📋</div>
               </div>
-              <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : dbData.totalTasks}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Active Assignments</div>
-              <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '6px' }}>{dbData.totalModules} modules live</div>
+              <div className="db-metric-label">Active Assignments</div>
+              <div className="db-metric-hint positive">{dbData.totalModules} modules live</div>
             </div>
 
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ea580c', fontSize: '18px' }}>⏱️</div>
+            <div className="db-metric-card">
+              <div className="db-metric-card-header">
+                <div className="db-metric-icon orange">⏱️</div>
               </div>
-              <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : dbData.pendingReviews}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Pending Reviews</div>
-              <div style={{ fontSize: '11px', color: '#ea580c', fontWeight: 600, marginTop: '6px' }}>Needs Trainer action</div>
+              <div className="db-metric-label">Pending Reviews</div>
+              <div className="db-metric-hint warning">Needs Trainer action</div>
             </div>
 
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#16a34a', fontSize: '18px' }}>📈</div>
+            <div className="db-metric-card">
+              <div className="db-metric-card-header">
+                <div className="db-metric-icon green">📈</div>
               </div>
-              <div style={{ fontSize: '28px', fontWeight: 800, marginTop: '12px', color: '#0f172a' }}>
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : `${dbData.completionRate}%`}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>Completion Rate</div>
-              <div style={{ fontSize: '11px', color: completionGrowth >= 0 ? '#16a34a' : '#dc2626', fontWeight: 600, marginTop: '6px' }}>
+              <div className="db-metric-label">Completion Rate</div>
+              <div className={`db-metric-hint ${completionGrowth >= 0 ? 'positive' : 'negative'}`}>
                 {completionGrowth >= 0 ? '+' : ''}{completionGrowth}% vs last month
               </div>
             </div>
@@ -1238,62 +1272,62 @@ export function DashboardPage({
       ) : (
         <>
           {/* ROW A: Platform Overview */}
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: '#334155' }}>
+          <section className="db-metrics-grid">
+            <div className="db-metric-card" style={{ background: '#f8fafc', boxShadow: 'none' }}>
+              <div className="db-metric-value" style={{ color: '#334155', fontSize: '24px' }}>
                 {isLoadingMetrics ? '...' : (dbData as any).platformTotalTrainees || 0}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>Total Trainees (Platform)</div>
+              <div className="db-metric-label">Total Trainees (Platform)</div>
             </div>
-            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <div style={{ fontSize: '24px', fontWeight: 800, color: '#334155' }}>
+            <div className="db-metric-card" style={{ background: '#f8fafc', boxShadow: 'none' }}>
+              <div className="db-metric-value" style={{ color: '#334155', fontSize: '24px' }}>
                 {isLoadingMetrics ? '...' : (dbData as any).platformTotalTrainers || 0}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>Total Trainers (Platform)</div>
+              <div className="db-metric-label">Total Trainers (Platform)</div>
             </div>
           </section>
 
           {/* ROW B: Trainer's Own Activity */}
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '16px' }}>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a' }}>
+          <section className="db-metrics-grid">
+            <div className="db-metric-card">
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : (dbData as any).trainerLpsCreated || 0}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>LPs Created</div>
+              <div className="db-metric-label">LPs Created</div>
             </div>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a' }}>
+            <div className="db-metric-card">
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : (dbData as any).trainerAssignments?.total || 0}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>Assignments Created</div>
-              <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 600, marginTop: '4px' }}>
+              <div className="db-metric-label">Assignments Created</div>
+              <div className="db-metric-hint neutral">
                 {(dbData as any).trainerAssignments?.internal || 0} Internal / {(dbData as any).trainerAssignments?.external || 0} External
               </div>
             </div>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a' }}>
+            <div className="db-metric-card">
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : (dbData as any).trainerPendingReviews || 0}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>Pending Reviews</div>
+              <div className="db-metric-label">Pending Reviews</div>
             </div>
           </section>
 
           {/* ROW C: Cohort Effectiveness */}
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a' }}>
+          <section className="db-metrics-grid">
+            <div className="db-metric-card">
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : (dbData as any).trainingEffectiveness === null ? '—' : `${(dbData as any).trainingEffectiveness}/100`}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>Training Effectiveness (Health)</div>
-              <div style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600, marginTop: '4px' }}>Composite Score</div>
+              <div className="db-metric-label">Training Effectiveness (Health)</div>
+              <div className="db-metric-hint positive">Composite Score</div>
             </div>
 
-            <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a' }}>
+            <div className="db-metric-card">
+              <div className="db-metric-value">
                 {isLoadingMetrics ? '...' : dbData.totalTrainees || 0}
               </div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>My Trainees</div>
-              <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 600, marginTop: '4px' }}>Assigned LPs</div>
+              <div className="db-metric-label">My Trainees</div>
+              <div className="db-metric-hint neutral">Assigned LPs</div>
             </div>
           </section>
 
@@ -1308,20 +1342,20 @@ export function DashboardPage({
         </>
       )}
 
-      <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
-        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Recent Submissions</h3>
+      <section className="db-layout-split">
+        <div className="db-panel">
+          <h3 className="db-panel-title">Recent Submissions</h3>
           {pendingSubmissions.length === 0 ? (
             <div style={{ color: '#94a3b8', fontSize: '13px' }}>No pending submissions in database queue.</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div>
               {pendingSubmissions.slice(0, 5).map((sub) => (
-                <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', border: '1px solid #f8fafc', borderRadius: '8px', background: '#fafafa' }}>
+                <div key={sub.id} className="db-submission-item">
                   <div>
-                    <strong style={{ fontSize: '13px', color: '#1e293b' }}>{sub.trainee?.firstName || sub.trainee?.name || 'Trainee'}</strong>
-                    <div style={{ fontSize: '12px', color: '#64748b' }}>{sub.assignment?.title || 'Assignment Task'}</div>
+                    <div className="db-submission-name">{sub.trainee?.firstName || sub.trainee?.name || 'Trainee'}</div>
+                    <div className="db-submission-task">{sub.assignment?.title || 'Assignment Task'}</div>
                   </div>
-                  <span style={{ padding: '6px 14px', borderRadius: '6px', background: '#fef3c7', color: '#b45309', fontWeight: 600, fontSize: '12px' }}>
+                  <span className={`db-status-badge ${sub.status === 'Reviewed' ? 'reviewed' : 'pending'}`}>
                     {sub.status || 'Pending Review'}
                   </span>
                 </div>
@@ -1330,26 +1364,26 @@ export function DashboardPage({
           )}
         </div>
 
-        <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 16px 0' }}>Quick Actions</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Evaluate pending submissions</span>
-              <button type="button" style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer' }} onClick={() => (window.location.href = '/evaluations')}>Review Now</button>
+        <div className="db-panel">
+          <h3 className="db-panel-title">Quick Actions</h3>
+          <div>
+            <div className="db-quick-action-item">
+              <span className="db-quick-action-label">Evaluate pending submissions</span>
+              <button type="button" className="db-btn-link" onClick={() => (window.location.href = '/evaluations')}>Review Now</button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Manage cohort progress</span>
-              <button type="button" style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer' }} onClick={() => (window.location.href = '/users')}>View Users</button>
+            <div className="db-quick-action-item">
+              <span className="db-quick-action-label">Manage cohort progress</span>
+              <button type="button" className="db-btn-link" onClick={() => (window.location.href = '/users')}>View Users</button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Update curriculum content
+            <div className="db-quick-action-item">
+              <span className="db-quick-action-label">Update curriculum content
                 {typeof (dbData as any).draftLpsCount === 'number' && (dbData as any).draftLpsCount > 0 && (
                   <span style={{ marginLeft: '8px', padding: '2px 8px', background: '#fef3c7', color: '#d97706', borderRadius: '12px', fontSize: '11px', fontWeight: 600 }}>
                     {(dbData as any).draftLpsCount} Drafts
                   </span>
                 )}
               </span>
-              <button type="button" style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer' }} onClick={() => (window.location.href = '/learning-paths')}>Edit Paths</button>
+              <button type="button" className="db-btn-link" onClick={() => (window.location.href = '/learning-paths')}>Edit Paths</button>
             </div>
           </div>
         </div>
@@ -1369,10 +1403,10 @@ export function DashboardPage({
 
 function MetricCard({ value, label, hint }: { value: string; label: string; hint: string }) {
   return (
-    <div style={{ background: '#fff', padding: '20px', borderRadius: '12px', border: '1px solid #f1f5f9' }}>
-      <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a' }}>{value}</div>
-      <div style={{ fontSize: '12px', color: '#64748b' }}>{label}</div>
-      <div style={{ fontSize: '11px', color: '#4f46e5', fontWeight: 600, marginTop: '4px' }}>{hint}</div>
+    <div className="db-metric-card">
+      <div className="db-metric-value">{value}</div>
+      <div className="db-metric-label">{label}</div>
+      <div className="db-metric-hint neutral">{hint}</div>
     </div>
   );
 }

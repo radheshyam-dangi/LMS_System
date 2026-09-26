@@ -27,13 +27,18 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
+    "@tiptap/suggestion": "^3.31.3",
+    "@types/dompurify": "^3.0.5",
     "axios": "^1.18.1",
     "canvas-confetti": "^1.9.4",
+    "dompurify": "^3.4.15",
     "lucide-react": "^1.27.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.11.0",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "tippy.js": "^6.3.7",
+    "uuid": "^14.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -41,6 +46,7 @@
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^6.0.2",
     "eslint": "^10.5.0",
     "eslint-plugin-react-hooks": "^7.1.1",

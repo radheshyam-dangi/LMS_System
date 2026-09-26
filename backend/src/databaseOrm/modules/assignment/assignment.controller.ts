@@ -45,6 +45,30 @@ export class AssignmentController {
     );
   }
 
+  @Get('submissions/:id')
+  @Roles('Admin', 'Trainer')
+  async getSubmissionDetails(
+    @Param('id') id: string,
+    @GetUser() currentUser: any,
+  ) {
+    const submission = await this.assignmentService.getSubmissionById(id);
+    const evaluatorId = currentUser?.id || currentUser?.sub;
+    const isAdmin = this.assignmentService.isAdminUser(currentUser);
+    
+    // Ensure they have permission (Trainer assigned it or Admin)
+    if (!isAdmin) {
+      const assigner = await this.assignmentService.resolveAssignerForInstance(
+        submission.assignment, 
+        submission.trainee.id
+      );
+      if (assigner?.id !== evaluatorId) {
+        throw new ForbiddenException('Not authorized to view this submission.');
+      }
+    }
+    
+    return submission;
+  }
+
   @Put('submissions/:id/evaluate')
   @Roles('Admin', 'Trainer')
   async evaluateSubmission(
@@ -306,6 +330,51 @@ export class AssignmentController {
   @Delete(':id')
   @Roles('Admin', 'Trainer')
   @HttpCode(HttpStatus.NO_CONTENT)
+  
+  @Get(':id/questions/:questionId/lesson-options')
+  @Roles('Admin', 'Trainer')
+  async getQuestionLessonOptions(
+    @Param('id') assignmentId: string,
+    @Param('questionId') questionId: string
+  ) {
+    return await this.assignmentService.getQuestionLessonOptions(assignmentId, questionId);
+  }
+
+  @Put(':id/questions/:questionId/lesson-dependencies')
+  @Roles('Admin', 'Trainer')
+  async setQuestionLessonDependencies(
+    @Param('id') assignmentId: string,
+    @Param('questionId') questionId: string,
+    @Body() body: { lessonIds: string[], requiresLessonGrounding?: boolean }
+  ) {
+    return await this.assignmentService.setQuestionLessonDependencies(assignmentId, questionId, body.lessonIds, body.requiresLessonGrounding !== false);
+  }
+
+  @Get(':id/questions-extended')
+  @Roles('Admin', 'Trainer', 'Trainee')
+  async getQuestionsWithDependencies(
+    @Param('id') assignmentId: string
+  ) {
+    return await this.assignmentService.getQuestionsWithDependencies(assignmentId);
+  }
+
+  @Post(':id/validate')
+  @Roles('Admin', 'Trainer')
+  async validateAssignmentBeforePublish(
+    @Param('id') assignmentId: string
+  ) {
+    return await this.assignmentService.validateAssignmentBeforePublish(assignmentId);
+  }
+
+  @Get(':id/migration-review-queue')
+  @Roles('Admin', 'Trainer')
+  async getMigrationReviewQueue(
+    @Param('id') assignmentId: string
+  ) {
+    return await this.assignmentService.getMigrationReviewQueue(assignmentId);
+  }
+
+
   async deleteAssignment(@Param('id') id: string, @GetUser() currentUser: any) {
     const userId = currentUser?.id || currentUser?.sub;
     const task = await this.assignmentService.findOne(id, userId);

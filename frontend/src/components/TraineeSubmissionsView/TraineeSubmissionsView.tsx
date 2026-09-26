@@ -138,7 +138,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
         },
         accessToken
       );
-      alert('Task resubmitted successfully!');
+      // Removed success alert for better UX
       setResubmitTask(null);
       await fetchMySubmissions();
     } catch (err: any) {

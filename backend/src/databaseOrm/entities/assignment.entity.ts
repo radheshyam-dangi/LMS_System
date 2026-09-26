@@ -40,6 +40,9 @@ export class AssignmentEntity extends BaseEntity {
   @Column({ type: 'integer', name: 'max_score', default: 100 })
   maxScore: number;
 
+  @Column({ type: 'integer', name: 'timer_duration', default: 0 })
+  timerDuration: number;
+
   @Column({ type: 'integer', name: 'duration_days', default: 0 })
   durationDays: number;
 
@@ -157,6 +160,8 @@ export class AssignmentEntity extends BaseEntity {
     maxPoints: number;
     options?: string[];
     correctIndex?: number;
+    expectedAnswerGuideline?: string;
+    requiresLessonGrounding?: boolean;
   }>;
 
   /**

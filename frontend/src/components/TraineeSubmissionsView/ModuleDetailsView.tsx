@@ -4,6 +4,12 @@ import { assignmentService } from '../../services/assignmentService';
 import { DeadlineDisplay } from '../DeadlineDisplay';
 import { progressService } from '../../services/lmsApi';
 import { useNotifications } from '../../context/NotificationContext';
+import { LessonCard } from '../SharedCards/LessonCard';
+import { AssignmentCard } from '../SharedCards/AssignmentCard';
+import { isLessonUnlocked, isAssignmentUnlocked } from '../../shared/lockLogic';
+import { RichText } from '../common/RichText';
+import './TraineeAssignments.css';
+
 
 type Props = {
   moduleId: string;
@@ -26,8 +32,63 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   const [submitTask, setSubmitTask] = useState<any | null>(null);
   const [submissionText, setSubmissionText] = useState('');
   const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [mcqAnswers, setMcqAnswers] = useState<Record<number, number>>({});
+  const [mcqAnswers, setMcqAnswers] = useState<Record<number, number | number[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const openSubmitModal = useCallback((task: any, sub: any) => {
+    setSubmitTask(task);
+    
+    // Check local storage draft first
+    const draftStr = localStorage.getItem(`draft_${task.id}`);
+    if (draftStr) {
+       try {
+         const draft = JSON.parse(draftStr);
+         setSubmissionText(draft.submissionText || '');
+         setAnswers(draft.answers || {});
+         setMcqAnswers(draft.mcqAnswers || {});
+         return;
+       } catch {}
+    }
+
+    if (sub && sub.submissionText) {
+      try {
+        const parsed = JSON.parse(sub.submissionText);
+        if (task.assignmentType === 'MCQ') {
+          setMcqAnswers(parsed.answers || {});
+        } else if (task.questions?.length > 0 || task.mcqConfig?.questions?.length > 0) {
+          setAnswers(parsed.answers || {});
+        } else {
+          setSubmissionText(sub.submissionText);
+        }
+      } catch {
+        setSubmissionText(sub.submissionText);
+      }
+    } else {
+      setSubmissionText('');
+      setAnswers({});
+      setMcqAnswers({});
+    }
+  }, []);
+
+  const closeSubmitModal = useCallback(() => {
+    if (!submitTask) return;
+    const hasAnswers = submissionText.trim() || Object.keys(answers).length > 0 || Object.keys(mcqAnswers).length > 0;
+    if (hasAnswers) {
+      if (!window.confirm('Are you sure you want to discard your draft?')) {
+        return;
+      }
+    }
+    localStorage.removeItem(`draft_${submitTask.id}`);
+    setSubmitTask(null);
+  }, [submitTask, submissionText, answers, mcqAnswers]);
+
+  // Save draft periodically
+  useEffect(() => {
+    if (submitTask) {
+      const draft = { submissionText, answers, mcqAnswers };
+      localStorage.setItem(`draft_${submitTask.id}`, JSON.stringify(draft));
+    }
+  }, [submitTask, submissionText, answers, mcqAnswers]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,7 +194,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!submitTask) return;
-    const questions = submitTask.mcqConfig?.questions || [];
+    const questions = submitTask.questions?.length > 0 ? submitTask.questions : (submitTask.mcqConfig?.questions || []);
     let text = submissionText;
     if (submitTask.assignmentType === 'MCQ' && questions.length) {
       text = JSON.stringify({ answers: mcqAnswers });
@@ -141,6 +202,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
       text = JSON.stringify({ answers });
     }
     if (!text.trim() || text === '{"answers":{}}') {
+      
       alert('Please answer the questions before submitting.');
       return;
     }
@@ -195,9 +257,40 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, alignItems: 'flex-start' }}>
             <div>
               <h1 style={{ fontSize: 30, margin: '0 0 10px', fontWeight: 800 }}>{moduleData.title}</h1>
-              <p style={{ margin: 0, opacity: 0.95, fontSize: 14, maxWidth: 720, lineHeight: 1.6 }}>
-                {moduleData.description || 'Module content and assessments for this learning path.'}
-              </p>
+              <div style={{ margin: 0, opacity: 0.95, fontSize: 14, maxWidth: 720, lineHeight: 1.6 }}>
+                {moduleData.description ? (
+                  <RichText content={moduleData.description} />
+                ) : (
+                  'Module content and assessments for this learning path.'
+                )}
+              </div>
+              
+              {resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
+                <div style={{ marginTop: 20 }}>
+                  <strong style={{ display: 'block', fontSize: 12, textTransform: 'uppercase', opacity: 0.8, marginBottom: 8 }}>Module Resources</strong>
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                    {resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any) => (
+                      <a 
+                        key={res.id} 
+                        href={res.url} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        onClick={() => { if (res.id) progressService.visitResource(res.id, accessToken).catch(()=>{}); }}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', padding: '6px 14px', 
+                          background: 'rgba(255, 255, 255, 0.2)', borderRadius: 20, 
+                          color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 500,
+                          transition: 'background 0.2s'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+                      >
+                        🔗 {res.title}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
               <div style={{ fontSize: 12, opacity: 0.9 }}>Module Progress</div>
@@ -282,70 +375,24 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
 
         {activeTab === 'Lessons' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {lessons.map((lesson: any) => {
+            {lessons.map((lesson: any, index: number) => {
               const isDone = completedLessonIds.has(String(lesson.id));
+              const isLocked = isTrainee && !isLessonUnlocked(
+                { id: lesson.id }, 
+                index, 
+                { sequentialLessonLock: moduleData.sequentialLessonLock, lessons }, 
+                { completedLessonIds: Array.from(completedLessonIds) }
+              );
               return (
-                <div
+                <LessonCard
                   key={lesson.id}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '18px 22px',
-                    background: '#fff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 12,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                    <div
-                      style={{
-                        width: 22,
-                        height: 22,
-                        borderRadius: '50%',
-                        border: isDone ? 'none' : '2px solid #cbd5e1',
-                        background: isDone ? '#22c55e' : 'transparent',
-                        color: '#fff',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 12,
-                      }}
-                    >
-                      {isDone && '✓'}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: isDone ? '#64748b' : '#0f172a', textDecoration: isDone ? 'line-through' : 'none' }}>
-                        {lesson.title}
-                      </div>
-                      <div style={{ fontSize: 12, color: '#94a3b8' }}>
-                        {isDone ? 'Watched' : 'Pending'} · {lesson.durationMinutes || 15} min
-                      </div>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                    {lesson.videoUrl && (
-                      <a href={lesson.videoUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#4f46e5', fontWeight: 600 }}>
-                        Video
-                      </a>
-                    )}
-                    {lesson.articleUrl && (
-                      <a href={lesson.articleUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#4f46e5', fontWeight: 600 }}>
-                        Article
-                      </a>
-                    )}
-                    {isTrainee && !isDone && (
-                      <button
-                        type="button"
-                        onClick={() => void markLessonWatched(lesson.id)}
-                        style={{ padding: '6px 14px', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Mark Watched
-                      </button>
-                    )}
-                    {isDone && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>Watched</span>}
-                  </div>
-                </div>
+                  lesson={lesson}
+                  isDone={isDone}
+                  isLocked={isLocked}
+                  isTrainee={isTrainee}
+                  onMarkWatched={() => markLessonWatched(lesson.id)}
+                  onClickLocked={() => alert('Complete the previous lesson to unlock this lesson.')}
+                />
               );
             })}
             {lessons.length === 0 && (
@@ -365,72 +412,31 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
             ) : (
               tasks.filter((t: any) => t.assignmentType !== 'MCQ').map((task: any) => {
                 const sub = subByAssignment.get(task.id);
-                const status = sub?.status || 'Pending';
+                const isLocked = isTrainee && !isAssignmentUnlocked(
+                  { lockUntilLessonsComplete: task.lockUntilLessonsComplete, dependsOnLessonIds: task.dependsOnLessonIds },
+                  { completedLessonIds: Array.from(completedLessonIds) }
+                );
+              
+                let lockReasonStr = 'Complete prerequisite lessons to unlock this assignment.';
+                if (isLocked && task.dependsOnLessonIds) {
+                  const missingIds = task.dependsOnLessonIds.filter((id: string) => !completedLessonIds.has(String(id)));
+                  const missingLessons = missingIds.map((id: string) => lessons.find((l: any) => String(l.id) === String(id))?.title).filter(Boolean);
+                  if (missingLessons.length > 0) {
+                    lockReasonStr = `Complete ${missingLessons.join(' and ')} to unlock this assignment.`;
+                  }
+                }
+
                 return (
-                  <div
+                  <AssignmentCard
                     key={task.id}
-                    style={{
-                      padding: '16px 20px',
-                      background: '#fff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 8,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 12,
-                    }}
-                  >
-                    <div>
-                      <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>{task.title}</h4>
-                      <span style={{ fontSize: 12, color: '#64748b' }}>
-                        {task.assignmentType} · {task.lessonTitle || 'Module task'}
-                      </span>
-                    </div>
-                    <DeadlineDisplay task={task} submission={sub} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '4px 10px',
-                          borderRadius: 999,
-                          background:
-                            status === 'Approved'
-                              ? '#dcfce7'
-                              : status === 'Rejected'
-                                ? '#fee2e2'
-                                : status === 'Submitted'
-                                  ? '#fef3c7'
-                                  : '#f1f5f9',
-                          color:
-                            status === 'Approved'
-                              ? '#166534'
-                              : status === 'Rejected'
-                                ? '#b91c1c'
-                                : status === 'Submitted'
-                                  ? '#b45309'
-                                  : '#475569',
-                        }}
-                      >
-                        {status === 'Approved' ? 'Approved' : status}
-                        {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
-                      </span>
-                      {isTrainee && status !== 'Approved' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSubmitTask(task);
-                            setSubmissionText('');
-                            setAnswers({});
-                            setMcqAnswers({});
-                          }}
-                          style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
-                        >
-                          {isTaskSubmitted(sub) ? 'Resubmit' : 'Attempt'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                    task={task}
+                    submission={sub}
+                    isLocked={isLocked}
+                    lockReason={lockReasonStr}
+                    isTrainee={isTrainee}
+                    onClickLocked={(reason) => alert(reason || 'Complete prerequisite lessons to unlock this assignment.')}
+                    onAttempt={(t) => openSubmitModal(t, sub)}
+                  />
                 );
               })
             )}
@@ -446,6 +452,20 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
             ) : (
               resources.map((res: any) => {
                 const visited = visitedResourceIds.has(String(res.id));
+                let isResLocked = false;
+                if (res.lesson || res.lessonId) {
+                  const lId = res.lesson?.id || res.lessonId;
+                  const lIdx = lessons.findIndex((l: any) => String(l.id) === String(lId));
+                  if (lIdx !== -1) {
+                    isResLocked = isTrainee && !isLessonUnlocked(
+                      { id: lId },
+                      lIdx,
+                      { sequentialLessonLock: moduleData.sequentialLessonLock, lessons },
+                      { completedLessonIds: Array.from(completedLessonIds) }
+                    );
+                  }
+                }
+
                 return (
                   <div
                     key={res.id}
@@ -457,19 +477,32 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
+                      opacity: isResLocked ? 0.6 : 1,
                     }}
                   >
                     <div>
                       <strong style={{ fontSize: 14 }}>{res.title}</strong>
-                      <div style={{ fontSize: 12, color: '#64748b' }}>{res.type || 'Link'} · {visited ? 'Visited' : 'Not visited'}</div>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>
+                        {res.type || 'Link'} · {isResLocked ? 'Locked' : (visited ? 'Visited' : 'Not visited')}
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void visitResource(res)}
-                      style={{ padding: '6px 14px', background: visited ? '#ecfdf5' : '#4f46e5', color: visited ? '#047857' : '#fff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-                    >
-                      {visited ? 'Open again' : 'Open & Mark Visited'}
-                    </button>
+                    {isResLocked ? (
+                      <button
+                        type="button"
+                        style={{ padding: '6px 14px', background: '#f1f5f9', color: '#94a3b8', border: '1px solid #cbd5e1', borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}
+                        onClick={() => alert('Complete previous lessons to unlock this resource.')}
+                      >
+                        🔒 Locked
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void visitResource(res)}
+                        style={{ padding: '6px 14px', background: visited ? '#ecfdf5' : '#4f46e5', color: visited ? '#047857' : '#fff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+                      >
+                        {visited ? 'Open again' : 'Open & Mark Visited'}
+                      </button>
+                    )}
                   </div>
                 );
               })
@@ -499,10 +532,13 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       gap: 12,
+                      opacity: task.isLocked || status === 'LOCKED' ? 0.6 : 1,
                     }}
                   >
                     <div>
-                      <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>{task.title}</h4>
+                      <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>
+                        {task.isLocked || status === 'LOCKED' ? '🔒 ' : ''}{task.title}
+                      </h4>
                       <span style={{ fontSize: 12, color: '#64748b' }}>
                         {task.assignmentType} · {task.lessonTitle || 'Module task'}
                       </span>
@@ -516,36 +552,32 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                           padding: '4px 10px',
                           borderRadius: 999,
                           background:
-                            status === 'Approved'
+                            status.toLowerCase() === 'approved'
                               ? '#dcfce7'
-                              : status === 'Rejected'
+                              : status.toLowerCase() === 'rejected'
                                 ? '#fee2e2'
-                                : status === 'Submitted'
+                                : status.toLowerCase() === 'submitted'
                                   ? '#fef3c7'
                                   : '#f1f5f9',
                           color:
-                            status === 'Approved'
+                            status.toLowerCase() === 'approved'
                               ? '#166534'
-                              : status === 'Rejected'
+                              : status.toLowerCase() === 'rejected'
                                 ? '#b91c1c'
-                                : status === 'Submitted'
+                                : status.toLowerCase() === 'submitted'
                                   ? '#b45309'
                                   : '#475569',
                         }}
                       >
-                        {status === 'Approved' ? 'Passed' : status}
+                        {status.toLowerCase() === 'approved' ? 'Passed' : status}
                         {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
                       </span>
-                      {isTrainee && status !== 'Approved' && (
+                      {isTrainee && status.toLowerCase() !== 'approved' && (!sub?.deadline || new Date(sub.deadline).getTime() > Date.now()) && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setSubmitTask(task);
-                            setSubmissionText('');
-                            setAnswers({});
-                            setMcqAnswers({});
-                          }}
-                          style={{ padding: '6px 14px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                          disabled={task.isLocked || status === 'LOCKED'}
+                          onClick={() => openSubmitModal(task, sub)}
+                          style={{ padding: '6px 14px', background: task.isLocked || status === 'LOCKED' ? '#94a3b8' : '#4f46e5', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: task.isLocked || status === 'LOCKED' ? 'not-allowed' : 'pointer' }}
                         >
                           {isTaskSubmitted(sub) ? 'Resubmit' : 'Attempt'}
                         </button>
@@ -560,59 +592,177 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
       </div>
 
       {submitTask && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <form onSubmit={handleSubmit} style={{ width: 560, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 16, padding: 24 }}>
-            <h3 style={{ margin: '0 0 12px' }}>Submit: {submitTask.title}</h3>
-            {(submitTask.mcqConfig?.questions || []).length > 0 ? (
-              (submitTask.mcqConfig.questions as any[]).map((q, idx) => (
-                <div key={idx} style={{ marginBottom: 14, padding: 12, background: '#f8fafc', borderRadius: 8 }}>
-                  <strong style={{ fontSize: 13 }}>
-                    Q{idx + 1}. {q.questionText || q.question}
-                  </strong>
-                  {submitTask.assignmentType === 'MCQ' ? (
-                    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {(q.options || ['', '', '', '']).map((opt: string, oi: number) => (
-                        <label key={oi} style={{ fontSize: 13, display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <input
-                            type="radio"
-                            name={`q-${idx}`}
-                            checked={mcqAnswers[idx] === oi}
-                            onChange={() => setMcqAnswers((prev) => ({ ...prev, [idx]: oi }))}
-                          />
-                          {opt || `Option ${oi + 1}`}
-                        </label>
-                      ))}
+        <div className="assignment-modal-overlay">
+          <div className="assignment-modal-container">
+            {/* Context Panel */}
+            <div className="assignment-modal-context">
+              <h3 style={{ margin: '0 0 4px', fontSize: 18, color: '#0f172a' }}>{submitTask.title}</h3>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                {submitTask.assignmentType} · {submitTask.lessonTitle || 'Module Task'}
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {submitTask.dependsOnLessonIds?.length > 0 && (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Depends On</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>
+                      {submitTask.dependsOnLessonIds.map((id: string) => lessons.find((l: any) => String(l.id) === String(id))?.title).filter(Boolean).join(', ') || 'Prerequisite lessons'}
                     </div>
+                  </div>
+                )}
+                {submitTask.assignedBy?.name && (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Assigned By</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>{submitTask.assignedBy.name}</div>
+                  </div>
+                )}
+                
+                {submitTask.countdownStart === 'onAssignment' ? (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>LP Assigned Time</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>
+                      {subByAssignment.get(submitTask.id)?.lpAssignedAt ? new Date(subByAssignment.get(submitTask.id).lpAssignedAt).toLocaleString(undefined, { timeZoneName: 'short' }) : new Date(submitTask.createdAt).toLocaleString(undefined, { timeZoneName: 'short' })}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>Unlocked Time</strong>
+                    <div style={{ fontSize: 13, color: '#334155' }}>
+                      {subByAssignment.get(submitTask.id)?.taskUnlockedAt ? new Date(subByAssignment.get(submitTask.id).taskUnlockedAt).toLocaleString(undefined, { timeZoneName: 'short' }) : 'Unlocks after prerequisite lessons'}
+                    </div>
+                  </div>
+                )}
+                
+                {subByAssignment.get(submitTask.id)?.deadline && (
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Due Date</strong>
+                    <DeadlineDisplay task={submitTask} submission={subByAssignment.get(submitTask.id)} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Main Form Content */}
+            <form onSubmit={handleSubmit} className="assignment-modal-content">
+              <div className="assignment-modal-scroll">
+                
+                {/* Instructions Banner */}
+                {submitTask.instructions && (
+                  <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '16px', marginBottom: '24px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
+                      Instructions
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#0c4a6e', margin: 0, fontFamily: 'inherit', lineHeight: 1.6 }}>
+                      <RichText content={submitTask.instructions} emptyStateText="No instructions provided." />
+                    </div>
+                  </div>
+                )}
+
+                {(() => {
+                  const questionsArray = submitTask.questions?.length > 0 ? submitTask.questions : (submitTask.mcqConfig?.questions || []);
+                  return questionsArray.length > 0 ? (
+                    questionsArray.map((q: any, idx: number) => {
+                      const hasOptions = q.options && q.options.length > 0;
+                      return (
+                      <div key={idx} style={{ marginBottom: 20, padding: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                            <strong style={{ fontSize: 15, color: '#0f172a' }}>Q{idx + 1}.</strong>
+                            <div style={{ fontSize: 15, color: '#0f172a', fontWeight: 'bold' }}>
+                              <RichText content={q.text || q.questionText || q.question} emptyStateText="No question text" />
+                            </div>
+                          </div>
+                          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, background: '#e2e8f0', padding: '2px 8px', borderRadius: 12, whiteSpace: 'nowrap', marginLeft: 12 }}>
+                            {q.maxPoints || 10} pts
+                          </span>
+                        </div>
+                        
+                        {submitTask.assignmentType === 'MCQ' ? (
+                          !hasOptions ? (
+                            <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                              Invalid question configuration: no options provided.
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                              {(q.options || []).map((opt: string, oi: number) => (
+                                <label key={oi} style={{ fontSize: 14, display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                  <input
+                                    type={q.allowMultipleCorrect ? "checkbox" : "radio"}
+                                    name={`q-${idx}`}
+                                    checked={
+                                      q.allowMultipleCorrect 
+                                        ? (Array.isArray(mcqAnswers[idx]) ? (mcqAnswers[idx] as number[]).includes(oi) : false)
+                                        : mcqAnswers[idx] === oi
+                                    }
+                                    onChange={() => {
+                                      if (q.allowMultipleCorrect) {
+                                        setMcqAnswers(prev => {
+                                          const current = Array.isArray(prev[idx]) ? (prev[idx] as number[]) : [];
+                                          if (current.includes(oi)) {
+                                            return { ...prev, [idx]: current.filter(o => o !== oi) };
+                                          } else {
+                                            return { ...prev, [idx]: [...current, oi] };
+                                          }
+                                        });
+                                      } else {
+                                        setMcqAnswers(prev => ({ ...prev, [idx]: oi }));
+                                      }
+                                    }}
+                                    style={{ width: 16, height: 16, cursor: 'pointer' }}
+                                  />
+                                  <div style={{ display: 'inline-block' }}>
+                                    <RichText content={opt || `Option ${oi + 1}`} emptyStateText={`Option ${oi + 1}`} />
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+                          )
+                        ) : (
+                          <textarea
+                            rows={4}
+                            value={answers[idx] || ''}
+                            onChange={(e) => setAnswers((prev) => ({ ...prev, [idx]: e.target.value }))}
+                            placeholder="Type your answer here..."
+                            style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                          />
+                        )}
+                      </div>
+                    )})
                   ) : (
                     <textarea
-                      rows={3}
-                      value={answers[idx] || ''}
-                      onChange={(e) => setAnswers((prev) => ({ ...prev, [idx]: e.target.value }))}
-                      placeholder="Your answer..."
-                      style={{ width: '100%', marginTop: 8, padding: 8, borderRadius: 6, border: '1px solid #e2e8f0' }}
+                      required
+                      rows={8}
+                      value={submissionText}
+                      onChange={(e) => setSubmissionText(e.target.value)}
+                      placeholder="Write your submission..."
+                      style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #cbd5e1', marginBottom: 12, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
                     />
-                  )}
-                </div>
-              ))
-            ) : (
-              <textarea
-                required
-                rows={5}
-                value={submissionText}
-                onChange={(e) => setSubmissionText(e.target.value)}
-                placeholder="Write your submission..."
-                style={{ width: '100%', padding: 12, borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 12 }}
-              />
-            )}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" onClick={() => setSubmitTask(null)} style={{ padding: '8px 14px', border: 'none', borderRadius: 8, background: '#f1f5f9', fontWeight: 600 }}>
-                Cancel
-              </button>
-              <button type="submit" disabled={isSubmitting} style={{ padding: '8px 14px', border: 'none', borderRadius: 8, background: '#4f46e5', color: '#fff', fontWeight: 700 }}>
-                {isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
-              </button>
-            </div>
-          </form>
+                  );
+                })()}
+              </div>
+              
+              <div className="assignment-modal-footer">
+                {(() => {
+                  const deadlineDate = subByAssignment.get(submitTask.id)?.deadline ? new Date(subByAssignment.get(submitTask.id).deadline).getTime() : null;
+                  const isExpired = deadlineDate && new Date().getTime() > deadlineDate;
+                  
+                  return (
+                    <>
+                      {isExpired && <span style={{ color: '#dc2626', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', marginRight: 'auto' }}>Deadline expired. Submission disabled.</span>}
+                      <button type="button" onClick={closeSubmitModal} className="btn-trainee-action-secondary">
+                        Cancel
+                      </button>
+                      {!isExpired && (
+                        <button type="submit" disabled={isSubmitting} className="btn-trainee-action-primary">
+                          {isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

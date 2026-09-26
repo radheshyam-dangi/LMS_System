@@ -2,6 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { learningPathService } from '../../services/learningPathService';
 import { userService } from '../../services/userService';
+import { useNavigate } from 'react-router-dom';
+import { RichText } from '../common/RichText';
+import './CurriculumManager.css';
 
 interface CurriculumManagerProps {
   learningPathId: string;
@@ -22,6 +25,7 @@ export function CurriculumManager({
   const [trainees, setTrainees] = useState<any[]>([]);
   const [pathDetails, setPathDetails] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   // Active Modals
   const [activeModal, setActiveModal] = useState<
@@ -60,7 +64,7 @@ export function CurriculumManager({
 
   // Dynamic Questions State
   const [subjectiveQuestions, setSubjectiveQuestions] = useState<any[]>([
-    { id: 'sub-1', questionText: '', maxPoints: 10 },
+    { id: 'sub-1', questionText: '', maxPoints: 10, dependentLessonIds: [] },
   ]);
   const [mcqQuestions, setMcqQuestions] = useState<any[]>([
     { id: 'mcq-1', questionText: '', options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'], correctIndex: 0, points: 10 },
@@ -128,7 +132,7 @@ export function CurriculumManager({
     setFormTaskAnchorType('LP_ASSIGNED');
     setFormTaskDurationHours(0);
     setFormTaskDurationMinutes(0);
-    setSubjectiveQuestions([{ id: 'sub-1', questionText: '', maxPoints: 10 }]);
+    setSubjectiveQuestions([{ id: 'sub-1', questionText: '', maxPoints: 10, dependentLessonIds: [] }]);
     setMcqQuestions([{ id: 'mcq-1', questionText: '', options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'], correctIndex: 0, points: 10 }]);
     setActiveModal(null);
     setEditingItemId(null);
@@ -378,15 +382,15 @@ export function CurriculumManager({
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto' }}>
-      <button type="button" onClick={onBack} style={{ padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', marginBottom: '20px', background: '#fff', border: '1px solid #cbd5e1' }}>
+    <div className="cm-container">
+      <button type="button" onClick={onBack} className="cm-btn-back">
         ← Back to All Learning Paths
       </button>
 
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+      <header className="cm-header-section">
         <div>
-          <h2>Curriculum Management: {learningPathTitle}</h2>
-          <p style={{ color: '#64748b' }}>
+          <h2 className="cm-header-title">Curriculum Management: {learningPathTitle}</h2>
+          <p className="cm-header-subtitle">
             {isOwnerOrAdmin
               ? 'Manage modules, lessons, and external assignments for this learning path.'
               : 'Read-Only Mode: View and inspect internal modules, lessons, and tasks.'}
@@ -394,9 +398,9 @@ export function CurriculumManager({
         </div>
 
         {isOwnerOrAdmin && (
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button type="button" onClick={() => { resetFormFields(); setActiveModal('MODULE'); }} style={{ padding: '10px 18px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
-              + Create Module
+          <div>
+            <button type="button" onClick={() => navigate(`/learning-paths/${learningPathId}/edit`)} className="cm-btn-primary">
+              ✏️ Edit Learning Path
             </button>
           </div>
         )}
@@ -405,70 +409,45 @@ export function CurriculumManager({
       {isLoading ? (
         <div>Loading curriculum tree...</div>
       ) : modules.length === 0 ? (
-        <div style={{ padding: '32px', textAlign: 'center', border: '2px dashed #cbd5e1', borderRadius: '8px', background: '#fff' }}>
-          <p style={{ margin: '0 0 12px 0', color: '#64748b' }}>No modules created yet.</p>
-          {isOwnerOrAdmin && (
-            <button type="button" onClick={() => { resetFormFields(); setActiveModal('MODULE'); }} style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>
-              + Create First Module
-            </button>
-          )}
+        <div className="cm-empty-state">
+          <p>No modules created yet.</p>
+          {/* Add module button removed - use LPEditorPage instead */}
         </div>
       ) : (
         modules.map((module, mIdx) => (
-          <div key={module.id} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '20px', marginBottom: '20px', background: '#fff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3>Module {mIdx + 1}: {module.title}</h3>
+          <div key={module.id} className="cm-module-card">
+            <div className="cm-module-header">
+              <h3 className="cm-module-title">Module {mIdx + 1}: {module.title}</h3>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" onClick={() => openInspector('MODULE', module)} style={{ padding: '4px 10px', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
+              <div className="cm-actions-cluster">
+                <button type="button" onClick={() => openInspector('MODULE', module)} className="cm-btn-sm cm-btn-view">
                   👁️ View Details
                 </button>
 
-                {isOwnerOrAdmin && (
-                  <>
-                    <button type="button" onClick={() => openEditModuleModal(module)} style={{ padding: '4px 10px', background: '#fef3c7', color: '#b45309', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
-                      ✏️ Edit Module
-                    </button>
-                    <button type="button" onClick={() => handleDeleteModule(module.id)} style={{ padding: '4px 10px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}>
-                      🗑️ Delete
-                    </button>
-                    <button type="button" onClick={() => { resetFormFields(); setTargetModuleId(module.id); setTargetLessonId(null); setActiveModal('LESSON'); }} style={{ padding: '4px 10px', background: '#e0e7ff', color: '#4338ca', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}>
-                      + Add Lesson
-                    </button>
-                  </>
-                )}
+                {/* Edit/Delete module buttons removed - use LPEditorPage instead */}
               </div>
             </div>
 
-            <p style={{ fontSize: '13px', color: '#475569', marginTop: '4px' }}>{module.description || 'No module description.'}</p>
+            <p className="cm-module-description">{module.description || 'No module description.'}</p>
 
             {/* MODULE-LEVEL ASSIGNMENTS */}
             {module.assignments?.filter((a: any) => !a.lessonId).length > 0 && (
-              <div style={{ marginTop: '16px', padding: '16px', background: '#f5f3ff', border: '1px dashed #c4b5fd', borderRadius: '6px' }}>
-                <h4 style={{ margin: '0 0 12px 0', color: '#5b21b6', fontSize: '14px' }}>📌 Module-Level Assignments</h4>
+              <div className="cm-module-assignments-box">
+                <h4 className="cm-assignments-title">📌 Module-Level Assignments</h4>
                 {module.assignments.filter((a: any) => !a.lessonId).map((task: any) => (
-                  <div key={task.id} style={{ padding: '10px 12px', background: '#fff', border: '1px solid #ddd6fe', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div>
-                      <strong style={{ fontSize: '13px', color: '#4c1d95' }}>{task.title}</strong>
-                      <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '10px' }}>
+                  <div key={task.id} className="cm-task-item">
+                    <div className="cm-task-info">
+                      <strong>{task.title}</strong>
+                      <span className="cm-task-meta">
                         Type: {task.assignmentType} | Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No Due Date'}
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button type="button" onClick={() => openInspector('TASK', task)} style={{ padding: '3px 8px', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                    <div className="cm-actions-cluster">
+                      <button type="button" onClick={() => openInspector('TASK', task)} className="cm-btn-sm cm-btn-view">
                         👁️ View
                       </button>
-                      {isOwnerOrAdmin && (
-                        <>
-                          <button type="button" onClick={() => openEditTaskModal(task, module.id)} style={{ padding: '3px 8px', background: '#e0e7ff', color: '#3730a3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
-                            ✏️ Edit
-                          </button>
-                          <button type="button" onClick={() => handleDeleteTask(task.id)} style={{ padding: '3px 8px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
-                            🗑️ Delete
-                          </button>
-                        </>
-                      )}
+                      {/* Edit/Delete task buttons removed - use LPEditorPage instead */}
                     </div>
                   </div>
                 ))}
@@ -476,58 +455,37 @@ export function CurriculumManager({
             )}
 
             {/* LESSONS TREE */}
-            <div style={{ marginLeft: '16px', marginTop: '16px' }}>
+            <div className="cm-lesson-tree-wrapper">
               {module.lessons?.map((lesson: any, lIdx: number) => (
-                <div key={lesson.id} style={{ background: '#f8fafc', padding: '16px', borderRadius: '6px', marginBottom: '12px', borderLeft: '4px solid #3b82f6' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <h4 style={{ margin: '0' }}>📖 Lesson {lesson.displayOrder || lIdx + 1}: {lesson.title}</h4>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button type="button" onClick={() => openInspector('LESSON', lesson)} style={{ padding: '4px 8px', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                <div key={lesson.id} className="cm-lesson-item">
+                  <div className="cm-lesson-header">
+                    <h4 className="cm-lesson-title">📖 Lesson {lesson.displayOrder || lIdx + 1}: {lesson.title}</h4>
+                    <div className="cm-actions-cluster">
+                      <button type="button" onClick={() => openInspector('LESSON', lesson)} className="cm-btn-sm cm-btn-view">
                         👁️ View
                       </button>
 
-                      {isOwnerOrAdmin && (
-                        <>
-                          <button type="button" onClick={() => openEditLessonModal(lesson)} style={{ padding: '4px 8px', background: '#fef3c7', color: '#b45309', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
-                            ✏️ Edit
-                          </button>
-                          <button type="button" onClick={() => handleDeleteLesson(lesson.id)} style={{ padding: '4px 8px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
-                            🗑️ Delete
-                          </button>
-                          <button type="button" onClick={() => { resetFormFields(); setTargetLessonId(lesson.id); setTargetModuleId(module.id); setActiveModal('TASK'); }} style={{ padding: '4px 8px', background: '#dcfce7', color: '#15803d', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 600 }}>
-                            + Create Assignment
-                          </button>
-                        </>
-                      )}
+                      {/* Edit/Delete lesson buttons removed - use LPEditorPage instead */}
                     </div>
                   </div>
 
-                  {lesson.description && <p style={{ fontSize: '13px', color: '#475569', marginTop: '6px', margin: '6px 0 0 0' }}>{lesson.description}</p>}
+                  {lesson.description && <p className="cm-lesson-description">{lesson.description}</p>}
 
                   {/* TASKS LIST */}
                   {lesson.assignments?.map((task: any) => (
-                    <div key={task.id} style={{ marginTop: '10px', padding: '10px 12px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={task.id} className="cm-lesson-task-item">
                       <div>
-                        <strong style={{ fontSize: '13px' }}>📝 {task.title}</strong>
-                        <span style={{ fontSize: '11px', color: '#64748b', marginLeft: '10px' }}>
+                        <strong>📝 {task.title}</strong>
+                        <span className="cm-lesson-task-meta">
                           Type: {task.assignmentType} | Max Score: {task.maxScore} | Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No Due Date'}
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button type="button" onClick={() => openInspector('TASK', task)} style={{ padding: '3px 8px', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                      <div className="cm-actions-cluster">
+                        <button type="button" onClick={() => openInspector('TASK', task)} className="cm-btn-sm cm-btn-view">
                           👁️ Context View
                         </button>
-                        {isOwnerOrAdmin && (
-                          <>
-                            <button type="button" onClick={() => openEditTaskModal(task, module.id, lesson.id)} style={{ padding: '3px 8px', background: '#e0e7ff', color: '#3730a3', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
-                              ✏️ Edit Task
-                            </button>
-                            <button type="button" onClick={() => handleDeleteTask(task.id)} style={{ padding: '3px 8px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
-                              🗑️ Delete
-                            </button>
-                          </>
-                        )}
+                        {/* Edit/Delete task buttons removed - use LPEditorPage instead */}
                       </div>
                     </div>
                   ))}
@@ -540,10 +498,10 @@ export function CurriculumManager({
 
       {/* ✏️ CREATE / EDIT FORM MODAL */}
       {isOwnerOrAdmin && (activeModal === 'MODULE' || activeModal === 'EDIT_MODULE' || activeModal === 'LESSON' || activeModal === 'EDIT_LESSON' || activeModal === 'TASK' || activeModal === 'EDIT_TASK') && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', width: (activeModal === 'TASK' || activeModal === 'EDIT_TASK') ? '650px' : '500px', padding: '24px', borderRadius: '8px', maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="cm-modal-overlay">
+          <div className={`cm-modal-content ${(activeModal === 'TASK' || activeModal === 'EDIT_TASK') ? 'wide' : ''}`}>
             <h3>{activeModal.replace('_', ' ')}</h3>
-            <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+            <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
               
               {/* 🌟 LEARNING PATH CONTEXT — skipped for External */}
               {activeModal.includes('TASK') && formAssignmentType !== 'External' && (
@@ -773,7 +731,7 @@ export function CurriculumManager({
                         <strong style={{ fontSize: '13px', color: '#1e293b' }}>Subjective Questions ({subjectiveQuestions.length})</strong>
                         <button
                           type="button"
-                          onClick={() => setSubjectiveQuestions(prev => [...prev, { id: `sub-${Date.now()}`, questionText: '', maxPoints: 10 }])}
+                          onClick={() => setSubjectiveQuestions(prev => [...prev, { id: `sub-${Date.now()}`, questionText: '', maxPoints: 10, dependentLessonIds: [] }])}
                           style={{ padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
                         >
                           + Add Question
@@ -805,6 +763,38 @@ export function CurriculumManager({
                               <button type="button" onClick={() => setSubjectiveQuestions(prev => prev.filter((_, i) => i !== idx))} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>🗑️</button>
                             )}
                           </div>
+                          <div style={{ marginTop: '10px' }}>
+                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>AI Grounding Dependencies (Lessons)</label>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                              {(modules.find(m => m.id === targetModuleId)?.lessons || []).length === 0 && (
+                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>No lessons available in this module to ground on.</span>
+                              )}
+                              {(modules.find(m => m.id === targetModuleId)?.lessons || []).map((lesson: any) => {
+                                const isChecked = (q.dependentLessonIds || []).includes(lesson.id);
+                                return (
+                                  <label key={lesson.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: '4px 8px', background: isChecked ? '#e0e7ff' : '#f1f5f9', border: `1px solid ${isChecked ? '#818cf8' : '#cbd5e1'}`, borderRadius: '4px', cursor: 'pointer' }}>
+                                    <input 
+                                      type="checkbox" 
+                                      checked={isChecked} 
+                                      onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setSubjectiveQuestions(prev => prev.map((item, i) => {
+                                          if (i !== idx) return item;
+                                          const deps = new Set(item.dependentLessonIds || []);
+                                          if (checked) deps.add(lesson.id);
+                                          else deps.delete(lesson.id);
+                                          return { ...item, dependentLessonIds: Array.from(deps) };
+                                        }));
+                                      }}
+                                      style={{ cursor: 'pointer', margin: 0 }}
+                                    />
+                                    {lesson.title}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+
                         </div>
                       ))}
                     </div>
@@ -843,9 +833,9 @@ export function CurriculumManager({
                 </>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
-                <button type="button" onClick={resetFormFields} style={{ padding: '8px 16px', background: '#cbd5e1', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-                <button type="submit" disabled={isSubmitting} style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+              <div className="cm-form-actions">
+                <button type="button" onClick={resetFormFields} className="cm-btn-back" style={{ marginBottom: 0 }}>Cancel</button>
+                <button type="submit" disabled={isSubmitting} className="cm-btn-primary">
                   {isSubmitting ? 'Saving...' : 'Save Updates'}
                 </button>
               </div>
@@ -856,8 +846,8 @@ export function CurriculumManager({
 
       {/* 👁️ VIEW INSPECTOR DETAILS MODAL */}
       {activeModal === 'VIEW_INSPECTOR' && inspectItem && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', width: '600px', padding: '26px', borderRadius: '16px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 80px rgba(0,0,0,0.22)' }}>
+        <div className="cm-modal-overlay">
+          <div className="cm-modal-content wide">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
               <div>
                 <span style={{ fontSize: '11px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -875,7 +865,7 @@ export function CurriculumManager({
                 <div>
                   <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '4px' }}>Description:</strong>
                   <div style={{ fontSize: '13px', color: '#1e293b', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }}>
-                    {inspectItem.data.description}
+                    <RichText content={inspectItem.data.description} emptyStateText="No description" />
                   </div>
                 </div>
               )}
@@ -884,7 +874,7 @@ export function CurriculumManager({
                 <div>
                   <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '4px' }}>Instructions:</strong>
                   <div style={{ fontSize: '13px', color: '#0c4a6e', background: '#f0f9ff', padding: '12px', borderRadius: '8px', border: '1px solid #bae6fd', whiteSpace: 'pre-wrap' }}>
-                    {inspectItem.data.instructions}
+                    <RichText content={inspectItem.data.instructions} emptyStateText="No instructions" />
                   </div>
                 </div>
               )}
@@ -910,7 +900,7 @@ export function CurriculumManager({
                   {inspectItem.data.mcqConfig.questions.map((q: any, qIdx: number) => (
                     <div key={qIdx} style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
                       <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>
-                        Q{qIdx + 1}: {q.questionText || q.question} <span style={{ color: '#4f46e5' }}>({q.points || q.maxPoints || 10} pts)</span>
+                        <div style={{ display: 'inline-block' }}><RichText content={q.questionText || q.question || ''} emptyStateText="" /></div> <span style={{ color: '#4f46e5' }}>({q.points || q.maxPoints || 10} pts)</span>
                       </div>
                       {q.options?.length > 0 && (
                         <div style={{ marginTop: '6px', fontSize: '12px', color: '#475569' }}>
@@ -924,7 +914,7 @@ export function CurriculumManager({
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
-              <button onClick={() => resetFormFields()} style={{ padding: '8px 20px', background: '#f1f5f9', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', color: '#475569' }}>
+              <button onClick={() => resetFormFields()} className="cm-btn-back" style={{ marginBottom: 0 }}>
                 Close Inspector
               </button>
             </div>

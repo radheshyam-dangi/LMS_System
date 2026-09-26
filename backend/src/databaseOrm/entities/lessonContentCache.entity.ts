@@ -4,13 +4,20 @@ import { LessonEntity } from './lesson.entity';
 
 @Entity('LessonContentCache')
 export class LessonContentCacheEntity extends BaseEntity {
-  @Index({ unique: true })
   @Column({ type: 'uuid', name: 'lesson_id' })
+  @Index({ unique: true })
   lessonId: string;
 
   @OneToOne(() => LessonEntity, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'lesson_id' })
   lesson: LessonEntity;
+
+  @Column({ type: 'integer', name: 'content_version', default: 1 })
+  contentVersion: number;
+
+  @Column({ type: 'text', name: 'source_hash', nullable: true })
+  sourceHash: string;
+
 
   /** Plain text extracted from the lesson's rich-text description */
   @Column({ type: 'text', name: 'description_text', nullable: true })
@@ -38,7 +45,7 @@ export class LessonContentCacheEntity extends BaseEntity {
   @Column({
     type: 'varchar',
     name: 'extraction_status',
-    default: 'pending',
+    default: 'PENDING',
   })
   extractionStatus: string;
 

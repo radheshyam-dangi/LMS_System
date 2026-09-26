@@ -126,7 +126,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: 32px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .learning-path-card-item {
@@ -196,7 +196,8 @@
   font-weight: 600;
 }
 
-.diff-beginner {
+.diff-beginner,
+.diff-basic {
   background: #dcfce7;
   color: #15803d;
 }
@@ -555,4 +556,21 @@
 
 .modal-confirm-btn:hover {
   background-color: #4338ca;
+}
+
+.btn-card-action-delete {
+  padding: 8px 10px;
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-card-action-delete:hover {
+  background: #fecaca;
+  color: #b91c1c;
 }

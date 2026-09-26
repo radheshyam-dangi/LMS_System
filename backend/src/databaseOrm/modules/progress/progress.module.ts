@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AssignmentModule } from '../assignment/assignment.module';
 import { ProgressController } from './progress.controller';
 import { ProgressEntityService } from './progress.service';
 import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
@@ -12,6 +13,7 @@ import { LearningPathEntity } from '../../entities/learningPath.entity';
 
 @Module({
   imports: [
+    forwardRef(() => AssignmentModule),
     TypeOrmModule.forFeature([
       UserLessonProgressEntity,
       UserResourceVisitEntity,

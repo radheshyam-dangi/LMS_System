@@ -7,6 +7,7 @@ import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.
 import { TraineeAssignmentEntity } from '../../entities/traineeAssignment.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { ModuleEntity } from '../../entities/module.entity';
+import { QuestionLessonDependencyEntity } from '../../entities/questionLessonDependency.entity';
 import { NotificationModule } from '../notification/notification.module';
 // B1: Import AiEvaluationModule to enable proper DI injection
 import { AiEvaluationModule } from '../aiEvaluation/aiEvaluation.module';
@@ -19,6 +20,7 @@ import { AiEvaluationModule } from '../aiEvaluation/aiEvaluation.module';
       TraineeAssignmentEntity,
       LessonEntity,
       ModuleEntity,
+      QuestionLessonDependencyEntity,
     ]),
     forwardRef(() => NotificationModule),
     // B1: forwardRef to avoid circular dependency with AiEvaluationModule

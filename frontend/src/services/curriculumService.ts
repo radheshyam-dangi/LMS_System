@@ -236,6 +236,14 @@ export const curriculumService = {
     return response.data;
   },
 
+  fetchSubmissionDetails: async (token: string, submissionId: string, activeRole?: string) => {
+    const response = await axios.get(
+      `${API_BASE_URL}/assignments/submissions/${submissionId}`,
+      getAuthHeaders(token, activeRole)
+    );
+    return response.data;
+  },
+
   evaluateSubmission: async (
     submissionId: string,
     payload: { score: number; feedback: string; status?: 'Approved' | 'Rejected' | 'Evaluated' },

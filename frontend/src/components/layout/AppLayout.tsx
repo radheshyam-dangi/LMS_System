@@ -15,12 +15,61 @@ import {
   Bell,
   Trash2,
   Menu,
-  X
+  X,
+  ChevronDown
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
 import { GlobalSearchBar } from './GlobalSearchBar';
+
+const CustomRoleSwitcher = ({ effectiveRole, availableRoles, onRoleChange }: any) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="custom-role-switcher" ref={ref} style={{ position: 'relative' }}>
+      <button 
+        className="role-select-btn" 
+        onClick={() => setIsOpen(!isOpen)}
+        aria-label="Switch role"
+      >
+        <span>{effectiveRole}</span>
+        <ChevronDown size={14} className={`chevron-icon ${isOpen ? 'open' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="role-dropdown-menu">
+     
+          {availableRoles.map((role: string) => (
+            <button
+              key={role}
+              className={`role-dropdown-item ${role === effectiveRole ? 'active' : ''}`}
+              onClick={() => {
+                onRoleChange(role);
+                setIsOpen(false);
+              }}
+            >
+              {role}
+              {role === effectiveRole && (
+                <div className="active-indicator" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 type AppLayoutProps = {
   activeRole: RoleName;
@@ -103,6 +152,7 @@ export function AppLayout({
   const location = useLocation();
   const { notifications, markAsRead, markAllRead, unreadCount, deleteNotification } = useNotifications();
   const [panelOpen, setPanelOpen] = useState(false);
+  const [hoveredNotificationId, setHoveredNotificationId] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const count = Math.max(notificationCount, unreadCount);
 
@@ -158,8 +208,8 @@ export function AppLayout({
     <div className="dashboard-shell">
       {/* Mobile Backdrop */}
       {isMobileMenuOpen && (
-        <div 
-          className="mobile-sidebar-backdrop hidden-desktop" 
+        <div
+          className="mobile-sidebar-backdrop hidden-desktop"
           onClick={() => setIsMobileMenuOpen(false)}
           style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 40 }}
         />
@@ -263,8 +313,8 @@ export function AppLayout({
       <section className="workspace">
         <header className="workspace-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <button 
-              className="hidden-desktop hover-effect focus-ring touch-target" 
+            <button
+              className="hidden-desktop hover-effect focus-ring touch-target"
               onClick={() => setIsMobileMenuOpen(true)}
               style={{ background: 'none', border: 'none', padding: 0, color: '#475569', display: 'flex', alignItems: 'center' }}
             >
@@ -276,24 +326,15 @@ export function AppLayout({
             <GlobalSearchBar activeRole={effectiveRole} />
 
             {showRoleSwitcher && (
-              <div className="role-selector-wrap">
-                <select
-                  aria-label="Switch role"
-                  className="role-select"
-                  value={effectiveRole}
-                  onChange={(event) => onRoleChange(event.target.value as RoleName)}
-                >
-                  {availableRoles.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <CustomRoleSwitcher
+                effectiveRole={effectiveRole}
+                availableRoles={availableRoles}
+                onRoleChange={onRoleChange}
+              />
             )}
 
-            <div 
-              ref={panelRef} 
+            <div
+              ref={panelRef}
               style={{ position: 'relative' }}
               onMouseEnter={() => setPanelOpen(true)}
               onMouseLeave={() => setPanelOpen(false)}
@@ -345,8 +386,9 @@ export function AppLayout({
                     position: 'absolute',
                     right: 0,
                     top: '110%',
-                    width: 360,
+                    width: 420,
                     maxHeight: 450,
+                    overflowX: 'hidden',
                     overflowY: 'auto',
                     background: '#fff',
                     border: '1px solid #e2e8f0',
@@ -411,8 +453,14 @@ export function AppLayout({
                         transition: 'background 0.2s',
                         gap: '12px'
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = n.isRead ? '#f8fafc' : '#e0f2fe')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = n.isRead ? '#fff' : '#f0f9ff')}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = n.isRead ? '#f8fafc' : '#e0f2fe';
+                        setHoveredNotificationId(n.id);
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = n.isRead ? '#fff' : '#f0f9ff';
+                        setHoveredNotificationId(null);
+                      }}
                     >
                       <div style={{ flex: 1 }}>
                         <div
@@ -426,14 +474,15 @@ export function AppLayout({
                           {n.title}
                         </div>
                         {n.message && (
-                          <div style={{ 
-                            fontSize: 12, 
-                            color: n.isRead ? '#94a3b8' : '#64748b', 
+                          <div style={{
+                            fontSize: 12,
+                            color: n.isRead ? '#94a3b8' : '#64748b',
                             marginTop: 4,
                             display: '-webkit-box',
-                            WebkitLineClamp: 2,
+                            WebkitLineClamp: hoveredNotificationId === n.id ? 'unset' : 2,
                             WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden'
+                            overflow: 'hidden',
+                            wordBreak: 'break-word'
                           }}>
                             {n.message}
                           </div>
@@ -466,7 +515,7 @@ export function AppLayout({
                       </button>
                     </div>
                   ))}
-                  
+
                   {notifications.length > 0 && (
                     <button
                       type="button"

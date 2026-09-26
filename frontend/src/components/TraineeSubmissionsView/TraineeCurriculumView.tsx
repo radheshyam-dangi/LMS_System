@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { curriculumService } from '../../services/curriculumService';
+import { RichText } from '../common/RichText';
 
 interface TraineeCurriculumViewProps {
   learningPathId: string;
@@ -40,7 +41,7 @@ function getTaskState(task: any): {
   if (!isRejected && pct >= 35) {
     return { status: 'needs_resubmit_orange', percentage: pct, score: submission.score, maxScore, label: `🔄 Resubmit — ${pct}% (improve score)`, color: '#92400e', bg: '#fef3c7', border: '#fcd34d' };
   }
-  return { status: 'needs_resubmit_red', percentage: pct, score: submission.score, maxScore, label: `⚠️ Resubmit — ${pct}% (below 35%${isRejected ? ', Rejected' : ''})`, color: '#b91c1c', bg: '#fee2e2', border: '#fca5a5' };
+  return { status: 'needs_resubmit_red', percentage: pct, score: submission.score, maxScore, label: `⚠️ Resubmit — ${pct}% (below 35%${isRejected ? ', Needs Improvement' : ''})`, color: '#b91c1c', bg: '#fee2e2', border: '#fca5a5' };
 }
 
 export function TraineeCurriculumView({
@@ -254,7 +255,7 @@ export function TraineeCurriculumView({
           {modules.map((module: any, mIdx: number) => {
             const isOpen = expandedModules.has(module.id);
             const lessons = module.lessons || [];
-            const allTasks = lessons.flatMap((l: any) => l.assignments || []);
+            const allTasks = lessons.flatMap((l: any) => l.assignments || []).concat(module.assignments || []);
             const moduleDone = allTasks.filter((t: any) => getTaskState(t).status === 'accepted_high').length;
             const moduleTotal = allTasks.length;
             const modulePct = moduleTotal > 0 ? Math.round((moduleDone / moduleTotal) * 100) : 0;
@@ -295,6 +296,44 @@ export function TraineeCurriculumView({
                 {/* Module body */}
                 {isOpen && (
                   <div style={{ padding: '18px 22px', background: '#fafcff' }}>
+                    {/* Module Description and Resources */}
+                    {(module.description || (module.resources && module.resources.length > 0)) && (
+                      <div style={{ marginBottom: '20px', padding: '16px', background: '#fff', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                        {module.description && (
+                          <div style={{ marginBottom: module.resources?.length > 0 ? '16px' : '0' }}>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>
+                              Module Description
+                            </div>
+                            <div style={{ fontSize: '13px', color: '#334155', lineHeight: 1.6 }}>
+                              <RichText content={module.description} />
+                            </div>
+                          </div>
+                        )}
+                        {module.resources && module.resources.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.05em' }}>
+                              Module Resources
+                            </div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                              {module.resources.filter((r: any) => !r.lessonId && !r.lesson).map((res: any, idx: number) => (
+                                <a
+                                  key={res.id || idx}
+                                  href={res.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ padding: '8px 14px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '8px', textDecoration: 'none', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+                                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.background = '#f1f5f9'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+                                >
+                                  🔗 {res.title}
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {lessons.map((lesson: any, lIdx: number) => (
                       <div key={lesson.id} style={{ marginBottom: '16px', border: '1px solid #f1f5f9', borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
                         {/* Lesson header */}

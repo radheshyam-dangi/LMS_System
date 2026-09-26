@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from "recharts";
 import "./LearningPaths.css";
 import { learningPathService } from "../../services/learningPathService";
@@ -46,31 +48,33 @@ const DescriptionModal = ({ description, onClose }: { description: string; onClo
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  return (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }}>
+  const modalContent = (
+    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(15, 15, 20, 0.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }}>
       <div 
-        className="modal-container" 
+        className="modal-content" 
         onClick={(e) => e.stopPropagation()} 
         role="dialog" 
         aria-modal="true"
         aria-labelledby="desc-modal-title"
-        style={{ width: '90%', maxWidth: '600px', maxHeight: '90dvh', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}
+        style={{ zIndex: 1001, width: '90vw', maxWidth: '480px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}
       >
-        <div style={{ padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
           <h2 id="desc-modal-title" style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#1e293b' }}>Full Description</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
         </div>
-        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+        <div style={{ padding: '24px', flex: 1 }}>
           <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: '#334155', fontSize: '15px', lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'break-word' }}>
             {description}
           </p>
         </div>
-        <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', position: 'sticky', bottom: 0, background: '#fff', zIndex: 10 }}>
           <button onClick={onClose} style={{ padding: '10px 20px', background: '#f1f5f9', color: '#475569', borderRadius: '8px', border: 'none', fontWeight: 600, cursor: 'pointer' }}>Close</button>
         </div>
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 const ExpandableDescription = ({ description }: { description: string }) => {
@@ -78,6 +82,11 @@ const ExpandableDescription = ({ description }: { description: string }) => {
   const [isOverflowing, setIsOverflowing] = useState(false);
   const textRef = React.useRef<HTMLParagraphElement>(null);
   const buttonRef = React.useRef<HTMLButtonElement>(null);
+
+  const plainTextDescription = React.useMemo(() => {
+    if (!description) return "";
+    return description.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
+  }, [description]);
 
   useEffect(() => {
     const el = textRef.current;
@@ -88,7 +97,7 @@ const ExpandableDescription = ({ description }: { description: string }) => {
         setIsOverflowing(false);
       }
     }
-  }, [description]);
+  }, [plainTextDescription]);
 
   useEffect(() => {
     if (!isModalOpen && buttonRef.current) {
@@ -97,7 +106,7 @@ const ExpandableDescription = ({ description }: { description: string }) => {
     }
   }, [isModalOpen]);
 
-  if (!description) return null;
+  if (!plainTextDescription) return null;
 
   return (
     <div className="expandable-description-container" onClick={(e) => e.stopPropagation()}>
@@ -105,7 +114,7 @@ const ExpandableDescription = ({ description }: { description: string }) => {
         ref={textRef}
         className="card-description-string"
       >
-        {description}
+        {plainTextDescription}
       </p>
       {isOverflowing && (
         <button 
@@ -119,7 +128,7 @@ const ExpandableDescription = ({ description }: { description: string }) => {
       )}
       
       {isModalOpen && (
-        <DescriptionModal description={description} onClose={() => setIsModalOpen(false)} />
+        <DescriptionModal description={plainTextDescription} onClose={() => setIsModalOpen(false)} />
       )}
     </div>
   );
@@ -152,6 +161,7 @@ export function LearningPathsSection({
   accessToken,
   onNavigateToModules,
 }: LearningPathsSectionProps) {
+  const navigate = useNavigate();
   const [paths, setPaths] = useState<LearningPath[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -169,14 +179,10 @@ export function LearningPathsSection({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Modal States
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedPathForTrainees, setSelectedPathForTrainees] = useState<string | null>(null);
   const [lpTraineesProgress, setLpTraineesProgress] = useState<any>(null);
   const [isLoadingLpProgress, setIsLoadingLpProgress] = useState(false);
   const [expandedTraineeId, setExpandedTraineeId] = useState<string | null>(null);
-  const [editingPathId, setEditingPathId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Assign Trainee Modal States
@@ -286,73 +292,9 @@ export function LearningPathsSection({
     }
   }, [accessToken, isAdmin, isTrainer]);
 
-  // Open Edit Modal & Populate Form
+  // Open Edit Route
   const handleOpenEditModal = (path: LearningPath) => {
-    setEditingPathId(path.id);
-    setFormName(path.title || path.name || "");
-    setFormDifficulty(path.difficulty || "Intermediate");
-    setFormStatus(path.status || "Active");
-    setFormDuration(path.duration || "12 weeks");
-    setFormImageUrl(path.imageUrl || "");
-    setFormDefaultLessonLocking(path.lockLessons !== false);
-    setFormDefaultTaskLocking(path.lockTasks !== false);
-
-    let currentTags = "";
-    if (Array.isArray(path.skillsTags)) {
-      currentTags = path.skillsTags.join(", ");
-    } else if (typeof path.skillsTags === "string") {
-      currentTags = path.skillsTags;
-    }
-    setFormTags(currentTags);
-    setIsEditModalOpen(true);
-  };
-
-  // Submit Edit Form
-  const handleUpdatePathSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingPathId || !formName.trim() || isSubmitting) return;
-
-    setIsSubmitting(true);
-    const tagsArray = formTags
-      .split(",")
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
-
-    try {
-      const payload = {
-        name: formName,
-        title: formName,
-        description: formDescription,
-        difficulty: formDifficulty,
-        status: formStatus,
-        duration: formDuration,
-        imageUrl: formImageUrl.trim() || undefined,
-        skillsTags: tagsArray,
-        lockLessons: formDefaultLessonLocking,
-        lockTasks: formDefaultTaskLocking,
-      };
-
-      const updatedPath = await learningPathService.updatePath(
-        editingPathId,
-        payload,
-        accessToken,
-      );
-
-      setPaths((prev) =>
-        prev.map((p) =>
-          p.id === editingPathId
-            ? { ...p, ...updatedPath, status: formStatus }
-            : p,
-        ),
-      );
-
-      setIsEditModalOpen(false);
-      setEditingPathId(null);
-    } catch (err: any) {
-      alert(err.message ?? "Failed to update Learning Path.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    navigate(`/learning-paths/${path.id}/edit`);
   };
 
   // Open Assign Modal
@@ -449,13 +391,20 @@ export function LearningPathsSection({
     });
   }, [allTrainees, traineeSearchQuery]);
 
-  const handleDeletePath = async (pathId: string, pathTitle: string) => {
-    if (!window.confirm(`Are you sure you want to delete "${pathTitle}"?`))
-      return;
+  const handleDeletePath = async (path: LearningPath) => {
+    const pathTitle = path.title || path.name || "Untitled Track";
+    const modulesCount = path.modules?.length || 0;
+    const lessonsCount = path.modules?.reduce((acc: number, m: any) => acc + (m.lessons?.length || 0), 0) || 0;
+    const assignmentsCount = path.modules?.reduce((acc: number, m: any) => acc + (m.assignments?.length || 0) + (m.lessons?.reduce((a: number, l: any) => a + (l.assignments?.length || 0), 0) || 0), 0) || 0;
+    const traineesCount = path.assignedToTraineeIds?.length || 0;
+    
+    const message = `Delete "${pathTitle}"?\n\nThis will permanently remove:\n- ${modulesCount} Modules\n- ${lessonsCount} Lessons\n- ${assignmentsCount} Assignments\n- Trainee progress for ${traineesCount} enrolled users\n\nThis action cannot be undone.`;
+
+    if (!window.confirm(message)) return;
 
     try {
-      await learningPathService.deletePath(pathId, accessToken);
-      setPaths((prev) => prev.filter((p) => p.id !== pathId));
+      await learningPathService.deletePath(path.id, accessToken);
+      setPaths((prev) => prev.filter((p) => p.id !== path.id));
     } catch (err: any) {
       alert(err.message ?? "Failed to delete Learning Path.");
     }
@@ -483,49 +432,6 @@ export function LearningPathsSection({
     });
   }, [paths, activeTabFilter, isTrainee, currentUser.id, progressSummary]);
 
-  const handleCreatePathSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formName.trim() || isSubmitting) return;
-
-    setIsSubmitting(true);
-    const tagsArray = formTags
-      .split(",")
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
-
-    try {
-      const payload = {
-        name: formName,
-        title: formName,
-        description: formDescription,
-        difficulty: formDifficulty,
-        status: formStatus,
-        duration: formDuration,
-        imageUrl: formImageUrl.trim() || undefined,
-        skillsTags: tagsArray.length > 0 ? tagsArray : ["General"],
-        lockLessons: formDefaultLessonLocking,
-        lockTasks: formDefaultTaskLocking,
-      };
-
-      const savedPath = await learningPathService.createPath(
-        payload,
-        accessToken,
-      );
-      setPaths((prev) => [savedPath, ...prev]);
-
-      setFormName("");
-      setFormDescription("");
-      setFormImageUrl("");
-      setFormTags("");
-      setFormDefaultLessonLocking(false);
-      setFormDefaultTaskLocking(false);
-      setIsCreateModalOpen(false);
-    } catch (err: any) {
-      alert(err.message ?? "Failed to create learning path.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const currentTrainerName = selectedPath?.createdBy?.firstName
     ? `${selectedPath.createdBy.firstName} ${selectedPath.createdBy.lastName || ""}`
@@ -544,7 +450,7 @@ export function LearningPathsSection({
           <button
             type="button"
             className={isTrainer ? "fab-trainer-primary" : "btn-create-learning-path"}
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={() => navigate('/learning-paths/new')}
           >
             + New Learning Path
           </button>
@@ -593,8 +499,80 @@ export function LearningPathsSection({
       ) : (
         <section className="learning-paths-grid-layout">
           {filteredPaths.length === 0 ? (
-            <div className="empty-paths-state-box">
-              No learning tracks available.
+            <div style={{
+              gridColumn: '1 / -1',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '80px 20px',
+              background: '#fff',
+              borderRadius: '24px',
+              border: '1px dashed #cbd5e1',
+              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)',
+              textAlign: 'center',
+              marginTop: '20px'
+            }}>
+              <div style={{
+                width: '80px',
+                height: '80px',
+                background: '#e0e7ff',
+                borderRadius: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '36px',
+                marginBottom: '24px',
+                color: '#4f46e5',
+                boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.2)'
+              }}>
+                🚀
+              </div>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '24px', fontWeight: 800, color: '#0f172a' }}>
+                No Learning Paths Found
+              </h3>
+              <p style={{ margin: '0 0 32px 0', fontSize: '15px', color: '#64748b', maxWidth: '400px', lineHeight: 1.6 }}>
+                {searchQuery || activeTabFilter !== 'All'
+                  ? "We couldn't find any learning paths matching your current filters. Try adjusting your search or clearing the filters."
+                  : isTrainee 
+                    ? "You haven't been assigned to any learning paths yet. Check back later!"
+                    : "It looks like there aren't any learning paths available right now. Once created, they will appear here."}
+              </p>
+              {!isTrainee && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/learning-paths/new')}
+                  style={{
+                    padding: '12px 28px',
+                    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '15px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                    transition: 'all 0.2s',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(99, 102, 241, 0.4)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.3)';
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  Create Learning Path
+                </button>
+              )}
             </div>
           ) : (
             filteredPaths.map((path) => {
@@ -741,7 +719,13 @@ export function LearningPathsSection({
                               {progressVal}% {progressVal === 100 ? "🎉 Complete" : ""}
                             </span>
                           </div>
-                          <div style={{ width: "100%", height: "8px", background: "#e2e8f0", borderRadius: "9999px", overflow: "hidden" }}>
+                          <div 
+                            style={{ width: "100%", height: "8px", background: "#e2e8f0", borderRadius: "9999px", overflow: "hidden" }}
+                            role="progressbar"
+                            aria-valuenow={progressVal}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                          >
                             <div
                               style={{
                                 width: `${progressVal}%`,
@@ -830,8 +814,8 @@ export function LearningPathsSection({
                         </button>
                       )}
 
-                      {/* 🌟 EDIT BUTTON: Visible ONLY when status is UPCOMING (!isPathActive) */}
-                      {isOwnerOrAdmin && !isPathActive && (
+                      {/* 🌟 EDIT BUTTON */}
+                      {isOwnerOrAdmin && (
                         <button
                           type="button"
                           style={{
@@ -845,7 +829,7 @@ export function LearningPathsSection({
                             fontSize: "12px",
                             whiteSpace: "nowrap",
                           }}
-                          onClick={() => handleOpenEditModal(path)}
+                          onClick={() => navigate('/learning-paths/' + path.id + '/edit')}
                           title="Edit Learning Path & Activate Status"
                         >
                           ✏️ Edit
@@ -856,22 +840,16 @@ export function LearningPathsSection({
                       {isOwnerOrAdmin && (
                         <button
                           type="button"
-                          style={{
-                            padding: "8px 10px",
-                            background: "#fee2e2",
-                            color: "#dc2626",
-                            border: "1px solid #fca5a5",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontSize: "12px",
-                            whiteSpace: "nowrap",
-                          }}
-                          onClick={() =>
-                            handleDeletePath(path.id, currentTitle)
-                          }
-                          title="Delete Track"
+                          className="btn-card-action-delete"
+                          onClick={() => handleDeletePath(path)}
+                          title="Delete Learning Path"
                         >
-                          🗑️
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', marginTop: '-2px' }}>
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            <line x1="10" y1="11" x2="10" y2="17"></line>
+                            <line x1="14" y1="11" x2="14" y2="17"></line>
+                          </svg>
                         </button>
                       )}
                     </div>
@@ -945,472 +923,182 @@ export function LearningPathsSection({
                     No trainees found.
                   </div>
                 ) : (
-                  filteredTrainees.map((trainee) => {
-                    const isAlreadyAssigned =
-                      selectedPath.assignedToTraineeIds?.includes(trainee.id);
-                    const isNewlyChecked = newlySelectedTraineeIds.includes(
-                      trainee.id,
-                    );
-                    const displayName =
-                      `${trainee.firstName || ""} ${trainee.lastName || ""}`.trim() ||
-                      trainee.name ||
-                      trainee.email;
+                  (() => {
+                    const sortByName = (a: any, b: any) => {
+                      const nameA = `${a.firstName || ""} ${a.lastName || ""}`.trim() || a.name || a.email || "";
+                      const nameB = `${b.firstName || ""} ${b.lastName || ""}`.trim() || b.name || b.email || "";
+                      return nameA.localeCompare(nameB);
+                    };
 
-                    return (
-                      <div
-                        key={trainee.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent  : "space-between",
-                          padding: "10px 12px",
-                          borderRadius: "6px",
-                          background: isAlreadyAssigned
-                            ? "#f1f5f9"
-                            : isNewlyChecked
-                              ? "#f0f9ff"
-                              : "#fff",
-                          border: "1px solid #e2e8f0",
-                          marginBottom: "6px",
-                          opacity: isAlreadyAssigned ? 0.75 : 1,
-                        }}
-                      >
-                        <label
+                    const available = filteredTrainees
+                      .filter(t => !selectedPath.assignedToTraineeIds?.includes(t.id))
+                      .sort(sortByName);
+                    const alreadyAssigned = filteredTrainees
+                      .filter(t => selectedPath.assignedToTraineeIds?.includes(t.id))
+                      .sort(sortByName);
+
+                    const renderTraineeRow = (trainee: any, isAlreadyAssigned: boolean) => {
+                      const isNewlyChecked = newlySelectedTraineeIds.includes(trainee.id);
+                      const displayName = `${trainee.firstName || ""} ${trainee.lastName || ""}`.trim() || trainee.name || trainee.email;
+
+                      return (
+                        <div
+                          key={trainee.id}
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: "12px",
-                            cursor: isAlreadyAssigned
-                              ? "not-allowed"
-                              : "pointer",
-                            flex: 1,
+                            justifyContent: "space-between",
+                            padding: "10px 12px",
+                            borderRadius: "6px",
+                            background: isAlreadyAssigned
+                              ? "#f1f5f9"
+                              : isNewlyChecked
+                                ? "#f0f9ff"
+                                : "#fff",
+                            border: "1px solid #e2e8f0",
+                            marginBottom: "6px",
+                            opacity: isAlreadyAssigned ? 0.75 : 1,
                           }}
                         >
-                          <input
-                            type="checkbox"
-                            disabled={isAlreadyAssigned}
-                            checked={isAlreadyAssigned || isNewlyChecked}
-                            onChange={() =>
-                              !isAlreadyAssigned &&
-                              handleToggleTrainee(trainee.id)
-                            }
+                          <label
                             style={{
-                              width: "16px",
-                              height: "16px",
-                              cursor: isAlreadyAssigned
-                                ? "not-allowed"
-                                : "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "12px",
+                              cursor: isAlreadyAssigned ? "not-allowed" : "pointer",
+                              flex: 1,
                             }}
-                          />
-                          <div>
-                            <div
+                          >
+                            <input
+                              type="checkbox"
+                              disabled={isAlreadyAssigned}
+                              checked={isAlreadyAssigned || isNewlyChecked}
+                              onChange={() => !isAlreadyAssigned && handleToggleTrainee(trainee.id)}
                               style={{
-                                fontSize: "14px",
+                                width: "16px",
+                                height: "16px",
+                                cursor: isAlreadyAssigned ? "not-allowed" : "pointer",
+                              }}
+                            />
+                            <div>
+                              <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>
+                                {displayName}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#64748b" }}>
+                                {trainee.email}
+                              </div>
+                            </div>
+                          </label>
+
+                          {isAlreadyAssigned ? (
+                            <span
+                              style={{
+                                fontSize: "11px",
                                 fontWeight: 600,
-                                color: "#1e293b",
+                                color: "#475569",
+                                background: "#e2e8f0",
+                                padding: "3px 8px",
+                                borderRadius: "4px",
                               }}
                             >
-                              {displayName}
-                            </div>
-                            <div style={{ fontSize: "12px", color: "#64748b" }}>
-                              {trainee.email}
-                            </div>
-                          </div>
-                        </label>
+                              ✓ Already Assigned{
+                                selectedPath.traineeAssigners?.[trainee.id]
+                                  ? ` (${`${selectedPath.traineeAssigners[trainee.id].firstName || ''} ${selectedPath.traineeAssigners[trainee.id].lastName || ''}`.trim() || selectedPath.traineeAssigners[trainee.id].email})`
+                                  : ''
+                              }
+                            </span>
+                          ) : isNewlyChecked ? (
+                            <span
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                color: "#15803d",
+                                background: "#dcfce7",
+                                padding: "3px 8px",
+                                borderRadius: "4px",
+                              }}
+                            >
+                              Selected
+                            </span>
+                          ) : null}
+                        </div>
+                      );
+                    };
 
-                        {isAlreadyAssigned ? (
-                          <span
-                            style={{
-                              fontSize: "11px",
-                              fontWeight: 600,
-                              color: "#475569",
-                              background: "#e2e8f0",
-                              padding: "3px 8px",
-                              borderRadius: "4px",
-                            }}
-                          >
-                            ✓ Already Assigned{
-                              selectedPath.traineeAssigners?.[trainee.id]
-                                ? ` (${`${selectedPath.traineeAssigners[trainee.id].firstName || ''} ${selectedPath.traineeAssigners[trainee.id].lastName || ''}`.trim() || selectedPath.traineeAssigners[trainee.id].email})`
-                                : ''
-                            }
-                          </span>
-                        ) : isNewlyChecked ? (
-                          <span
-                            style={{
-                              fontSize: "11px",
-                              fontWeight: 600,
-                              color: "#15803d",
-                              background: "#dcfce7",
-                              padding: "3px 8px",
-                              borderRadius: "4px",
-                            }}
-                          >
-                            Selected
-                          </span>
-                        ) : null}
-                      </div>
+                    return (
+                      <>
+                        {available.length > 0 && (
+                          <div style={{ marginBottom: alreadyAssigned.length > 0 ? "16px" : 0 }}>
+                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px", paddingLeft: "4px" }}>
+                              AVAILABLE TO ASSIGN ({available.length})
+                            </div>
+                            {available.map(t => renderTraineeRow(t, false))}
+                          </div>
+                        )}
+                        {alreadyAssigned.length > 0 && (
+                          <div>
+                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px", paddingLeft: "4px" }}>
+                              ALREADY ASSIGNED ({alreadyAssigned.length})
+                            </div>
+                            {alreadyAssigned.map(t => renderTraineeRow(t, true))}
+                          </div>
+                        )}
+                      </>
                     );
-                  })
+                  })()
                 )}
               </div>
             </div>
 
             <footer className="modal-popup-footer">
-              <span
-                style={{
-                  fontSize: "13px",
-                  color: "#64748b",
-                  marginRight: "auto",
-                  paddingLeft: "12px",
-                }}
-              >
-                {newlySelectedTraineeIds.length} New Trainee(s) Selected
-              </span>
-              <button
-                type="button"
-                className="modal-cancel-btn"
-                onClick={() => setIsAssignModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="modal-confirm-btn"
-                disabled={newlySelectedTraineeIds.length === 0 || isSubmitting}
-                onClick={handleConfirmAssignment}
-              >
-                {isSubmitting ? "Assigning..." : "Assign Selected"}
-              </button>
+              {allTrainees.length > 0 && allTrainees.every(t => selectedPath.assignedToTraineeIds?.includes(t.id)) ? (
+                <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "13px", color: "#64748b", margin: "0 auto", padding: "12px 0", fontWeight: 500 }}>
+                    All trainees are already assigned to this track.
+                  </span>
+                  <button
+                    type="button"
+                    className="modal-cancel-btn"
+                    onClick={() => setIsAssignModalOpen(false)}
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <span
+                    style={{
+                      fontSize: "13px",
+                      color: "#64748b",
+                      marginRight: "auto",
+                      paddingLeft: "12px",
+                      fontWeight: 500
+                    }}
+                  >
+                    {newlySelectedTraineeIds.length} Selected · {allTrainees.filter(t => selectedPath.assignedToTraineeIds?.includes(t.id)).length} Already Assigned · {allTrainees.length} Total
+                  </span>
+                  <button
+                    type="button"
+                    className="modal-cancel-btn"
+                    onClick={() => setIsAssignModalOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="modal-confirm-btn"
+                    disabled={newlySelectedTraineeIds.length === 0 || isSubmitting}
+                    onClick={handleConfirmAssignment}
+                  >
+                    {isSubmitting ? "Assigning..." : "Assign Selected"}
+                  </button>
+                </>
+              )}
             </footer>
           </div>
         </div>
       )}
 
-      {/* EDIT PATH MODAL */}
-      {isEditModalOpen && (
-        <div
-          className="modal-backdrop-blur-overlay"
-          onClick={() => !isSubmitting && setIsEditModalOpen(false)}
-        >
-          <div
-            className="modal-popup-container"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="modal-popup-header">
-              <h2>Edit Learning Path</h2>
-              <button
-                type="button"
-                disabled={isSubmitting}
-                className="modal-close-icon-btn"
-                onClick={() => setIsEditModalOpen(false)}
-              >
-                ×
-              </button>
-            </header>
-            <form
-              onSubmit={handleUpdatePathSubmit}
-              className="invite-form-body"
-            >
-              <div className="invite-form-field">
-                <label>Path Name *</label>
-                <input
-                  type="text"
-                  required
-                  disabled={isSubmitting}
-                  className="invite-form-input"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                />
-              </div>
-
-              <div
-                className="invite-form-row"
-                style={{ display: "flex", gap: "12px" }}
-              >
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Status *</label>
-                  <select
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    value={formStatus}
-                    onChange={(e) =>
-                      setFormStatus(e.target.value as PathStatus)
-                    }
-                  >
-                    <option value="Active">
-                      Active (Allows Trainee Assignment)
-                    </option>
-                    <option value="Upcoming">
-                      Upcoming (Hides Assign Button)
-                    </option>
-                  </select>
-                </div>
-
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Difficulty</label>
-                  <select
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    value={formDifficulty}
-                    onChange={(e) =>
-                      setFormDifficulty(e.target.value as PathDifficulty)
-                    }
-                  >
-                    <option value="Beginner">Beginner</option>
-                    <option value="Intermediate">Intermediate</option>
-                    <option value="Advanced">Advanced</option>
-                  </select>
-                </div>
-              </div>
-
-              <div
-                className="invite-form-row"
-                style={{ display: "flex", gap: "12px" }}
-              >
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Duration</label>
-                  <select
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    value={formDuration}
-                    onChange={(e) => setFormDuration(e.target.value)}
-                  >
-                    <option value="4 weeks">4 weeks</option>
-                    <option value="8 weeks">8 weeks</option>
-                    <option value="12 weeks">12 weeks</option>
-                    <option value="16 weeks">16 weeks</option>
-                  </select>
-                </div>
-
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Cover Image URL</label>
-                  <input
-                    type="url"
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    value={formImageUrl}
-                    onChange={(e) => setFormImageUrl(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 24, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 20 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                  <input type="checkbox" checked={formDefaultLessonLocking} onChange={e => setFormDefaultLessonLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
-                  Default Lesson Locking
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                  <input type="checkbox" checked={formDefaultTaskLocking} onChange={e => setFormDefaultTaskLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
-                  Default Task Locking
-                </label>
-              </div>
-
-              <div className="invite-form-field">
-                <label>Description</label>
-                <textarea
-                  disabled={isSubmitting}
-                  className="invite-form-input textarea-field"
-                  rows={3}
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                />
-              </div>
-
-              <div className="invite-form-field">
-                <label>Skills / Tags</label>
-                <input
-                  type="text"
-                  disabled={isSubmitting}
-                  className="invite-form-input"
-                  value={formTags}
-                  onChange={(e) => setFormTags(e.target.value)}
-                />
-              </div>
-
-              <footer className="modal-popup-footer">
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  className="modal-cancel-btn"
-                  onClick={() => setIsEditModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="modal-confirm-btn"
-                >
-                  {isSubmitting ? "Saving..." : "Save Updates"}
-                </button>
-              </footer>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* CREATE PATH MODAL */}
-      {isCreateModalOpen && (
-        <div
-          className="modal-backdrop-blur-overlay"
-          onClick={() => !isSubmitting && setIsCreateModalOpen(false)}
-        >
-          <div
-            className="modal-popup-container"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <header className="modal-popup-header">
-              <h2>Create Learning Path</h2>
-              <button
-                type="button"
-                disabled={isSubmitting}
-                className="modal-close-icon-btn"
-                onClick={() => setIsCreateModalOpen(false)}
-              >
-                ×
-              </button>
-            </header>
-            <form
-              onSubmit={handleCreatePathSubmit}
-              className="invite-form-body"
-            >
-              <div className="invite-form-field">
-                <label>Path Name *</label>
-                <input
-                  type="text"
-                  required
-                  disabled={isSubmitting}
-                  className="invite-form-input"
-                  placeholder="e.g. Cloud Engineering Fundamentals"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                />
-              </div>
-
-              <div
-                className="invite-form-row"
-                style={{ display: "flex", gap: "12px" }}
-              >
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Status *</label>
-                  <select
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    value={formStatus}
-                    onChange={(e) =>
-                      setFormStatus(e.target.value as PathStatus)
-                    }
-                  >
-                    <option value="Active">Active (Assignable)</option>
-                    <option value="Upcoming">Upcoming (Hidden Assign)</option>
-                  </select>
-                </div>
-
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Difficulty</label>
-                  <select
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    value={formDifficulty}
-                    onChange={(e) =>
-                      setFormDifficulty(e.target.value as PathDifficulty)
-                    }
-                  >
-                    <option value="Beginner">Beginner</option>
-                    <option value="Intermediate">Intermediate</option>
-                    <option value="Advanced">Advanced</option>
-                  </select>
-                </div>
-              </div>
-
-              <div
-                className="invite-form-row"
-                style={{ display: "flex", gap: "12px" }}
-              >
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Duration</label>
-                  <select
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    value={formDuration}
-                    onChange={(e) => setFormDuration(e.target.value)}
-                  >
-                    <option value="4 weeks">4 weeks</option>
-                    <option value="8 weeks">8 weeks</option>
-                    <option value="12 weeks">12 weeks</option>
-                    <option value="16 weeks">16 weeks</option>
-                  </select>
-                </div>
-
-                <div className="invite-form-field" style={{ flex: 1 }}>
-                  <label>Cover Image URL</label>
-                  <input
-                    type="url"
-                    disabled={isSubmitting}
-                    className="invite-form-input"
-                    placeholder="https://example.com/logo.png"
-                    value={formImageUrl}
-                    onChange={(e) => setFormImageUrl(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 24, padding: '12px 16px', background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 20 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                  <input type="checkbox" checked={formDefaultLessonLocking} onChange={e => setFormDefaultLessonLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
-                  Default Lesson Locking
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#334155' }}>
-                  <input type="checkbox" checked={formDefaultTaskLocking} onChange={e => setFormDefaultTaskLocking(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4f46e5' }} />
-                  Default Task Locking
-                </label>
-              </div>
-
-              <div className="invite-form-field">
-                <label>Description</label>
-                <textarea
-                  disabled={isSubmitting}
-                  className="invite-form-input textarea-field"
-                  rows={3}
-                  placeholder="Describe learning objectives..."
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                />
-              </div>
-
-              <div className="invite-form-field">
-                <label>Skills / Tags</label>
-                <input
-                  type="text"
-                  disabled={isSubmitting}
-                  className="invite-form-input"
-                  placeholder="e.g. React, TypeScript, APIs (comma separated)"
-                  value={formTags}
-                  onChange={(e) => setFormTags(e.target.value)}
-                />
-              </div>
-
-              <footer className="modal-popup-footer">
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  className="modal-cancel-btn"
-                  onClick={() => setIsCreateModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="modal-confirm-btn"
-                >
-                  {isSubmitting ? "Writing to DB..." : "Create Path"}
-                </button>
-              </footer>
-            </form>
-          </div>
-        </div>
-      )}
       {selectedPathForTrainees && (() => {
         const path = paths.find(p => p.id === selectedPathForTrainees);
         

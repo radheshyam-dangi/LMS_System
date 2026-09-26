@@ -20,6 +20,9 @@ interface ParsedQuestion {
   maxPoints: number;
   options?: string[];
   correctIndex?: number;
+  expectedAnswerGuideline?: string;
+  requiresLessonGrounding?: boolean;
+  lessonDependencies?: string[];
 }
 
 interface ParsedLesson {
@@ -45,6 +48,7 @@ interface ParsedAssignment {
   };
   timerDuration: { days: number; hours: number; minutes: number };
   countdownStart: string;
+  assignmentType: string;
 }
 
 interface ParsedModule {
@@ -52,6 +56,9 @@ interface ParsedModule {
   title: string;
   description: string;
   sequentialLessonLock: boolean;
+  learningObjectives?: string[];
+  learningOutcomes?: string[];
+  moduleResources?: ParsedResource[];
   lessons: ParsedLesson[];
   assignments: ParsedAssignment[];
 }
@@ -59,8 +66,11 @@ interface ParsedModule {
 export interface ParsedLPDocument {
   title: string;
   description: string;
+  level?: string;
+  status?: string;
   modules: ParsedModule[];
   _draftId?: string;
+  id?: string;
 }
 
 /** Extract plain text from a Tiptap node */
@@ -135,14 +145,33 @@ function extractQuestions(node: any): ParsedQuestion[] {
   if (!node?.content) return [];
   return node.content
     .filter((c: any) => c.type === 'questionBlock')
-    .map((q: any) => ({
-      id: q.attrs?.id || crypto.randomUUID(),
-      text: q.attrs?.text || extractText(q),
-      type: q.attrs?.questionType || 'Subjective',
-      maxPoints: q.attrs?.maxPoints || 10,
-      options: q.attrs?.options || [],
-      correctIndex: q.attrs?.correctIndex,
-    }));
+    .map((q: any) => {
+      let qText = '';
+      const qOptions: string[] = [];
+      
+      for (const child of q.content || []) {
+        if (child.type === 'paragraph') {
+          qText += extractText(child) + '\\n';
+        } else if (child.type === 'bulletList' || child.type === 'orderedList') {
+          qOptions.push(...extractListItems(child));
+        }
+      }
+
+      const type = q.attrs?.questionType || 'Subjective';
+      const options = (type === 'MCQ' && Array.isArray(q.attrs?.options) && q.attrs.options.length > 0) 
+        ? q.attrs.options 
+        : qOptions;
+
+      return {
+        id: q.attrs?.id || crypto.randomUUID(),
+        text: qText.trim() || 'Untitled Question',
+        type,
+        maxPoints: q.attrs?.maxPoints || 10,
+        options,
+        correctIndex: q.attrs?.correctIndex,
+        expectedAnswerGuideline: q.attrs?.expectedAnswerGuideline || '',
+      };
+    });
 }
 
 function parseLesson(lessonNode: any): ParsedLesson {
@@ -203,16 +232,36 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
       case 'paragraph':
         body += generateHTML(block);
         break;
-      case 'questionBlock':
+      case 'questionBlock': {
+        let qText = '';
+        const qOptions: string[] = [];
+        
+        for (const child of block.content || []) {
+          if (child.type === 'paragraph') {
+            qText += extractText(child) + '\\n';
+          } else if (child.type === 'bulletList' || child.type === 'orderedList') {
+            qOptions.push(...extractListItems(child));
+          }
+        }
+        
+        const type = block.attrs?.questionType || 'Subjective';
+        const options = (type === 'MCQ' && Array.isArray(block.attrs?.options) && block.attrs.options.length > 0) 
+          ? block.attrs.options 
+          : qOptions;
+
         questions.push({
           id: block.attrs?.id || crypto.randomUUID(),
-          text: block.attrs?.text || extractText(block),
-          type: block.attrs?.questionType || 'Subjective',
+          text: qText.trim() || 'Untitled Question',
+          type,
           maxPoints: block.attrs?.maxPoints || 10,
-          options: block.attrs?.options || [],
+          options,
           correctIndex: block.attrs?.correctIndex,
+          expectedAnswerGuideline: block.attrs?.expectedAnswerGuideline || '',
+          requiresLessonGrounding: block.attrs?.requiresLessonGrounding !== false,
+          lessonDependencies: block.attrs?.lessonDependencies || []
         });
         break;
+      }
     }
   }
 
@@ -221,7 +270,7 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
     title,
     body,
     questions,
-    dependsOnLessonIds: [], // populated by parseModule
+    dependsOnLessonIds: attrs.dependsOnLessonIds !== undefined ? attrs.dependsOnLessonIds : null, // will be resolved in parseModule
     lockConfig: {
       enabled: attrs.lockUntilLessonsComplete !== false,
     },
@@ -231,6 +280,7 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
     },
     timerDuration: attrs.timerDuration || { days: 0, hours: 0, minutes: 0 },
     countdownStart: attrs.countdownStart || 'onAssignment',
+    assignmentType: attrs.assignmentType || 'Mixed',
   };
 }
 
@@ -241,6 +291,9 @@ function parseModule(moduleNode: any): ParsedModule {
     title: '',
     description: '',
     sequentialLessonLock: attrs.sequentialLessonLock !== false,
+    learningObjectives: attrs.learningObjectives || [],
+    learningOutcomes: attrs.learningOutcomes || [],
+    moduleResources: attrs.moduleResources || [],
     lessons: [],
     assignments: [],
   };
@@ -259,8 +312,14 @@ function parseModule(moduleNode: any): ParsedModule {
         break;
       case 'assignment': {
         const assignment = parseAssignment(child);
-        // DEPENDENCY RULE: all lessons parsed SO FAR in THIS module
-        assignment.dependsOnLessonIds = module.lessons.map(l => l.id);
+        // DEPENDENCY RULE: If explicit selection is null, depend on all preceding lessons
+        if (assignment.dependsOnLessonIds === null) {
+          assignment.dependsOnLessonIds = module.lessons.map(l => l.id);
+        } else {
+          // Otherwise, filter the explicit array to ensure they actually exist as preceding lessons
+          const precedingIds = new Set(module.lessons.map(l => l.id));
+          assignment.dependsOnLessonIds = (assignment.dependsOnLessonIds as string[]).filter(id => precedingIds.has(id));
+        }
         module.assignments.push(assignment);
         break;
       }
@@ -274,14 +333,17 @@ function parseModule(moduleNode: any): ParsedModule {
  * Parse a complete Tiptap LP document into the structured payload
  * expected by the backend's POST /lp-authoring/submit endpoint.
  */
-export function parseLPDocument(doc: any, draftId?: string): ParsedLPDocument {
+export function parseLPDocument(doc: any, draftId?: string, pathId?: string): ParsedLPDocument {
   const lp: ParsedLPDocument = {
     title: '',
     description: '',
+    level: doc?.attrs?.level || 'basic',
+    status: doc?.attrs?.status || 'upcoming',
     modules: [],
   };
 
   if (draftId) lp._draftId = draftId;
+  if (pathId) lp.id = pathId;
 
   for (const node of doc.content || []) {
     switch (node.type) {

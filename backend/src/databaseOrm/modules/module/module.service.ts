@@ -12,6 +12,8 @@ import { UserEntity } from '../../entities/user.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { ModuleKeyPointEntity } from '../../entities/moduleKeyPoint.entity';
 import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
+import { AssignmentEntityService } from '../assignment/assignment.service';
+import { forwardRef, Inject } from '@nestjs/common';
 
 @Injectable()
 export class ModuleEntityService extends BaseService<ModuleEntity> {
@@ -22,7 +24,11 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
   private keyPointRepository: Repository<ModuleKeyPointEntity>;
   private userLessonProgressRepo: Repository<UserLessonProgressEntity>;
 
-  constructor(private readonly datasource: DataSource) {
+  constructor(
+    private readonly datasource: DataSource,
+    @Inject(forwardRef(() => AssignmentEntityService))
+    private readonly assignmentService: AssignmentEntityService,
+  ) {
     super();
     this.repository = this.datasource.getRepository<ModuleEntity>(ModuleEntity);
     this.lpRepository =
@@ -270,6 +276,7 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
           'lessons',
           'lessons.assignments',
           'lessons.resources',
+          'assignments',
           'createdBy',
           'learningPath',
           'learningPath.createdBy',
@@ -309,6 +316,7 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
         'lessons.assignments',
         'lessons.resources',
         'resources',
+        'assignments',
         'createdBy',
         'learningPath',
         'learningPath.createdBy',
@@ -366,11 +374,12 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
       for (const lesson of result.lessons) {
         if (lesson.assignments) {
           for (const task of lesson.assignments) {
-            if (lockTasks) {
-              (task as any).isLocked = !allLessonsCompleted;
-            } else {
-              (task as any).isLocked = false;
+            let lockState: { isLocked: boolean; lockReason: string | null } = { isLocked: false, lockReason: null };
+            if (userId) {
+              lockState = await this.assignmentService.evaluateLockState(task as any, userId);
             }
+            (task as any).isLocked = lockState.isLocked;
+            (task as any).lockReason = lockState.lockReason;
           }
         }
       }
