@@ -15,13 +15,13 @@ export class LessonEntity extends BaseEntity {
   title: string;
 
   @Column({ type: 'text', nullable: true })
-  description: string;
+  description: string | null;
 
   @Column({ type: 'varchar', name: 'video_url', nullable: true })
-  videoUrl: string;
+  videoUrl: string | null;
 
   @Column({ type: 'varchar', name: 'article_url', nullable: true })
-  articleUrl: string;
+  articleUrl: string | null;
 
   @Column({
     type: 'integer',
@@ -38,6 +38,12 @@ export class LessonEntity extends BaseEntity {
     default: 1,
   })
   displayOrder: number;
+
+  @Column({ type: 'integer', name: 'content_version', default: 1 })
+  contentVersion: number;
+
+  @Column({ type: 'varchar', name: 'source_hash', nullable: true })
+  sourceHash: string;
 
   // ────────────────────────────────────────────
   // 🌟 Tiptap Authoring: Multi-media content blocks

@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { learningPathService } from '../../services/learningPathService';
 import { userService } from '../../services/userService';
 import { useNavigate } from 'react-router-dom';
 import { RichText } from '../common/RichText';
+import { RichTextEditor } from '../common/RichTextEditor';
+import DOMPurify from 'dompurify';
 import './CurriculumManager.css';
 
 interface CurriculumManagerProps {
@@ -12,6 +14,108 @@ interface CurriculumManagerProps {
   currentUser: { id: string; role: 'Admin' | 'Trainer' | 'Trainee' };
   accessToken: string;
   onBack: () => void;
+}
+
+type InspectType = 'MODULE' | 'LESSON' | 'TASK' | 'RESOURCE';
+
+interface InspectContext {
+  moduleTitle?: string;
+  moduleId?: string;
+  lessonTitle?: string;
+  lessonId?: string;
+}
+
+interface InspectItem {
+  type: InspectType;
+  data: any;
+  context?: InspectContext;
+}
+
+/**
+ * 🌟 FormattedRichContent
+ * Intelligently renders rich text, raw HTML, Tiptap JSON, or plain text without raw markup.
+ */
+function FormattedRichContent({
+  content,
+  emptyText = 'No description provided.',
+  className = '',
+}: {
+  content?: string | any | null;
+  emptyText?: string;
+  className?: string;
+}) {
+  if (!content) {
+    return <span className="cm-text-muted-italic">{emptyText}</span>;
+  }
+
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return <span className="cm-text-muted-italic">{emptyText}</span>;
+    }
+
+    // Check if content contains HTML tags (e.g., <p>, <em>, <strong>, etc.)
+    if (/<[a-z][\s\S]*>/i.test(trimmed)) {
+      const sanitized = DOMPurify.sanitize(trimmed);
+      return (
+        <div
+          className={`cm-formatted-content ${className}`}
+          dangerouslySetInnerHTML={{ __html: sanitized }}
+        />
+      );
+    }
+
+    // Plain text with line breaks
+    return (
+      <div className={`cm-formatted-content ${className}`} style={{ whiteSpace: 'pre-wrap' }}>
+        {trimmed}
+      </div>
+    );
+  }
+
+  // Tiptap JSON structured object
+  return <RichText content={content} emptyStateText={emptyText} className={className} />;
+}
+
+/**
+ * Helper to extract video embed URL for YouTube/Vimeo
+ */
+function getEmbedVideoUrl(url: string): string | null {
+  if (!url) return null;
+  const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+  if (ytMatch && ytMatch[1]) {
+    return `https://www.youtube.com/embed/${ytMatch[1]}`;
+  }
+  const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?([0-9]+)/);
+  if (vimeoMatch && vimeoMatch[1]) {
+    return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  }
+  return null;
+}
+
+/**
+ * Resilient question extractor for MCQ and Subjective tasks
+ */
+function extractTaskQuestions(task: any): any[] {
+  if (!task) return [];
+  if (Array.isArray(task.mcqConfig?.questions) && task.mcqConfig.questions.length > 0) {
+    return task.mcqConfig.questions;
+  }
+  if (Array.isArray(task.questions) && task.questions.length > 0) {
+    return task.questions;
+  }
+  if (task.mcqConfig && Array.isArray(task.mcqConfig.options) && task.mcqConfig.options.length > 0) {
+    return [
+      {
+        id: 'q-legacy',
+        questionText: task.instructions || task.title || 'Question',
+        options: task.mcqConfig.options,
+        correctIndex: task.mcqConfig.correctIndex ?? 0,
+        points: task.maxScore || 10,
+      },
+    ];
+  }
+  return [];
 }
 
 export function CurriculumManager({
@@ -36,7 +140,14 @@ export function CurriculumManager({
   const [targetLessonId, setTargetLessonId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
-  const [inspectItem, setInspectItem] = useState<{ type: 'MODULE' | 'LESSON' | 'TASK'; data: any } | null>(null);
+  // 👁️ Inspector State & Navigation Stack
+  const [inspectItem, setInspectItem] = useState<InspectItem | null>(null);
+  const [inspectorHistory, setInspectorHistory] = useState<InspectItem[]>([]);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  // Search & Filtering State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedModules, setCollapsedModules] = useState<Record<string, boolean>>({});
 
   // General Form State
   const [formTitle, setFormTitle] = useState('');
@@ -79,7 +190,7 @@ export function CurriculumManager({
       const [pathData, modulesData, usersData] = await Promise.all([
         learningPathService?.fetchPathById ? learningPathService.fetchPathById(learningPathId, accessToken) : Promise.resolve(null),
         curriculumService.fetchModulesByPath(learningPathId, accessToken),
-        userService.fetchAllUsers(accessToken).catch(() => [])
+        userService.fetchAllUsers(accessToken).catch(() => []),
       ]);
 
       if (pathData) setPathDetails(pathData);
@@ -91,11 +202,14 @@ export function CurriculumManager({
 
       // Filter for Trainees only
       const traineeList = (usersData || []).filter((u: any) => {
-        const roles = [u.role, u.primaryRole?.name, ...(Array.isArray(u.roles) ? u.roles.map((r: any) => r.name || r) : [])].map(r => String(r || '').toLowerCase());
+        const roles = [
+          u.role,
+          u.primaryRole?.name,
+          ...(Array.isArray(u.roles) ? u.roles.map((r: any) => r.name || r) : []),
+        ].map((r) => String(r || '').toLowerCase());
         return roles.includes('trainee');
       });
       setTrainees(traineeList);
-
     } catch (err: any) {
       console.error('Curriculum loading error:', err.message);
     } finally {
@@ -107,16 +221,80 @@ export function CurriculumManager({
     loadCurriculum();
   }, [loadCurriculum]);
 
-  // 🌟 OWNERSHIP CHECK — trainers and admins have management access; trainees view-only
+  // 🌟 OWNERSHIP CHECK
   const isAdmin = currentUser.role === 'Admin' || String(currentUser.role).toLowerCase() === 'admin';
-  const isTrainer = currentUser.role === 'Trainer' || String(currentUser.role).toLowerCase() === 'trainer';
   const isTrainee = currentUser.role === 'Trainee' || String(currentUser.role).toLowerCase() === 'trainee';
 
-  const pathOwnerId = pathDetails?.createdBy?.id || (typeof pathDetails?.createdBy === 'string' ? pathDetails.createdBy : null) || pathDetails?.createdById;
+  const pathOwnerId =
+    pathDetails?.createdBy?.id ||
+    (typeof pathDetails?.createdBy === 'string' ? pathDetails.createdBy : null) ||
+    pathDetails?.createdById;
   const currentUserId = currentUser.id;
   const isOwner = !pathOwnerId || (Boolean(pathOwnerId) && String(pathOwnerId).toLowerCase() === String(currentUserId).toLowerCase());
   const isOwnerOrAdmin = !isTrainee && (isAdmin || isOwner);
 
+  // Build Lesson Title Lookup Map for AI Grounding and Context Resolution
+  const lessonTitleMap = useMemo(() => {
+    const map = new Map<string, { title: string; moduleTitle: string }>();
+    modules.forEach((m) => {
+      (m.lessons || []).forEach((l: any) => {
+        map.set(String(l.id), { title: l.title, moduleTitle: m.title });
+      });
+    });
+    return map;
+  }, [modules]);
+
+  // Summary Metrics
+  const summaryStats = useMemo(() => {
+    const totalModules = modules.length;
+    let totalLessons = 0;
+    let totalAssignments = 0;
+    let totalResources = 0;
+    let estimatedWeeks = 0;
+
+    modules.forEach((m) => {
+      estimatedWeeks += Number(m.durationWeeks) || 2;
+      totalResources += (m.resources?.length || 0);
+      const modAssignments = (m.assignments || []).filter((a: any) => !a.lessonId);
+      totalAssignments += modAssignments.length;
+
+      (m.lessons || []).forEach((l: any) => {
+        totalLessons += 1;
+        totalAssignments += (l.assignments?.length || 0);
+        totalResources += (l.resources?.length || 0);
+      });
+    });
+
+    return { totalModules, totalLessons, totalAssignments, totalResources, estimatedWeeks };
+  }, [modules]);
+
+  // Filtered Modules
+  const filteredModules = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return modules;
+
+    return modules.filter((m) => {
+      const matchMod =
+        (m.title && m.title.toLowerCase().includes(q)) ||
+        (m.description && m.description.toLowerCase().includes(q)) ||
+        (Array.isArray(m.objectives) && m.objectives.some((o: string) => o.toLowerCase().includes(q))) ||
+        (Array.isArray(m.outcomes) && m.outcomes.some((o: string) => o.toLowerCase().includes(q)));
+
+      const matchLessons = (m.lessons || []).some((l: any) =>
+        (l.title && l.title.toLowerCase().includes(q)) ||
+        (l.description && l.description.toLowerCase().includes(q)) ||
+        (l.assignments || []).some((a: any) => a.title && a.title.toLowerCase().includes(q))
+      );
+
+      const matchModAssignments = (m.assignments || []).some((a: any) =>
+        a.title && a.title.toLowerCase().includes(q)
+      );
+
+      return matchMod || matchLessons || matchModAssignments;
+    });
+  }, [modules, searchQuery]);
+
+  // Form Reset
   const resetFormFields = () => {
     setFormTitle('');
     setFormDescription('');
@@ -137,123 +315,72 @@ export function CurriculumManager({
     setActiveModal(null);
     setEditingItemId(null);
     setInspectItem(null);
+    setInspectorHistory([]);
     setTargetModuleId(null);
     setTargetLessonId(null);
     setFormModuleLessonLocking(false);
     setFormModuleTaskLocking(false);
   };
 
-  const openInspector = (type: 'MODULE' | 'LESSON' | 'TASK', data: any) => {
-    setInspectItem({ type, data });
+  // 👁️ Open Inspector with History Stack
+  const openInspector = (
+    type: InspectType,
+    data: any,
+    context?: InspectContext,
+    pushHistory = true
+  ) => {
+    if (pushHistory && inspectItem) {
+      setInspectorHistory((prev) => [...prev, inspectItem]);
+    }
+    setInspectItem({ type, data, context });
     setActiveModal('VIEW_INSPECTOR');
   };
 
-  const openEditModuleModal = (module: any) => {
-    if (!isOwnerOrAdmin) return;
-    setEditingItemId(module.id);
-    setFormTitle(module.title || '');
-    setFormDescription(module.description || '');
-    const obj = Array.isArray(module.objectives) ? module.objectives.join('\n') : (module.objectives || '');
-    setFormObjectives(obj);
-    const out = Array.isArray(module.outcomes) ? module.outcomes.join('\n') : (module.outcomes || '');
-    setFormOutcomes(out);
-    setFormDurationWeeks(module.durationWeeks || 2);
-    setFormResourceUrl(module.resources?.[0]?.url || '');
-    setFormModuleLessonLocking(module.lessonLocking || false);
-    setFormModuleTaskLocking(module.taskLocking || false);
-    setActiveModal('EDIT_MODULE');
+  const handleInspectorBack = () => {
+    if (inspectorHistory.length === 0) return;
+    const previous = inspectorHistory[inspectorHistory.length - 1];
+    setInspectorHistory((prev) => prev.slice(0, prev.length - 1));
+    setInspectItem(previous);
   };
 
-  const openEditLessonModal = (lesson: any) => {
-    if (!isOwnerOrAdmin) return;
-    setEditingItemId(lesson.id);
-    setFormTitle(lesson.title || '');
-    setFormDescription(lesson.description || '');
-    setFormVideoUrl(lesson.videoUrl || '');
-    setFormArticleUrl(lesson.articleUrl || '');
-    setFormDurationMinutes(lesson.durationMinutes || 15);
-    setActiveModal('EDIT_LESSON');
+  const closeInspector = () => {
+    setInspectItem(null);
+    setInspectorHistory([]);
+    setActiveModal(null);
   };
 
-  const openEditTaskModal = (task: any, parentModuleId?: string, parentLessonId?: string) => {
-    if (!isOwnerOrAdmin) return;
-    setEditingItemId(task.id);
-    setFormTitle(task.title || '');
-    setFormInstructions(task.instructions || '');
-    setFormAssignmentType(task.assignmentType || 'Subjective');
-    setFormDueDate(''); // Due Date removed
-    setFormExternalUrl(task.externalUrl || '');
-    setFormAssignedTraineeId(task.assignedToId || task.traineeId || '');
-    setFormTaskDurationDays(task.durationDays || 0);
-    const anchor = task.anchorType || 'LP_ASSIGNED';
-    const mappedAnchor = ['MODULE_UNLOCK', 'PREVIOUS_TASK_SUBMIT', 'TASK_START', 'ASSIGNMENT'].includes(anchor) 
-      ? 'TASK_UNLOCKED' 
-      : anchor;
-    setFormTaskAnchorType(mappedAnchor);
-    setFormTaskDurationHours(task.durationHours || 0);
-    setFormTaskDurationMinutes(task.durationMinutes || 0);
-    
-    const modId = parentModuleId || task.moduleId || task.module?.id || task.lesson?.moduleId || task.lesson?.module?.id || "";
-    setTargetModuleId(String(modId));
-    setTargetLessonId(parentLessonId || task.lessonId || task.lesson?.id || null);
-
-    const questions = task.mcqConfig?.questions || [];
-
-    if (questions.length > 0) {
-      const normalizedQuestions = questions.map((q: any, idx: number) => ({
-        id: q.id || `q-${idx}`,
-        questionText: q.questionText || q.question || '',
-        question: q.questionText || q.question || '',
-        options: q.options && q.options.length > 0 ? q.options : ['Option 1', 'Option 2', 'Option 3', 'Option 4'],
-        correctIndex: q.correctIndex ?? 0,
-        points: q.points || q.maxPoints || 10,
-        maxPoints: q.maxPoints || q.points || 10,
-      }));
-
-      if (task.assignmentType === 'MCQ') {
-        setMcqQuestions(normalizedQuestions);
-      } else {
-        setSubjectiveQuestions(normalizedQuestions);
+  // Keyboard Escape Handler
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeModal) {
+        if (activeModal === 'VIEW_INSPECTOR') {
+          closeInspector();
+        } else {
+          resetFormFields();
+        }
       }
-    } else {
-      setMcqQuestions([{ id: 'mcq-1', questionText: '', question: '', options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'], correctIndex: 0, points: 10 }]);
-      setSubjectiveQuestions([{ id: 'sub-1', questionText: '', question: '', maxPoints: 10 }]);
-    }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeModal]);
 
-    setActiveModal('EDIT_TASK');
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    setCopyFeedback(label);
+    setTimeout(() => setCopyFeedback(null), 2000);
   };
 
-  const handleDeleteModule = async (moduleId: string) => {
-    if (!isOwnerOrAdmin) return;
-    if (!window.confirm('Are you sure you want to delete this module and all nested lessons?')) return;
-    try {
-      await curriculumService.deleteModule(moduleId, accessToken);
-      await loadCurriculum();
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete module.');
-    }
+  const toggleModuleCollapse = (moduleId: string) => {
+    setCollapsedModules((prev) => ({ ...prev, [moduleId]: !prev[moduleId] }));
   };
 
-  const handleDeleteLesson = async (lessonId: string) => {
-    if (!isOwnerOrAdmin) return;
-    if (!window.confirm('Are you sure you want to delete this lesson and its assignments?')) return;
-    try {
-      await curriculumService.deleteLesson(lessonId, accessToken);
-      await loadCurriculum();
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete lesson.');
-    }
-  };
-
-  const handleDeleteTask = async (taskId: string) => {
-    if (!isOwnerOrAdmin) return;
-    if (!window.confirm('Are you sure you want to delete this task?')) return;
-    try {
-      await curriculumService.deleteTask(taskId, accessToken);
-      await loadCurriculum();
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete task.');
-    }
+  const toggleAllCollapse = () => {
+    const areAllCollapsed = modules.every((m) => collapsedModules[m.id]);
+    const next: Record<string, boolean> = {};
+    modules.forEach((m) => {
+      next[m.id] = !areAllCollapsed;
+    });
+    setCollapsedModules(next);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -264,57 +391,71 @@ export function CurriculumManager({
     try {
       if (activeModal === 'MODULE') {
         const resources = formResourceUrl.trim() ? [{ title: 'Resource', url: formResourceUrl.trim() }] : [];
-        await curriculumService.createModule({
-          title: formTitle,
-          description: formDescription,
-          learningPathId,
-          objectives: formObjectives,
-          outcomes: formOutcomes,
-          durationWeeks: formDurationWeeks,
-          durationLabel: `${formDurationWeeks} weeks`,
-          lessonLocking: formModuleLessonLocking,
-          taskLocking: formModuleTaskLocking,
-          resources,
-        }, accessToken);
+        await curriculumService.createModule(
+          {
+            title: formTitle,
+            description: formDescription,
+            learningPathId,
+            objectives: formObjectives,
+            outcomes: formOutcomes,
+            durationWeeks: formDurationWeeks,
+            durationLabel: `${formDurationWeeks} weeks`,
+            lessonLocking: formModuleLessonLocking,
+            taskLocking: formModuleTaskLocking,
+            resources,
+          },
+          accessToken
+        );
       } else if (activeModal === 'EDIT_MODULE' && editingItemId) {
         const resources = formResourceUrl.trim() ? [{ title: 'Resource', url: formResourceUrl.trim() }] : [];
-        await curriculumService.updateModule(editingItemId, {
-          title: formTitle,
-          description: formDescription,
-          objectives: formObjectives,
-          outcomes: formOutcomes,
-          durationWeeks: formDurationWeeks,
-          durationLabel: `${formDurationWeeks} weeks`,
-          lessonLocking: formModuleLessonLocking,
-          taskLocking: formModuleTaskLocking,
-          resources,
-        }, accessToken);
+        await curriculumService.updateModule(
+          editingItemId,
+          {
+            title: formTitle,
+            description: formDescription,
+            objectives: formObjectives,
+            outcomes: formOutcomes,
+            durationWeeks: formDurationWeeks,
+            durationLabel: `${formDurationWeeks} weeks`,
+            lessonLocking: formModuleLessonLocking,
+            taskLocking: formModuleTaskLocking,
+            resources,
+          },
+          accessToken
+        );
       } else if (activeModal === 'LESSON') {
         if (!targetModuleId) {
-          alert('Module ID missing. Please click "+ Add Lesson" directly inside a module.');
+          alert('Module ID missing. Please select a module.');
           setIsSubmitting(false);
           return;
         }
-        await curriculumService.createLesson({
-          title: formTitle,
-          description: formDescription,
-          videoUrl: formVideoUrl || undefined,
-          articleUrl: formArticleUrl || undefined,
-          durationMinutes: Number(formDurationMinutes) || 15,
-          moduleId: targetModuleId,
-        }, accessToken);
+        await curriculumService.createLesson(
+          {
+            title: formTitle,
+            description: formDescription,
+            videoUrl: formVideoUrl || undefined,
+            articleUrl: formArticleUrl || undefined,
+            durationMinutes: Number(formDurationMinutes) || 15,
+            moduleId: targetModuleId,
+          },
+          accessToken
+        );
       } else if (activeModal === 'EDIT_LESSON' && editingItemId) {
-        await curriculumService.updateLesson(editingItemId, {
-          title: formTitle,
-          description: formDescription,
-          videoUrl: formVideoUrl,
-          articleUrl: formArticleUrl,
-          durationMinutes: Number(formDurationMinutes),
-        }, accessToken);
+        await curriculumService.updateLesson(
+          editingItemId,
+          {
+            title: formTitle,
+            description: formDescription,
+            videoUrl: formVideoUrl,
+            articleUrl: formArticleUrl,
+            durationMinutes: Number(formDurationMinutes),
+          },
+          accessToken
+        );
       } else if (activeModal === 'TASK' || activeModal === 'EDIT_TASK') {
         const isExternal = formAssignmentType === 'External';
 
-        if (!isExternal && !targetLessonId && (!targetModuleId || targetModuleId === "")) {
+        if (!isExternal && !targetLessonId && (!targetModuleId || targetModuleId === '')) {
           alert('Please select a Target Module for this assignment.');
           setIsSubmitting(false);
           return;
@@ -344,7 +485,7 @@ export function CurriculumManager({
           durationHours: formTaskDurationHours,
           durationMinutes: formTaskDurationMinutes,
           anchorType: formTaskAnchorType,
-          sequenceIndex: null, // sequenceIndex logic handled via drag/drop or backend
+          sequenceIndex: null,
           traineeIds: formAssignedTraineeId ? [formAssignedTraineeId] : [],
           mcqConfig: isExternal
             ? undefined
@@ -353,8 +494,8 @@ export function CurriculumManager({
                   formAssignmentType === 'MCQ'
                     ? mcqQuestions
                     : formAssignmentType === 'Subjective'
-                      ? subjectiveQuestions
-                      : [],
+                    ? subjectiveQuestions
+                    : [],
               },
         };
 
@@ -383,544 +524,1500 @@ export function CurriculumManager({
 
   return (
     <div className="cm-container">
+      {/* 🌟 Navigation */}
       <button type="button" onClick={onBack} className="cm-btn-back">
-        ← Back to All Learning Paths
+        <span>←</span> Back to All Learning Paths
       </button>
 
+      {/* 🌟 Header Section */}
       <header className="cm-header-section">
         <div>
+          <div className="cm-header-badge-row">
+            <span className="cm-badge cm-badge-blue">Learning Path Curriculum</span>
+            <span className="cm-badge cm-badge-gray">
+              {isOwnerOrAdmin ? 'Trainer & Admin Controls' : 'Read-Only Inspector'}
+            </span>
+          </div>
           <h2 className="cm-header-title">Curriculum Management: {learningPathTitle}</h2>
           <p className="cm-header-subtitle">
             {isOwnerOrAdmin
-              ? 'Manage modules, lessons, and external assignments for this learning path.'
-              : 'Read-Only Mode: View and inspect internal modules, lessons, and tasks.'}
+              ? 'Comprehensive curriculum tree. Inspect internal modules, lessons, assignments, and learning resources.'
+              : 'Read-Only Mode: Inspect internal modules, lessons, tasks, and attached resources.'}
           </p>
         </div>
 
         {isOwnerOrAdmin && (
           <div>
-            <button type="button" onClick={() => navigate(`/learning-paths/${learningPathId}/edit`)} className="cm-btn-primary">
+            <button
+              type="button"
+              onClick={() => navigate(`/learning-paths/${learningPathId}/edit`)}
+              className="cm-btn-primary"
+            >
               ✏️ Edit Learning Path
             </button>
           </div>
         )}
       </header>
 
+      {/* 🌟 Stats & Quick Filter Ribbon */}
+      <div className="cm-stats-ribbon">
+        <div className="cm-stats-items">
+          <div className="cm-stat-pill">
+            <span>📦</span>
+            <div>
+              <strong>{summaryStats.totalModules}</strong> Modules
+            </div>
+          </div>
+          <div className="cm-stat-pill-divider" />
+          <div className="cm-stat-pill">
+            <span>📖</span>
+            <div>
+              <strong>{summaryStats.totalLessons}</strong> Lessons
+            </div>
+          </div>
+          <div className="cm-stat-pill-divider" />
+          <div className="cm-stat-pill">
+            <span>📝</span>
+            <div>
+              <strong>{summaryStats.totalAssignments}</strong> Tasks
+            </div>
+          </div>
+          <div className="cm-stat-pill-divider" />
+          <div className="cm-stat-pill">
+            <span>📎</span>
+            <div>
+              <strong>{summaryStats.totalResources}</strong> Resources
+            </div>
+          </div>
+          <div className="cm-stat-pill-divider" />
+          <div className="cm-stat-pill">
+            <span>⏱️</span>
+            <div>
+              <strong>{summaryStats.estimatedWeeks}</strong> Est. Weeks
+            </div>
+          </div>
+        </div>
+
+        <div className="cm-toolbar-controls">
+          <div className="cm-search-input-wrap">
+            <span className="cm-search-icon">🔍</span>
+            <input
+              type="text"
+              className="cm-search-input"
+              placeholder="Search curriculum items..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          {modules.length > 1 && (
+            <button type="button" onClick={toggleAllCollapse} className="cm-btn-secondary">
+              {modules.every((m) => collapsedModules[m.id]) ? 'Expand All' : 'Collapse All'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 🌟 Curriculum Tree Content */}
       {isLoading ? (
-        <div>Loading curriculum tree...</div>
-      ) : modules.length === 0 ? (
         <div className="cm-empty-state">
-          <p>No modules created yet.</p>
-          {/* Add module button removed - use LPEditorPage instead */}
+          <p>⏳ Loading curriculum tree...</p>
+          <span style={{ fontSize: '13px', color: '#64748b' }}>
+            Fetching modules, lessons, assignments, and resources...
+          </span>
+        </div>
+      ) : filteredModules.length === 0 ? (
+        <div className="cm-empty-state">
+          <p>{searchQuery ? 'No matching curriculum items found.' : 'No modules created yet.'}</p>
+          <span style={{ fontSize: '13px', color: '#64748b' }}>
+            {searchQuery
+              ? 'Try adjusting your search query or clear the filter.'
+              : 'Add modules to this learning path in the curriculum editor.'}
+          </span>
         </div>
       ) : (
-        modules.map((module, mIdx) => (
-          <div key={module.id} className="cm-module-card">
-            <div className="cm-module-header">
-              <h3 className="cm-module-title">Module {mIdx + 1}: {module.title}</h3>
+        filteredModules.map((module, mIdx) => {
+          const isCollapsed = Boolean(collapsedModules[module.id]);
+          const modAssignments = (module.assignments || []).filter((a: any) => !a.lessonId);
+          const hasObjectives = Array.isArray(module.objectives) && module.objectives.length > 0;
+          const hasOutcomes = Array.isArray(module.outcomes) && module.outcomes.length > 0;
+          const hasResources = Array.isArray(module.resources) && module.resources.length > 0;
 
-              <div className="cm-actions-cluster">
-                <button type="button" onClick={() => openInspector('MODULE', module)} className="cm-btn-sm cm-btn-view">
-                  👁️ View Details
-                </button>
+          return (
+            <div key={module.id} className="cm-module-card">
+              {/* Module Header */}
+              <div className="cm-module-header">
+                <div className="cm-module-title-group">
+                  <span className="cm-module-index-badge">Module {mIdx + 1}</span>
+                  <h3 className="cm-module-title">{module.title}</h3>
 
-                {/* Edit/Delete module buttons removed - use LPEditorPage instead */}
-              </div>
-            </div>
-
-            <p className="cm-module-description">{module.description || 'No module description.'}</p>
-
-            {/* MODULE-LEVEL ASSIGNMENTS */}
-            {module.assignments?.filter((a: any) => !a.lessonId).length > 0 && (
-              <div className="cm-module-assignments-box">
-                <h4 className="cm-assignments-title">📌 Module-Level Assignments</h4>
-                {module.assignments.filter((a: any) => !a.lessonId).map((task: any) => (
-                  <div key={task.id} className="cm-task-item">
-                    <div className="cm-task-info">
-                      <strong>{task.title}</strong>
-                      <span className="cm-task-meta">
-                        Type: {task.assignmentType} | Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No Due Date'}
+                  <div className="cm-badge-cluster">
+                    <span className="cm-badge cm-badge-blue">
+                      ⏱️ {module.durationWeeks ? `${module.durationWeeks} Weeks` : module.durationLabel || '2 Weeks'}
+                    </span>
+                    <span className="cm-badge cm-badge-gray">
+                      Skill: {module.difficultyLevel || module.level || 'Beginner'}
+                    </span>
+                    <span className="cm-badge cm-badge-emerald">
+                      Status: {module.status || 'Active'}
+                    </span>
+                    {module.lessonLocking && (
+                      <span className="cm-badge cm-badge-purple" title="Lessons unlock sequentially">
+                        🔒 Sequential Lessons
                       </span>
-                    </div>
-
-                    <div className="cm-actions-cluster">
-                      <button type="button" onClick={() => openInspector('TASK', task)} className="cm-btn-sm cm-btn-view">
-                        👁️ View
-                      </button>
-                      {/* Edit/Delete task buttons removed - use LPEditorPage instead */}
-                    </div>
+                    )}
+                    {module.taskLocking && (
+                      <span className="cm-badge cm-badge-amber" title="Tasks require all lessons completion">
+                        🛡️ Gated Tasks
+                      </span>
+                    )}
                   </div>
-                ))}
+                </div>
+
+                <div className="cm-actions-cluster">
+                  <button
+                    type="button"
+                    onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
+                    className="cm-btn-sm cm-btn-view-primary"
+                  >
+                    👁️ View Details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleModuleCollapse(module.id)}
+                    className="cm-btn-sm cm-btn-view"
+                    title={isCollapsed ? 'Expand module content' : 'Collapse module content'}
+                  >
+                    {isCollapsed ? '▼ Expand' : '▲ Collapse'}
+                  </button>
+                </div>
               </div>
-            )}
 
-            {/* LESSONS TREE */}
-            <div className="cm-lesson-tree-wrapper">
-              {module.lessons?.map((lesson: any, lIdx: number) => (
-                <div key={lesson.id} className="cm-lesson-item">
-                  <div className="cm-lesson-header">
-                    <h4 className="cm-lesson-title">📖 Lesson {lesson.displayOrder || lIdx + 1}: {lesson.title}</h4>
-                    <div className="cm-actions-cluster">
-                      <button type="button" onClick={() => openInspector('LESSON', lesson)} className="cm-btn-sm cm-btn-view">
-                        👁️ View
-                      </button>
-
-                      {/* Edit/Delete lesson buttons removed - use LPEditorPage instead */}
-                    </div>
+              {/* Module Description with formatted rich text */}
+              {!isCollapsed && (
+                <>
+                  <div className="cm-module-description">
+                    <FormattedRichContent content={module.description} emptyText="No module description provided." />
                   </div>
 
-                  {lesson.description && <p className="cm-lesson-description">{lesson.description}</p>}
+                  {/* Micro Chips preview for Objectives, Outcomes, and Resources */}
+                  {(hasObjectives || hasOutcomes || hasResources) && (
+                    <div className="cm-objectives-preview-bar">
+                      {hasObjectives && (
+                        <div
+                          className="cm-micro-chip cm-micro-chip-purple"
+                          onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
+                          title="Click to view learning objectives"
+                        >
+                          <span>🎯</span> {module.objectives.length} Learning Objectives
+                        </div>
+                      )}
+                      {hasOutcomes && (
+                        <div
+                          className="cm-micro-chip cm-micro-chip-green"
+                          onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
+                          title="Click to view learning outcomes"
+                        >
+                          <span>🏆</span> {module.outcomes.length} Expected Outcomes
+                        </div>
+                      )}
+                      {hasResources && (
+                        <div
+                          className="cm-micro-chip cm-micro-chip-blue"
+                          onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
+                          title="Click to view module resources"
+                        >
+                          <span>📎</span> {module.resources.length} Module Resources
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                  {/* TASKS LIST */}
-                  {lesson.assignments?.map((task: any) => (
-                    <div key={task.id} className="cm-lesson-task-item">
-                      <div>
-                        <strong>📝 {task.title}</strong>
-                        <span className="cm-lesson-task-meta">
-                          Type: {task.assignmentType} | Max Score: {task.maxScore} | Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : 'No Due Date'}
+                  {/* Module Resources Shelf (if present) */}
+                  {hasResources && (
+                    <div className="cm-card-resources-shelf">
+                      <div className="cm-shelf-title">
+                        <span>📎 Attached Module Resources ({module.resources.length})</span>
+                      </div>
+                      <div className="cm-resource-items-grid">
+                        {module.resources.map((res: any, rIdx: number) => (
+                          <div
+                            key={res.id || rIdx}
+                            className="cm-resource-item-pill"
+                            onClick={() =>
+                              openInspector('RESOURCE', res, { moduleTitle: module.title, moduleId: module.id })
+                            }
+                            title="Click to inspect resource details"
+                          >
+                            <span>{res.type === 'Video' ? '🎥' : res.type === 'PDF' ? '📄' : '🔗'}</span>
+                            <span>{res.title || 'Attached Resource'}</span>
+                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>↗</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* MODULE-LEVEL ASSIGNMENTS */}
+                  {modAssignments.length > 0 && (
+                    <div className="cm-module-assignments-box">
+                      <div className="cm-assignments-title">
+                        <span>📌 Module-Level Assignments ({modAssignments.length})</span>
+                        <span style={{ fontSize: '12px', fontWeight: 600, color: '#9333ea' }}>
+                          Standalone module milestones
                         </span>
                       </div>
 
-                      <div className="cm-actions-cluster">
-                        <button type="button" onClick={() => openInspector('TASK', task)} className="cm-btn-sm cm-btn-view">
-                          👁️ Context View
-                        </button>
-                        {/* Edit/Delete task buttons removed - use LPEditorPage instead */}
-                      </div>
+                      {modAssignments.map((task: any) => {
+                        const questions = extractTaskQuestions(task);
+                        return (
+                          <div key={task.id} className="cm-task-item">
+                            <div className="cm-task-info">
+                              <div className="cm-task-header-row">
+                                <span
+                                  className={`cm-badge ${
+                                    task.assignmentType === 'MCQ'
+                                      ? 'cm-badge-amber'
+                                      : task.assignmentType === 'External'
+                                      ? 'cm-badge-emerald'
+                                      : 'cm-badge-purple'
+                                  }`}
+                                >
+                                  {task.assignmentType === 'MCQ'
+                                    ? '🔘 MCQ Quiz'
+                                    : task.assignmentType === 'External'
+                                    ? '🔗 External'
+                                    : '📝 Subjective'}
+                                </span>
+                                <strong className="cm-task-title">{task.title}</strong>
+                              </div>
+
+                              <div className="cm-task-meta-row">
+                                <span className="cm-task-meta-item">
+                                  🏆 <strong>{task.maxScore || 100}</strong> Pts
+                                </span>
+                                {(task.durationDays > 0 || task.durationHours > 0 || task.durationMinutes > 0) && (
+                                  <span className="cm-task-meta-item">
+                                    ⏳ {task.durationDays ? `${task.durationDays}d ` : ''}
+                                    {task.durationHours ? `${task.durationHours}h ` : ''}
+                                    {task.durationMinutes ? `${task.durationMinutes}m` : ''}
+                                  </span>
+                                )}
+                                {questions.length > 0 && (
+                                  <span className="cm-task-meta-item">
+                                    ❓ {questions.length} Question{questions.length > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                                {task.anchorType && (
+                                  <span className="cm-task-meta-item" style={{ color: '#8b5cf6' }}>
+                                    ⚓ {task.anchorType === 'TASK_UNLOCKED' ? 'On Unlock' : 'On LP Assignment'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="cm-actions-cluster">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openInspector('TASK', task, {
+                                    moduleTitle: module.title,
+                                    moduleId: module.id,
+                                  })
+                                }
+                                className="cm-btn-sm cm-btn-view"
+                              >
+                                👁️ View
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-              ))}
+                  )}
+
+                  {/* LESSONS TREE */}
+                  <div className="cm-lesson-tree-wrapper">
+                    <div className="cm-lessons-header-strip">
+                      <span>📖 Module Lessons ({module.lessons?.length || 0})</span>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
+                        Curriculum structure & learning materials
+                      </span>
+                    </div>
+
+                    {(module.lessons || []).length === 0 ? (
+                      <div style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', color: '#94a3b8', fontStyle: 'italic', fontSize: '13px' }}>
+                        No lessons added to this module yet.
+                      </div>
+                    ) : (
+                      module.lessons.map((lesson: any, lIdx: number) => {
+                        const lessonHasResources = Array.isArray(lesson.resources) && lesson.resources.length > 0;
+                        const lessonAssignments = lesson.assignments || [];
+
+                        return (
+                          <div key={lesson.id} className="cm-lesson-item">
+                            <div className="cm-lesson-header">
+                              <div className="cm-lesson-title-area">
+                                <h4 className="cm-lesson-title">
+                                  📖 Lesson {lesson.displayOrder || lIdx + 1}: {lesson.title}
+                                </h4>
+
+                                <div className="cm-badge-cluster">
+                                  <span className="cm-badge cm-badge-gray">
+                                    ⏱️ {lesson.durationMinutes || 15} mins
+                                  </span>
+                                  {lesson.videoUrl && (
+                                    <span className="cm-badge cm-badge-blue">
+                                      🎥 Video
+                                    </span>
+                                  )}
+                                  {lesson.articleUrl && (
+                                    <span className="cm-badge cm-badge-purple">
+                                      📰 Article
+                                    </span>
+                                  )}
+                                  {lessonHasResources && (
+                                    <span className="cm-badge cm-badge-cyan">
+                                      📎 {lesson.resources.length} Resources
+                                    </span>
+                                  )}
+                                  {lessonAssignments.length > 0 && (
+                                    <span className="cm-badge cm-badge-amber">
+                                      📝 {lessonAssignments.length} Tasks
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="cm-actions-cluster">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    openInspector('LESSON', lesson, {
+                                      moduleTitle: module.title,
+                                      moduleId: module.id,
+                                    })
+                                  }
+                                  className="cm-btn-sm cm-btn-view"
+                                >
+                                  👁️ View
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Lesson Description formatted */}
+                            {lesson.description && (
+                              <div className="cm-lesson-description">
+                                <FormattedRichContent content={lesson.description} emptyText="" />
+                              </div>
+                            )}
+
+                            {/* Lesson Resources Pills (if any) */}
+                            {lessonHasResources && (
+                              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                {lesson.resources.map((res: any, rIdx: number) => (
+                                  <div
+                                    key={res.id || rIdx}
+                                    className="cm-resource-item-pill"
+                                    style={{ fontSize: '11px', padding: '4px 8px' }}
+                                    onClick={() =>
+                                      openInspector('RESOURCE', res, {
+                                        moduleTitle: module.title,
+                                        lessonTitle: lesson.title,
+                                      })
+                                    }
+                                  >
+                                    <span>{res.type === 'PDF' ? '📄' : res.type === 'Video' ? '🎥' : '🔗'}</span>
+                                    <span>{res.title || 'Resource'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Lesson Tasks */}
+                            {lessonAssignments.map((task: any) => {
+                              const questions = extractTaskQuestions(task);
+                              return (
+                                <div key={task.id} className="cm-lesson-task-item">
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                      <span
+                                        className={`cm-badge ${
+                                          task.assignmentType === 'MCQ'
+                                            ? 'cm-badge-amber'
+                                            : task.assignmentType === 'External'
+                                            ? 'cm-badge-emerald'
+                                            : 'cm-badge-purple'
+                                        }`}
+                                      >
+                                        {task.assignmentType}
+                                      </span>
+                                      <strong>{task.title}</strong>
+                                    </div>
+                                    <div className="cm-task-meta-row">
+                                      <span>Max Score: {task.maxScore || 100} pts</span>
+                                      {questions.length > 0 && <span>• {questions.length} Questions</span>}
+                                      {(task.durationDays > 0 || task.durationHours > 0 || task.durationMinutes > 0) && (
+                                        <span>
+                                          • Duration: {task.durationDays ? `${task.durationDays}d ` : ''}
+                                          {task.durationHours ? `${task.durationHours}h ` : ''}
+                                          {task.durationMinutes ? `${task.durationMinutes}m` : ''}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="cm-actions-cluster">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openInspector('TASK', task, {
+                                          moduleTitle: module.title,
+                                          lessonTitle: lesson.title,
+                                          moduleId: module.id,
+                                          lessonId: lesson.id,
+                                        })
+                                      }
+                                      className="cm-btn-sm cm-btn-view"
+                                    >
+                                      👁️ View
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          </div>
-        ))
+          );
+        })
       )}
 
-      {/* ✏️ CREATE / EDIT FORM MODAL */}
-      {isOwnerOrAdmin && (activeModal === 'MODULE' || activeModal === 'EDIT_MODULE' || activeModal === 'LESSON' || activeModal === 'EDIT_LESSON' || activeModal === 'TASK' || activeModal === 'EDIT_TASK') && (
-        <div className="cm-modal-overlay">
-          <div className={`cm-modal-content ${(activeModal === 'TASK' || activeModal === 'EDIT_TASK') ? 'wide' : ''}`}>
-            <h3>{activeModal.replace('_', ' ')}</h3>
-            <form onSubmit={handleFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px' }}>
-              
-              {/* 🌟 LEARNING PATH CONTEXT — skipped for External */}
-              {activeModal.includes('TASK') && formAssignmentType !== 'External' && (
-                 <div style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', marginBottom: '4px' }}>
-                   <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#475569' }}>Target Learning Path *</label>
-                   <input type="text" readOnly disabled value={learningPathTitle} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#e2e8f0', cursor: 'not-allowed' }} />
-                 </div>
-              )}
-
-              {/* 🌟 MODULE SELECTION — skipped for External */}
-              {activeModal.includes('TASK') && formAssignmentType !== 'External' && !targetLessonId && (
-                <div style={{ padding: '12px', background: '#fff', border: '1px solid #3b82f6', borderRadius: '6px', marginBottom: '8px' }}>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#1e3a8a' }}>Target Module *</label>
-                  <select
-                    required
-                    value={targetModuleId || ''}
-                    onChange={(e) => setTargetModuleId(e.target.value)}
-                    style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #93c5fd' }}
+      {/* ========================================================================= */}
+      {/* 👁️ MASTER INSPECTOR MODAL (MODULE, LESSON, TASK, RESOURCE)              */}
+      {/* ========================================================================= */}
+      {activeModal === 'VIEW_INSPECTOR' && inspectItem && (
+        <div className="cm-modal-overlay" onClick={closeInspector}>
+          <div
+            className="cm-modal-content wide"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Modal Header */}
+            <div className="cm-inspector-header">
+              <div style={{ flex: 1 }}>
+                <div className="cm-inspector-nav-row">
+                  {inspectorHistory.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleInspectorBack}
+                      className="cm-history-back-btn"
+                      title="Go back to previous viewed item"
+                    >
+                      ← Back
+                    </button>
+                  )}
+                  <span
+                    className={`cm-inspector-type-pill ${
+                      inspectItem.type === 'MODULE'
+                        ? 'cm-badge-blue'
+                        : inspectItem.type === 'LESSON'
+                        ? 'cm-badge-cyan'
+                        : inspectItem.type === 'TASK'
+                        ? 'cm-badge-purple'
+                        : 'cm-badge-emerald'
+                    }`}
                   >
-                    <option value="" disabled>-- Select the mandatory module for this assignment --</option>
-                    {modules.map((m) => (
-                      <option key={m.id} value={String(m.id)}>{m.title}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+                    {inspectItem.type} INSPECTION
+                  </span>
 
-              {/* 🌟 TRAINEE SELECTION — only required for External assignments */}
-              {activeModal.includes('TASK') && formAssignmentType === 'External' && (
-                <div style={{ padding: '12px', background: '#fdf4ff', border: '1px solid #d8b4fe', borderRadius: '6px', marginBottom: '8px' }}>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#6b21a8' }}>
-                    Assign To Trainee *
-                  </label>
-                  <select
-                    required
-                    value={formAssignedTraineeId}
-                    onChange={(e) => setFormAssignedTraineeId(e.target.value)}
-                    style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #c4b5fd' }}
-                  >
-                    <option value="">-- Select trainee --</option>
-                    {trainees.map((t) => (
-                      <option key={t.id} value={t.id}>{t.firstName} {t.lastName} ({t.email})</option>
-                    ))}
-                  </select>
+                  <span className="cm-breadcrumb-text">
+                    {inspectItem.context?.moduleTitle && (
+                      <>
+                        <span>{inspectItem.context.moduleTitle}</span>
+                        {inspectItem.context?.lessonTitle && <span> › {inspectItem.context.lessonTitle}</span>}
+                      </>
+                    )}
+                  </span>
                 </div>
-              )}
 
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Title *</label>
-                <input type="text" required value={formTitle} onChange={(e) => setFormTitle(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                <h3 className="cm-inspector-title">
+                  {inspectItem.data.title || 'Item Details'}
+                </h3>
               </div>
 
-              {(activeModal.includes('MODULE') || activeModal.includes('LESSON')) && (
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '600' }}>Description</label>
-                  <textarea rows={3} value={formDescription} onChange={(e) => setFormDescription(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={closeInspector}
+                className="cm-btn-close"
+                title="Close modal (Esc)"
+              >
+                ✕
+              </button>
+            </div>
 
-              {activeModal.includes('MODULE') && (
+            {/* Modal Scrollable Body */}
+            <div className="cm-inspector-body">
+              {/* ------------------------------------------------------------------- */}
+              {/* 1. MODULE INSPECTOR VIEW                                           */}
+              {/* ------------------------------------------------------------------- */}
+              {inspectItem.type === 'MODULE' && (
                 <>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#4f46e5' }}>◎ Learning Objectives (One per line)</label>
-                    <textarea rows={3} value={formObjectives} onChange={(e) => setFormObjectives(e.target.value)} placeholder="e.g. Understand RESTful architecture&#10;Design clean API endpoints" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #c7d2fe', background: '#f5f3ff' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#16a34a' }}>✓ Learning Outcomes (One per line)</label>
-                    <textarea rows={3} value={formOutcomes} onChange={(e) => setFormOutcomes(e.target.value)} placeholder="e.g. Build a functional REST API&#10;Secure endpoints with JWT" style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #bbf7d0', background: '#f0fdf4' }} />
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Weeks)</label>
-                      <input type="number" min={1} max={52} value={formDurationWeeks} onChange={(e) => setFormDurationWeeks(Number(e.target.value) || 2)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+                  {/* KPI Stat Cards */}
+                  <div className="cm-kpi-grid">
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">⏱️ Duration</div>
+                      <div className="cm-kpi-value">
+                        {inspectItem.data.durationWeeks
+                          ? `${inspectItem.data.durationWeeks} Weeks`
+                          : inspectItem.data.durationLabel || '2 Weeks'}
+                      </div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">🎚️ Skill Level</div>
+                      <div className="cm-kpi-value">
+                        {inspectItem.data.difficultyLevel || inspectItem.data.level || 'Beginner'}
+                      </div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">📖 Total Lessons</div>
+                      <div className="cm-kpi-value">
+                        {(inspectItem.data.lessons || []).length}
+                      </div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">🔒 Gating Rules</div>
+                      <div className="cm-kpi-value" style={{ fontSize: '13px' }}>
+                        {inspectItem.data.lessonLocking ? 'Sequential' : 'Open'}{' '}
+                        {inspectItem.data.taskLocking ? '• Gated' : ''}
+                      </div>
                     </div>
                   </div>
-                  <div style={{ marginBottom: '16px' }}>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Resource URL</label>
-                    <input type="url" value={formResourceUrl} onChange={(e) => setFormResourceUrl(e.target.value)} placeholder="https://..." style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
+
+                  {/* Overview Description */}
+                  <div className="cm-inspector-section">
+                    <div className="cm-section-header">
+                      <span>📄 Module Overview</span>
+                    </div>
+                    <FormattedRichContent content={inspectItem.data.description} emptyText="No module overview provided." />
                   </div>
-                  {(() => {
-                    const lpLessonLock = pathDetails?.lockLessons === true;
-                    const lpTaskLock = pathDetails?.lockTasks === true;
-                    if (lpLessonLock && lpTaskLock) return null;
-                    return (
-                      <div style={{ display: 'flex', gap: '24px', padding: '12px 16px', background: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-                        {!lpLessonLock && (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                            <input type="checkbox" checked={formModuleLessonLocking} onChange={e => setFormModuleLessonLocking(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#4f46e5' }} />
-                            Lock Lessons (Sequential unlock)
-                          </label>
+
+                  {/* Objectives & Outcomes Side-by-side */}
+                  <div className="cm-goals-grid">
+                    <div className="cm-goals-card objectives">
+                      <div className="cm-section-header" style={{ color: '#6b21a8' }}>
+                        <span>🎯 Learning Objectives</span>
+                        <span style={{ fontSize: '11px', fontWeight: 600 }}>
+                          {(inspectItem.data.objectives || []).length} Goals
+                        </span>
+                      </div>
+                      {Array.isArray(inspectItem.data.objectives) && inspectItem.data.objectives.length > 0 ? (
+                        <ul className="cm-goals-list">
+                          {inspectItem.data.objectives.map((obj: string, idx: number) => (
+                            <li key={idx}>{obj}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="cm-text-muted-italic">No specific learning objectives listed.</span>
+                      )}
+                    </div>
+
+                    <div className="cm-goals-card outcomes">
+                      <div className="cm-section-header" style={{ color: '#15803d' }}>
+                        <span>🏆 Learning Outcomes</span>
+                        <span style={{ fontSize: '11px', fontWeight: 600 }}>
+                          {(inspectItem.data.outcomes || []).length} Deliverables
+                        </span>
+                      </div>
+                      {Array.isArray(inspectItem.data.outcomes) && inspectItem.data.outcomes.length > 0 ? (
+                        <ul className="cm-goals-list">
+                          {inspectItem.data.outcomes.map((out: string, idx: number) => (
+                            <li key={idx}>{out}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="cm-text-muted-italic">No specific learning outcomes listed.</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Module Resources */}
+                  {Array.isArray(inspectItem.data.resources) && inspectItem.data.resources.length > 0 && (
+                    <div className="cm-inspector-section">
+                      <div className="cm-section-header">
+                        <span>📎 Module Resources ({inspectItem.data.resources.length})</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {inspectItem.data.resources.map((res: any, idx: number) => (
+                          <div key={res.id || idx} className="cm-link-action-card">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontSize: '18px' }}>
+                                {res.type === 'PDF' ? '📄' : res.type === 'Video' ? '🎥' : '🔗'}
+                              </span>
+                              <div>
+                                <strong style={{ fontSize: '13px', display: 'block', color: '#0f172a' }}>
+                                  {res.title || 'Resource'}
+                                </strong>
+                                <span style={{ fontSize: '11px', color: '#64748b' }}>{res.url}</span>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <a
+                                href={res.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="cm-btn-sm cm-btn-view-primary"
+                                style={{ textDecoration: 'none' }}
+                              >
+                                Open ↗
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openInspector('RESOURCE', res, {
+                                    moduleTitle: inspectItem.data.title,
+                                    moduleId: inspectItem.data.id,
+                                  })
+                                }
+                                className="cm-btn-sm cm-btn-view"
+                              >
+                                Inspect
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Module Lessons Breakdown */}
+                  <div className="cm-inspector-section">
+                    <div className="cm-section-header">
+                      <span>📖 Module Lessons Breakdown ({(inspectItem.data.lessons || []).length})</span>
+                    </div>
+                    {(inspectItem.data.lessons || []).length === 0 ? (
+                      <span className="cm-text-muted-italic">No lessons registered in this module.</span>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {inspectItem.data.lessons.map((lesson: any, idx: number) => (
+                          <div
+                            key={lesson.id}
+                            style={{
+                              padding: '10px 14px',
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <div>
+                              <strong style={{ fontSize: '13px', color: '#1e293b' }}>
+                                Lesson {lesson.displayOrder || idx + 1}: {lesson.title}
+                              </strong>
+                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                Duration: {lesson.durationMinutes || 15} mins • {lesson.assignments?.length || 0} tasks
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openInspector('LESSON', lesson, {
+                                  moduleTitle: inspectItem.data.title,
+                                  moduleId: inspectItem.data.id,
+                                })
+                              }
+                              className="cm-btn-sm cm-btn-view"
+                            >
+                              👁️ Inspect Lesson
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* ------------------------------------------------------------------- */}
+              {/* 2. LESSON INSPECTOR VIEW                                           */}
+              {/* ------------------------------------------------------------------- */}
+              {inspectItem.type === 'LESSON' && (
+                <>
+                  <div className="cm-kpi-grid">
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">⏱️ Duration</div>
+                      <div className="cm-kpi-value">{inspectItem.data.durationMinutes || 15} Mins</div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">🔢 Order Index</div>
+                      <div className="cm-kpi-value">Lesson #{inspectItem.data.displayOrder || 1}</div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">🎥 Video Status</div>
+                      <div className="cm-kpi-value">
+                        {inspectItem.data.videoUrl ? 'Available' : 'None'}
+                      </div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">📝 Tasks Attached</div>
+                      <div className="cm-kpi-value">
+                        {(inspectItem.data.assignments || []).length}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Overview Description */}
+                  <div className="cm-inspector-section">
+                    <div className="cm-section-header">
+                      <span>📖 Lesson Content & Notes</span>
+                    </div>
+                    <FormattedRichContent content={inspectItem.data.description} emptyText="No description provided for this lesson." />
+                  </div>
+
+                  {/* Media Content Box (Video / Article) */}
+                  {(inspectItem.data.videoUrl || inspectItem.data.articleUrl) && (
+                    <div className="cm-inspector-section">
+                      <div className="cm-section-header">
+                        <span>🎬 Media & Learning Materials</span>
+                      </div>
+
+                      {/* Embedded Video preview if YouTube/Vimeo */}
+                      {(() => {
+                        const embedUrl = getEmbedVideoUrl(inspectItem.data.videoUrl);
+                        if (embedUrl) {
+                          return (
+                            <div className="cm-video-embed-box">
+                              <iframe
+                                src={embedUrl}
+                                title={inspectItem.data.title}
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                              />
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {inspectItem.data.videoUrl && (
+                          <div className="cm-link-action-card">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span>🎥</span>
+                              <div>
+                                <strong style={{ fontSize: '13px' }}>Video Resource</strong>
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{inspectItem.data.videoUrl}</div>
+                              </div>
+                            </div>
+                            <a
+                              href={inspectItem.data.videoUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="cm-btn-sm cm-btn-view-primary"
+                              style={{ textDecoration: 'none' }}
+                            >
+                              Launch Video ↗
+                            </a>
+                          </div>
                         )}
-                        {!lpTaskLock && (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 600, color: '#334155' }}>
-                            <input type="checkbox" checked={formModuleTaskLocking} onChange={e => setFormModuleTaskLocking(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#4f46e5' }} />
-                            Lock Tasks (Require all lessons)
-                          </label>
+
+                        {inspectItem.data.articleUrl && (
+                          <div className="cm-link-action-card">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span>📰</span>
+                              <div>
+                                <strong style={{ fontSize: '13px' }}>Reading Material / Article</strong>
+                                <div style={{ fontSize: '11px', color: '#64748b' }}>{inspectItem.data.articleUrl}</div>
+                              </div>
+                            </div>
+                            <a
+                              href={inspectItem.data.articleUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="cm-btn-sm cm-btn-view-primary"
+                              style={{ textDecoration: 'none' }}
+                            >
+                              Read Article ↗
+                            </a>
+                          </div>
                         )}
                       </div>
+                    </div>
+                  )}
+
+                  {/* Key Points (if present) */}
+                  {Array.isArray(inspectItem.data.keyPoints) && inspectItem.data.keyPoints.length > 0 && (
+                    <div className="cm-inspector-section">
+                      <div className="cm-section-header">
+                        <span>💡 Key Takeaways</span>
+                      </div>
+                      <ul className="cm-goals-list">
+                        {inspectItem.data.keyPoints.map((kp: string, idx: number) => (
+                          <li key={idx}>{kp}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Attached Lesson Resources */}
+                  {Array.isArray(inspectItem.data.resources) && inspectItem.data.resources.length > 0 && (
+                    <div className="cm-inspector-section">
+                      <div className="cm-section-header">
+                        <span>📎 Lesson Resources ({inspectItem.data.resources.length})</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {inspectItem.data.resources.map((res: any, idx: number) => (
+                          <div key={res.id || idx} className="cm-link-action-card">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span>{res.type === 'PDF' ? '📄' : res.type === 'Video' ? '🎥' : '🔗'}</span>
+                              <strong style={{ fontSize: '13px' }}>{res.title || 'Resource'}</strong>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <a
+                                href={res.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="cm-btn-sm cm-btn-view-primary"
+                                style={{ textDecoration: 'none' }}
+                              >
+                                Open ↗
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  openInspector('RESOURCE', res, {
+                                    moduleTitle: inspectItem.context?.moduleTitle,
+                                    lessonTitle: inspectItem.data.title,
+                                  })
+                                }
+                                className="cm-btn-sm cm-btn-view"
+                              >
+                                Inspect
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Nested Lesson Tasks */}
+                  {Array.isArray(inspectItem.data.assignments) && inspectItem.data.assignments.length > 0 && (
+                    <div className="cm-inspector-section">
+                      <div className="cm-section-header">
+                        <span>📝 Lesson Tasks ({inspectItem.data.assignments.length})</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {inspectItem.data.assignments.map((task: any) => (
+                          <div
+                            key={task.id}
+                            style={{
+                              padding: '10px 14px',
+                              background: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <div>
+                              <strong style={{ fontSize: '13px' }}>{task.title}</strong>
+                              <div style={{ fontSize: '11px', color: '#64748b' }}>
+                                Type: {task.assignmentType} • Max Score: {task.maxScore || 100} pts
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openInspector('TASK', task, {
+                                  moduleTitle: inspectItem.context?.moduleTitle,
+                                  lessonTitle: inspectItem.data.title,
+                                  lessonId: inspectItem.data.id,
+                                })
+                              }
+                              className="cm-btn-sm cm-btn-view"
+                            >
+                              👁️ Inspect Task
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* ------------------------------------------------------------------- */}
+              {/* 3. TASK / ASSIGNMENT INSPECTOR VIEW                                */}
+              {/* ------------------------------------------------------------------- */}
+              {inspectItem.type === 'TASK' && (
+                <>
+                  {(() => {
+                    const task = inspectItem.data;
+                    const questions = extractTaskQuestions(task);
+
+                    return (
+                      <>
+                        <div className="cm-kpi-grid">
+                          <div className="cm-kpi-card">
+                            <div className="cm-kpi-label">🏷️ Assignment Type</div>
+                            <div className="cm-kpi-value" style={{ color: '#4f46e5' }}>
+                              {task.assignmentType}
+                            </div>
+                          </div>
+                          <div className="cm-kpi-card">
+                            <div className="cm-kpi-label">🏆 Max Score</div>
+                            <div className="cm-kpi-value">{task.maxScore || 100} Pts</div>
+                          </div>
+                          <div className="cm-kpi-card">
+                            <div className="cm-kpi-label">⏳ Allotted Time</div>
+                            <div className="cm-kpi-value">
+                              {task.durationDays ? `${task.durationDays}d ` : ''}
+                              {task.durationHours ? `${task.durationHours}h ` : ''}
+                              {task.durationMinutes ? `${task.durationMinutes}m` : ''}
+                              {!task.durationDays && !task.durationHours && !task.durationMinutes && 'No limit'}
+                            </div>
+                          </div>
+                          <div className="cm-kpi-card">
+                            <div className="cm-kpi-label">⚓ Timer Anchor</div>
+                            <div className="cm-kpi-value" style={{ fontSize: '12px' }}>
+                              {task.anchorType === 'TASK_UNLOCKED' ? 'On Task Unlock' : 'On LP Assigned'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Instructions */}
+                        <div className="cm-inspector-section">
+                          <div className="cm-section-header">
+                            <span>📝 Assignment Instructions & Prompt</span>
+                          </div>
+                          <FormattedRichContent
+                            content={task.instructions || task.description}
+                            emptyText="No specific instructions provided for this assignment."
+                          />
+                        </div>
+
+                        {/* External Assignment details */}
+                        {task.assignmentType === 'External' && (
+                          <div className="cm-inspector-section">
+                            <div className="cm-section-header">
+                              <span>🔗 External Submission Details</span>
+                            </div>
+                            {task.externalUrl ? (
+                              <div className="cm-link-action-card">
+                                <div>
+                                  <strong style={{ fontSize: '13px' }}>External Workspace / Documentation</strong>
+                                  <div style={{ fontSize: '11px', color: '#64748b' }}>{task.externalUrl}</div>
+                                </div>
+                                <a
+                                  href={task.externalUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="cm-btn-sm cm-btn-primary"
+                                  style={{ textDecoration: 'none' }}
+                                >
+                                  Open External Link ↗
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="cm-text-muted-italic">No external URL provided.</span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* MCQ Questions Breakdown */}
+                        {task.assignmentType === 'MCQ' && (
+                          <div className="cm-inspector-section">
+                            <div className="cm-section-header">
+                              <span>🔘 MCQ Questions & Correct Answers ({questions.length})</span>
+                              <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 700 }}>
+                                ✓ Correct answers marked in green
+                              </span>
+                            </div>
+
+                            {questions.length === 0 ? (
+                              <span className="cm-text-muted-italic">No MCQ questions configured.</span>
+                            ) : (
+                              questions.map((q: any, qIdx: number) => {
+                                const questionText = q.questionText || q.question || `Question ${qIdx + 1}`;
+                                const opts = Array.isArray(q.options) ? q.options : ['Option 1', 'Option 2', 'Option 3', 'Option 4'];
+                                const correctIdx = Number(q.correctIndex) || 0;
+
+                                return (
+                                  <div key={q.id || qIdx} className="cm-mcq-card">
+                                    <div className="cm-mcq-question-header">
+                                      <div style={{ flex: 1 }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#4f46e5', marginRight: '6px' }}>
+                                          Q{qIdx + 1}.
+                                        </span>
+                                        <div style={{ display: 'inline' }}>
+                                          <FormattedRichContent content={questionText} emptyText="Question prompt" />
+                                        </div>
+                                      </div>
+                                      <span className="cm-badge cm-badge-purple">
+                                        {q.points || q.maxPoints || 10} pts
+                                      </span>
+                                    </div>
+
+                                    <div className="cm-mcq-options-grid">
+                                      {opts.map((opt: string, optIdx: number) => {
+                                        const isCorrect = optIdx === correctIdx;
+                                        return (
+                                          <div
+                                            key={optIdx}
+                                            className={`cm-mcq-option-pill ${isCorrect ? 'correct' : ''}`}
+                                          >
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                              <span style={{ fontSize: '11px', fontWeight: 700, opacity: 0.7 }}>
+                                                {String.fromCharCode(65 + optIdx)}.
+                                              </span>
+                                              <span>{opt}</span>
+                                            </span>
+                                            {isCorrect && (
+                                              <span className="cm-badge cm-badge-emerald" style={{ fontSize: '10px' }}>
+                                                ✓ Correct Answer
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+
+                        {/* Subjective Questions Breakdown with AI Grounding Dependencies */}
+                        {task.assignmentType === 'Subjective' && (
+                          <div className="cm-inspector-section">
+                            <div className="cm-section-header">
+                              <span>📝 Subjective Questions & AI Grounding ({questions.length})</span>
+                            </div>
+
+                            {questions.length === 0 ? (
+                              <span className="cm-text-muted-italic">No subjective questions configured.</span>
+                            ) : (
+                              questions.map((q: any, qIdx: number) => {
+                                const questionText = q.questionText || q.question || `Question ${qIdx + 1}`;
+                                const depIds = q.dependentLessonIds || [];
+
+                                return (
+                                  <div key={q.id || qIdx} className="cm-sub-card">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                      <div style={{ flex: 1 }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#4f46e5', marginRight: '6px' }}>
+                                          Q{qIdx + 1}.
+                                        </span>
+                                        <div style={{ display: 'inline' }}>
+                                          <FormattedRichContent content={questionText} emptyText="Question prompt" />
+                                        </div>
+                                      </div>
+                                      <span className="cm-badge cm-badge-purple">
+                                        Max {q.maxPoints || q.points || 10} pts
+                                      </span>
+                                    </div>
+
+                                    {/* AI Grounding Dependencies */}
+                                    <div className="cm-ai-grounding-box">
+                                      <div className="cm-ai-grounding-title">
+                                        <span>🤖 AI Evaluation Ground Truth Dependencies:</span>
+                                      </div>
+                                      {depIds.length === 0 ? (
+                                        <span style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                                          No specific lessons bound. AI uses general path context.
+                                        </span>
+                                      ) : (
+                                        <div className="cm-lesson-deps-wrap">
+                                          {depIds.map((depId: string) => {
+                                            const resolved = lessonTitleMap.get(String(depId));
+                                            return (
+                                              <span key={depId} className="cm-lesson-dep-chip">
+                                                📖 {resolved ? `${resolved.title} (${resolved.moduleTitle})` : `Lesson ID: ${depId}`}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
                 </>
               )}
 
-              {activeModal.includes('LESSON') && (
+              {/* ------------------------------------------------------------------- */}
+              {/* 4. RESOURCE INSPECTOR VIEW                                         */}
+              {/* ------------------------------------------------------------------- */}
+              {inspectItem.type === 'RESOURCE' && (
                 <>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Video URL</label>
-                    <input
-                      type="url"
-                      value={formVideoUrl}
-                      onChange={(e) => setFormVideoUrl(e.target.value)}
-                      placeholder="https://..."
-                      style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Article URL</label>
-                    <input
-                      type="url"
-                      value={formArticleUrl}
-                      onChange={(e) => setFormArticleUrl(e.target.value)}
-                      placeholder="https://..."
-                      style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (minutes)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={formDurationMinutes}
-                      onChange={(e) => setFormDurationMinutes(Number(e.target.value) || 15)}
-                      style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
-                    />
-                  </div>
-                </>
-              )}
-
-              {activeModal.includes('TASK') && (
-                <>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Evaluation Mode</label>
-                    <select value={formAssignmentType} onChange={(e) => setFormAssignmentType(e.target.value as 'Subjective' | 'MCQ')} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-                      <option value="Subjective">📝 Subjective Questions</option>
-                      <option value="MCQ">🔘 Multiple Choice Quiz (MCQ)</option>
-                    </select>
+                  <div className="cm-kpi-grid">
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">📄 Resource Type</div>
+                      <div className="cm-kpi-value">{inspectItem.data.type || 'Web Link'}</div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">🌐 Host Domain</div>
+                      <div className="cm-kpi-value" style={{ fontSize: '12px' }}>
+                        {(() => {
+                          try {
+                            return new URL(inspectItem.data.url).hostname;
+                          } catch {
+                            return 'External';
+                          }
+                        })()}
+                      </div>
+                    </div>
+                    <div className="cm-kpi-card">
+                      <div className="cm-kpi-label">📍 Association</div>
+                      <div className="cm-kpi-value" style={{ fontSize: '12px' }}>
+                        {inspectItem.context?.lessonTitle
+                          ? `Lesson: ${inspectItem.context.lessonTitle}`
+                          : inspectItem.context?.moduleTitle
+                          ? `Module: ${inspectItem.context.moduleTitle}`
+                          : 'General Resource'}
+                      </div>
+                    </div>
                   </div>
 
-                  <div>
-                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Instructions / Description</label>
-                    <textarea rows={2} value={formInstructions} onChange={(e) => setFormInstructions(e.target.value)} placeholder="Provide instructions for this task..." style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                  </div>
+                  <div className="cm-inspector-section">
+                    <div className="cm-section-header">
+                      <span>🔗 Resource Access Link</span>
+                    </div>
 
-                  {/* MCQ QUESTIONS BUILDER */}
-                  {formAssignmentType === 'MCQ' && (
-                    <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <strong style={{ fontSize: '13px', color: '#1e293b' }}>MCQ Questions ({mcqQuestions.length})</strong>
-                        <button
-                          type="button"
-                          onClick={() => setMcqQuestions(prev => [...prev, { id: `mcq-${Date.now()}`, questionText: '', options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'], correctIndex: 0, points: 10 }])}
-                          style={{ padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
-                        >
-                          + Add Question
-                        </button>
+                    <div className="cm-link-action-card">
+                      <div>
+                        <strong style={{ fontSize: '14px', display: 'block', marginBottom: '4px' }}>
+                          {inspectItem.data.title || 'Attached Resource'}
+                        </strong>
+                        <span style={{ fontSize: '12px', color: '#64748b' }}>{inspectItem.data.url}</span>
                       </div>
 
-                      {mcqQuestions.map((q, idx) => (
-                        <div key={q.id || idx} style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                            <input
-                              type="text" required placeholder={`Q${idx + 1} Question text...`}
-                              value={q.questionText}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setMcqQuestions(prev => prev.map((item, i) => i === idx ? { ...item, questionText: val } : item));
-                              }}
-                              style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                            />
-                            <input
-                              type="number" min={1} max={100} placeholder="Pts"
-                              value={q.points}
-                              onChange={(e) => {
-                                const pts = Number(e.target.value) || 10;
-                                setMcqQuestions(prev => prev.map((item, i) => i === idx ? { ...item, points: pts } : item));
-                              }}
-                              style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                            />
-                            {mcqQuestions.length > 1 && (
-                              <button type="button" onClick={() => setMcqQuestions(prev => prev.filter((_, i) => i !== idx))} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>🗑️</button>
-                            )}
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '6px' }}>
-                            {(q.options || ['Option 1', 'Option 2', 'Option 3', 'Option 4']).map((opt: string, optIdx: number) => (
-                              <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <input
-                                  type="radio" name={`correct_${idx}`}
-                                  checked={q.correctIndex === optIdx}
-                                  onChange={() => setMcqQuestions(prev => prev.map((item, i) => i === idx ? { ...item, correctIndex: optIdx } : item))}
-                                />
-                                <input
-                                  type="text" value={opt}
-                                  onChange={(e) => {
-                                    const newOpt = e.target.value;
-                                    setMcqQuestions(prev => prev.map((item, i) => {
-                                      if (i !== idx) return item;
-                                      const opts = [...(item.options || ['Option 1', 'Option 2', 'Option 3', 'Option 4'])];
-                                      opts[optIdx] = newOpt;
-                                      return { ...item, options: opts };
-                                    }));
-                                  }}
-                                  style={{ width: '100%', padding: '4px 8px', fontSize: '12px', borderRadius: '4px', border: '1px solid #e2e8f0' }}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* SUBJECTIVE QUESTIONS BUILDER */}
-                  {formAssignmentType === 'Subjective' && (
-                    <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                        <strong style={{ fontSize: '13px', color: '#1e293b' }}>Subjective Questions ({subjectiveQuestions.length})</strong>
+                      <div style={{ display: 'flex', gap: '8px' }}>
                         <button
                           type="button"
-                          onClick={() => setSubjectiveQuestions(prev => [...prev, { id: `sub-${Date.now()}`, questionText: '', maxPoints: 10, dependentLessonIds: [] }])}
-                          style={{ padding: '4px 10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600 }}
+                          onClick={() => copyToClipboard(inspectItem.data.url, 'Copied URL!')}
+                          className="cm-btn-sm cm-btn-view"
                         >
-                          + Add Question
+                          {copyFeedback === 'Copied URL!' ? '✓ Copied!' : '📋 Copy URL'}
                         </button>
+                        <a
+                          href={inspectItem.data.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="cm-btn-sm cm-btn-primary"
+                          style={{ textDecoration: 'none' }}
+                        >
+                          Open in New Tab ↗
+                        </a>
                       </div>
-
-                      {subjectiveQuestions.map((q, idx) => (
-                        <div key={q.id || idx} style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '10px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                            <input
-                              type="text" required placeholder={`Q${idx + 1} Question text...`}
-                              value={q.questionText}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setSubjectiveQuestions(prev => prev.map((item, i) => i === idx ? { ...item, questionText: val } : item));
-                              }}
-                              style={{ flex: 1, padding: '6px 10px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                            />
-                            <input
-                              type="number" min={1} max={100} placeholder="Pts"
-                              value={q.maxPoints}
-                              onChange={(e) => {
-                                const pts = Number(e.target.value) || 10;
-                                setSubjectiveQuestions(prev => prev.map((item, i) => i === idx ? { ...item, maxPoints: pts } : item));
-                              }}
-                              style={{ width: '60px', padding: '6px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                            />
-                            {subjectiveQuestions.length > 1 && (
-                              <button type="button" onClick={() => setSubjectiveQuestions(prev => prev.filter((_, i) => i !== idx))} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '4px', padding: '4px 8px', cursor: 'pointer', fontSize: '11px' }}>🗑️</button>
-                            )}
-                          </div>
-                          <div style={{ marginTop: '10px' }}>
-                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#475569', marginBottom: '4px' }}>AI Grounding Dependencies (Lessons)</label>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                              {(modules.find(m => m.id === targetModuleId)?.lessons || []).length === 0 && (
-                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>No lessons available in this module to ground on.</span>
-                              )}
-                              {(modules.find(m => m.id === targetModuleId)?.lessons || []).map((lesson: any) => {
-                                const isChecked = (q.dependentLessonIds || []).includes(lesson.id);
-                                return (
-                                  <label key={lesson.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', padding: '4px 8px', background: isChecked ? '#e0e7ff' : '#f1f5f9', border: `1px solid ${isChecked ? '#818cf8' : '#cbd5e1'}`, borderRadius: '4px', cursor: 'pointer' }}>
-                                    <input 
-                                      type="checkbox" 
-                                      checked={isChecked} 
-                                      onChange={(e) => {
-                                        const checked = e.target.checked;
-                                        setSubjectiveQuestions(prev => prev.map((item, i) => {
-                                          if (i !== idx) return item;
-                                          const deps = new Set(item.dependentLessonIds || []);
-                                          if (checked) deps.add(lesson.id);
-                                          else deps.delete(lesson.id);
-                                          return { ...item, dependentLessonIds: Array.from(deps) };
-                                        }));
-                                      }}
-                                      style={{ cursor: 'pointer', margin: 0 }}
-                                    />
-                                    {lesson.title}
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {formAssignmentType === 'External' && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>External Resource URL</label>
-                      <input type="url" value={formExternalUrl} onChange={(e) => setFormExternalUrl(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                  )}
-                  {/* Due Date explicitly removed for LP Tasks */}
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Days)</label>
-                      <input type="number" min={0} value={formTaskDurationDays} onChange={(e) => setFormTaskDurationDays(Number(e.target.value) || 0)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    
-                    <div style={{ marginBottom: '16px' }}>
-                      <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#475569' }}>Anchor Type (When does the timer start?)</label>
-                      <select value={formTaskAnchorType} onChange={(e) => setFormTaskAnchorType(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}>
-                        <option value="ASSIGNMENT">When LP is Assigned</option>
-                        <option value="TASK_UNLOCKED">When Task is Unlocked</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Hours)</label>
-                      <input type="number" min={0} value={formTaskDurationHours} onChange={(e) => setFormTaskDurationHours(Number(e.target.value) || 0)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Mins)</label>
-                      <input type="number" min={0} value={formTaskDurationMinutes} onChange={(e) => setFormTaskDurationMinutes(Number(e.target.value) || 0)} style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }} />
                     </div>
                   </div>
+
+                  {/* Video Embed Preview if applicable */}
+                  {(() => {
+                    const embedUrl = getEmbedVideoUrl(inspectItem.data.url);
+                    if (embedUrl) {
+                      return (
+                        <div className="cm-inspector-section">
+                          <div className="cm-section-header">
+                            <span>🎥 Video Preview</span>
+                          </div>
+                          <div className="cm-video-embed-box">
+                            <iframe
+                              src={embedUrl}
+                              title={inspectItem.data.title}
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </>
               )}
+            </div>
 
-              <div className="cm-form-actions">
-                <button type="button" onClick={resetFormFields} className="cm-btn-back" style={{ marginBottom: 0 }}>Cancel</button>
-                <button type="submit" disabled={isSubmitting} className="cm-btn-primary">
-                  {isSubmitting ? 'Saving...' : 'Save Updates'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 👁️ VIEW INSPECTOR DETAILS MODAL */}
-      {activeModal === 'VIEW_INSPECTOR' && inspectItem && (
-        <div className="cm-modal-overlay">
-          <div className="cm-modal-content wide">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
+            {/* Modal Footer */}
+            <div className="cm-inspector-footer">
               <div>
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#4f46e5', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {inspectItem.type} DETAILS
-                </span>
-                <h3 style={{ margin: '4px 0 0 0', fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
-                  {inspectItem.data.title}
-                </h3>
+                {inspectorHistory.length > 0 && (
+                  <button type="button" onClick={handleInspectorBack} className="cm-history-back-btn">
+                    <span>←</span> Previous ({inspectorHistory[inspectorHistory.length - 1].type})
+                  </button>
+                )}
               </div>
-              <button onClick={() => resetFormFields()} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px', color: '#64748b' }}>✖</button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {inspectItem.data.description && (
-                <div>
-                  <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '4px' }}>Description:</strong>
-                  <div style={{ fontSize: '13px', color: '#1e293b', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', whiteSpace: 'pre-wrap' }}>
-                    <RichText content={inspectItem.data.description} emptyStateText="No description" />
-                  </div>
-                </div>
-              )}
-
-              {inspectItem.data.instructions && (
-                <div>
-                  <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '4px' }}>Instructions:</strong>
-                  <div style={{ fontSize: '13px', color: '#0c4a6e', background: '#f0f9ff', padding: '12px', borderRadius: '8px', border: '1px solid #bae6fd', whiteSpace: 'pre-wrap' }}>
-                    <RichText content={inspectItem.data.instructions} emptyStateText="No instructions" />
-                  </div>
-                </div>
-              )}
-
-              {inspectItem.type === 'LESSON' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  {inspectItem.data.videoUrl && (
-                    <div style={{ padding: '10px', background: '#eff6ff', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '12px' }}>
-                      🎥 <strong>Video URL:</strong> <a href={inspectItem.data.videoUrl} target="_blank" rel="noreferrer" style={{ color: '#2563eb' }}>{inspectItem.data.videoUrl}</a>
-                    </div>
-                  )}
-                  {inspectItem.data.articleUrl && (
-                    <div style={{ padding: '10px', background: '#fdf4ff', borderRadius: '8px', border: '1px solid #f5d0fe', fontSize: '12px' }}>
-                      📰 <strong>Article URL:</strong> <a href={inspectItem.data.articleUrl} target="_blank" rel="noreferrer" style={{ color: '#c026d3' }}>{inspectItem.data.articleUrl}</a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {inspectItem.data.mcqConfig?.questions?.length > 0 && (
-                <div>
-                  <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block', marginBottom: '8px' }}>Task Questions ({inspectItem.data.mcqConfig.questions.length}):</strong>
-                  {inspectItem.data.mcqConfig.questions.map((q: any, qIdx: number) => (
-                    <div key={qIdx} style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>
-                        <div style={{ display: 'inline-block' }}><RichText content={q.questionText || q.question || ''} emptyStateText="" /></div> <span style={{ color: '#4f46e5' }}>({q.points || q.maxPoints || 10} pts)</span>
-                      </div>
-                      {q.options?.length > 0 && (
-                        <div style={{ marginTop: '6px', fontSize: '12px', color: '#475569' }}>
-                          Options: {q.options.join(', ')}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', paddingTop: '12px', borderTop: '1px solid #f1f5f9' }}>
-              <button onClick={() => resetFormFields()} className="cm-btn-back" style={{ marginBottom: 0 }}>
+              <button type="button" onClick={closeInspector} className="cm-btn-secondary">
                 Close Inspector
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* ✏️ CREATE / EDIT FORM MODALS (PRESERVED)                                  */}
+      {/* ========================================================================= */}
+      {isOwnerOrAdmin &&
+        (activeModal === 'MODULE' ||
+          activeModal === 'EDIT_MODULE' ||
+          activeModal === 'LESSON' ||
+          activeModal === 'EDIT_LESSON' ||
+          activeModal === 'TASK' ||
+          activeModal === 'EDIT_TASK') && (
+          <div className="cm-modal-overlay">
+            <div
+              className={`cm-modal-content ${
+                activeModal === 'TASK' || activeModal === 'EDIT_TASK' ? 'wide' : ''
+              }`}
+            >
+              <div className="cm-inspector-header">
+                <h3 className="cm-inspector-title">{activeModal.replace('_', ' ')}</h3>
+                <button type="button" onClick={resetFormFields} className="cm-btn-close">
+                  ✕
+                </button>
+              </div>
+
+              <div className="cm-inspector-body">
+                <form
+                  onSubmit={handleFormSubmit}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+                >
+                  {/* Module Context */}
+                  {activeModal.includes('TASK') && formAssignmentType !== 'External' && (
+                    <div style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#475569' }}>
+                        Target Learning Path *
+                      </label>
+                      <input
+                        type="text"
+                        readOnly
+                        disabled
+                        value={learningPathTitle}
+                        style={{
+                          width: '100%',
+                          padding: '8px',
+                          marginTop: '4px',
+                          borderRadius: '4px',
+                          border: '1px solid #cbd5e1',
+                          background: '#e2e8f0',
+                          cursor: 'not-allowed',
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {activeModal.includes('TASK') && formAssignmentType !== 'External' && !targetLessonId && (
+                    <div style={{ padding: '12px', background: '#fff', border: '1px solid #3b82f6', borderRadius: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#1e3a8a' }}>
+                        Target Module *
+                      </label>
+                      <select
+                        required
+                        value={targetModuleId || ''}
+                        onChange={(e) => setTargetModuleId(e.target.value)}
+                        style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #93c5fd' }}
+                      >
+                        <option value="" disabled>
+                          -- Select the mandatory module for this assignment --
+                        </option>
+                        {modules.map((m) => (
+                          <option key={m.id} value={String(m.id)}>
+                            {m.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {activeModal.includes('TASK') && formAssignmentType === 'External' && (
+                    <div style={{ padding: '12px', background: '#fdf4ff', border: '1px solid #d8b4fe', borderRadius: '6px' }}>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#6b21a8' }}>
+                        Assign To Trainee *
+                      </label>
+                      <select
+                        required
+                        value={formAssignedTraineeId}
+                        onChange={(e) => setFormAssignedTraineeId(e.target.value)}
+                        style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #c4b5fd' }}
+                      >
+                        <option value="">-- Select trainee --</option>
+                        {trainees.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.firstName} {t.lastName} ({t.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Title *</label>
+                    <input
+                      type="text"
+                      required
+                      value={formTitle}
+                      onChange={(e) => setFormTitle(e.target.value)}
+                      style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                    />
+                  </div>
+
+                  {(activeModal.includes('MODULE') || activeModal.includes('LESSON')) && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>Description</label>
+                      <RichTextEditor
+                        value={formDescription}
+                        onChange={(html) => setFormDescription(html)}
+                        placeholder="Provide a comprehensive description..."
+                      />
+                    </div>
+                  )}
+
+                  {activeModal.includes('MODULE') && (
+                    <>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#4f46e5' }}>
+                          ◎ Learning Objectives (One per line)
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={formObjectives}
+                          onChange={(e) => setFormObjectives(e.target.value)}
+                          placeholder="e.g. Understand RESTful architecture&#10;Design clean API endpoints"
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #c7d2fe', background: '#f5f3ff' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#16a34a' }}>
+                          ✓ Learning Outcomes (One per line)
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={formOutcomes}
+                          onChange={(e) => setFormOutcomes(e.target.value)}
+                          placeholder="e.g. Build a functional REST API&#10;Secure endpoints with JWT"
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #bbf7d0', background: '#f0fdf4' }}
+                        />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div>
+                          <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (Weeks)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={52}
+                            value={formDurationWeeks}
+                            onChange={(e) => setFormDurationWeeks(Number(e.target.value) || 2)}
+                            style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                          />
+                        </div>
+                      </div>
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Resource URL</label>
+                        <input
+                          type="url"
+                          value={formResourceUrl}
+                          onChange={(e) => setFormResourceUrl(e.target.value)}
+                          placeholder="https://..."
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {activeModal.includes('LESSON') && (
+                    <>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Video URL</label>
+                        <input
+                          type="url"
+                          value={formVideoUrl}
+                          onChange={(e) => setFormVideoUrl(e.target.value)}
+                          placeholder="https://..."
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Article URL</label>
+                        <input
+                          type="url"
+                          value={formArticleUrl}
+                          onChange={(e) => setFormArticleUrl(e.target.value)}
+                          placeholder="https://..."
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Duration (minutes)</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={formDurationMinutes}
+                          onChange={(e) => setFormDurationMinutes(Number(e.target.value) || 15)}
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {activeModal.includes('TASK') && (
+                    <>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Evaluation Mode</label>
+                        <select
+                          value={formAssignmentType}
+                          onChange={(e) => setFormAssignmentType(e.target.value as 'Subjective' | 'MCQ')}
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                        >
+                          <option value="Subjective">📝 Subjective Questions</option>
+                          <option value="MCQ">🔘 Multiple Choice Quiz (MCQ)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '13px', fontWeight: 600 }}>Instructions / Description</label>
+                        <textarea
+                          rows={2}
+                          value={formInstructions}
+                          onChange={(e) => setFormInstructions(e.target.value)}
+                          placeholder="Provide instructions for this task..."
+                          style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div className="cm-form-actions">
+                    <button type="button" onClick={resetFormFields} className="cm-btn-secondary">
+                      Cancel
+                    </button>
+                    <button type="submit" disabled={isSubmitting} className="cm-btn-primary">
+                      {isSubmitting ? 'Saving...' : 'Save Updates'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

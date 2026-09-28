@@ -451,16 +451,38 @@ export class ProgressEntityService {
    */
   async getModuleProgress(userId: string, moduleId: string) {
     if (!userId || !moduleId) {
-      return { completionPercent: 0 };
+      return {
+        completionPercent: 0,
+        completedLessons: 0,
+        totalLessons: 0,
+        visitedResources: 0,
+        totalResources: 0,
+        tasksAccepted: 0,
+        totalAssignments: 0,
+        completedLessonIds: [],
+        visitedResourceIds: [],
+        averageScore: 0,
+      };
     }
 
     // 1. Fetch total items for the module
     const module = await this.datasource.getRepository('ModuleEntity').findOne({
       where: { id: moduleId },
-      relations: ['lessons', 'resources', 'lessons.assignments'],
+      relations: ['lessons', 'resources', 'lessons.assignments', 'learningPath'],
     });
 
-    if (!module) return { completionPercent: 0 };
+    if (!module) return {
+      completionPercent: 0,
+      completedLessons: 0,
+      totalLessons: 0,
+      visitedResources: 0,
+      totalResources: 0,
+      tasksAccepted: 0,
+      totalAssignments: 0,
+      completedLessonIds: [],
+      visitedResourceIds: [],
+      averageScore: 0,
+    };
 
     const totalLessons = (module.lessons || []).length;
     const totalResources = (module.resources || []).length;
@@ -471,43 +493,74 @@ export class ProgressEntityService {
     const fromModule = await this.datasource.getRepository('AssignmentEntity').find({
       where: { module: { id: moduleId } } as any,
     });
+
+    // Also fetch path-level assignments for this module's learning path
+    let fromPath: any[] = [];
+    if ((module as any).learningPath?.id) {
+      const pathLevel = await this.datasource.getRepository('AssignmentEntity').find({
+        where: {
+          learningPath: { id: (module as any).learningPath.id },
+          module: IsNull(),
+          lesson: IsNull(),
+        } as any,
+      });
+      const modLessonIds = new Set((module.lessons || []).map((l: any) => String(l.id)));
+      fromPath = pathLevel.filter((a: any) => {
+        if (a.dependsOnLessonIds && a.dependsOnLessonIds.length > 0) {
+          return a.dependsOnLessonIds.some((lid: string) => modLessonIds.has(String(lid)));
+        }
+        return true;
+      });
+    }
     
     const allAssignmentsMap = new Map();
     fromLessons.forEach((a: any) => allAssignmentsMap.set(a.id, a));
     fromModule.forEach((a: any) => allAssignmentsMap.set(a.id, a));
+    fromPath.forEach((a: any) => allAssignmentsMap.set(a.id, a));
     const allAssignments = Array.from(allAssignmentsMap.values());
     const totalTasks = allAssignments.length;
-
-    if (totalLessons === 0 && totalResources === 0 && totalTasks === 0) {
-      return { completionPercent: 0 };
-    }
 
     // 2. Fetch completed items for the user
     const lessonIds = (module.lessons || []).map((l: any) => l.id);
     const resourceIds = (module.resources || []).map((r: any) => r.id);
     const assignmentIds = allAssignments.map((a: any) => a.id);
 
+    // Completed lessons — fetch full rows to extract IDs
     let completedLessons = 0;
+    const completedLessonIds: string[] = [];
     if (lessonIds.length > 0) {
-      completedLessons = await this.repository.count({
+      const completedRows = await this.repository.find({
         where: {
           user: { id: userId },
           isCompleted: true,
           lesson: { id: In(lessonIds) },
         } as any,
+        relations: ['lesson'],
+      });
+      completedLessons = completedRows.length;
+      completedRows.forEach((r: any) => {
+        if (r.lesson?.id) completedLessonIds.push(r.lesson.id);
       });
     }
 
+    // Visited resources — fetch full rows to extract IDs
     let completedResources = 0;
+    const visitedResourceIds: string[] = [];
     if (resourceIds.length > 0) {
-      completedResources = await this.datasource.getRepository('UserResourceVisitEntity').count({
+      const visitRows = await this.datasource.getRepository('UserResourceVisitEntity').find({
         where: {
           user: { id: userId },
           resource: { id: In(resourceIds) },
         } as any,
+        relations: ['resource'],
+      });
+      completedResources = visitRows.length;
+      visitRows.forEach((r: any) => {
+        if (r.resource?.id) visitedResourceIds.push(r.resource.id);
       });
     }
 
+    // Completed tasks (submitted/accepted/evaluated)
     let completedTasks = 0;
     if (assignmentIds.length > 0) {
       completedTasks = await this.submissionRepository.count({
@@ -526,7 +579,35 @@ export class ProgressEntityService {
       });
     }
 
-    // 3. Pooled Item Counts Calculation (Fix for Cause #2)
+    // Average score — compute from graded submissions
+    let averageScore = 0;
+    if (assignmentIds.length > 0) {
+      const gradedSubs = await this.submissionRepository.find({
+        where: {
+          trainee: { id: userId },
+          assignment: { id: In(assignmentIds) },
+          status: In([
+            'Approved', 'APPROVED', 'approved',
+            'Accepted', 'ACCEPTED', 'accepted',
+            'Evaluated', 'EVALUATED', 'evaluated',
+          ]),
+        } as any,
+        relations: ['assignment'],
+      });
+      let scoreSum = 0;
+      let maxScoreSum = 0;
+      gradedSubs.forEach((s: any) => {
+        if (typeof s.score === 'number') {
+          scoreSum += s.score;
+          maxScoreSum += (s.assignment?.maxScore || s.maxScore || 100);
+        }
+      });
+      averageScore = maxScoreSum > 0
+        ? Math.min(100, Math.round((scoreSum / maxScoreSum) * 100))
+        : 0;
+    }
+
+    // 3. Pooled Item Counts Calculation
     const totalItems = totalLessons + totalResources + totalTasks;
     let finalProgress = 0;
     if (totalItems > 0) {
@@ -542,6 +623,9 @@ export class ProgressEntityService {
       totalResources,
       tasksAccepted: completedTasks,
       totalAssignments: totalTasks,
+      completedLessonIds,
+      visitedResourceIds,
+      averageScore,
     };
   }
 

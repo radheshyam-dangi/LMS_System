@@ -201,7 +201,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
+    <div style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto' }}>
       <header style={{ marginBottom: '24px' }}>
         <h2 style={{ fontSize: '24px', fontWeight: 700, margin: '0 0 6px 0' }}>My Submitted Tasks & Scores</h2>
         <p style={{ color: '#64748b', margin: 0 }}>

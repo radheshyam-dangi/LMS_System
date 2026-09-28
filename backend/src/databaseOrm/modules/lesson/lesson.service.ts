@@ -230,7 +230,14 @@ export class LessonEntityService extends BaseService<LessonEntity> {
         result.push({ 
           ...lesson, 
           isLocked: true, 
-          lockReason: `Complete '${incompletePrior.title}' to unlock this lesson.` 
+          lockReason: `Complete '${incompletePrior.title}' to unlock this lesson.`,
+          description: '',
+          videoUrl: null,
+          articleUrl: null,
+          videos: [],
+          audios: [],
+          keyPoints: [],
+          resources: []
         });
       } else {
         result.push({ ...lesson, isLocked: false, lockReason: null });

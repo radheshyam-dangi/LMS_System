@@ -98,6 +98,9 @@ export class LpAuthoringService {
         existingLP.difficulty = payload.level ? payload.level.charAt(0).toUpperCase() + payload.level.slice(1) : (payload.difficulty || 'Intermediate');
         existingLP.status = payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : (existingLP.status || 'Active');
         existingLP.duration = payload.duration || '12 weeks';
+        existingLP.skillsTags = Array.isArray(payload.skillsTags)
+          ? payload.skillsTags
+          : (payload.skillsTags ? [payload.skillsTags] : []);
         savedLP = await manager.save(LearningPathEntity, existingLP);
         
         // Find ids to keep
@@ -241,22 +244,71 @@ export class LpAuthoringService {
         // 3. Create/Update Lessons
         for (let lessonIdx = 0; lessonIdx < (modulePayload.lessons || []).length; lessonIdx++) {
           const lessonPayload = modulePayload.lessons[lessonIdx];
+          const lessonId = lessonPayload.id && /^[0-9a-f]{8}-/i.test(lessonPayload.id) ? lessonPayload.id : null;
+          
+          let existingLesson = null;
+          if (lessonId) {
+            existingLesson = await manager.findOne(LessonEntity, { where: { id: lessonId } });
+          }
 
-          const lessonData = manager.create(LessonEntity, {
-            ...(lessonPayload.id && /^[0-9a-f]{8}-/i.test(lessonPayload.id) ? { id: lessonPayload.id } : {}),
-            title: lessonPayload.title || `Lesson ${lessonIdx + 1}`,
-            description: lessonPayload.description || null,
-            videoUrl: lessonPayload.videos?.[0]?.url || null,
-            displayOrder: lessonIdx + 1,
-            durationMinutes: lessonPayload.durationMinutes || 15,
-            module: savedModule,
-            learningPath: savedLP,
-            createdBy: creator,
-            videos: lessonPayload.videos || [],
-            audios: lessonPayload.audios || [],
-            keyPoints: lessonPayload.keyPoints || [],
-          });
-          const savedLesson = await manager.save(LessonEntity, lessonData);
+          const normalizeUrl = (url: string | null | undefined): string | null => {
+            if (!url || !url.trim()) return null;
+            const trimmed = url.trim();
+            if (trimmed.toLowerCase().startsWith('javascript:') || trimmed.toLowerCase().startsWith('data:')) {
+              throw new BadRequestException('Invalid URL scheme detected.');
+            }
+            if (!trimmed.toLowerCase().startsWith('http://') && !trimmed.toLowerCase().startsWith('https://')) {
+              return `https://${trimmed}`;
+            }
+            return trimmed;
+          };
+
+          // Compute new values
+          const newVideoUrl = normalizeUrl(lessonPayload.videos?.[0]?.url);
+          const newVideos = (lessonPayload.videos || []).map((v: any) => ({ ...v, url: normalizeUrl(v.url) }));
+          const newAudios = (lessonPayload.audios || []).map((a: any) => ({ ...a, url: normalizeUrl(a.url) }));
+          const newResources = (lessonPayload.resources || []).map((r: any) => ({ ...r, url: normalizeUrl(r.url) }));
+
+          const crypto = require('crypto');
+          const sourceString = JSON.stringify({ v: newVideos, a: newAudios, r: newResources, d: lessonPayload.description });
+          const newSourceHash = crypto.createHash('sha256').update(sourceString).digest('hex');
+
+          let savedLesson;
+          if (existingLesson) {
+            const contentChanged = existingLesson.sourceHash !== newSourceHash;
+            existingLesson.title = lessonPayload.title || `Lesson ${lessonIdx + 1}`;
+            existingLesson.description = lessonPayload.description || null;
+            existingLesson.videoUrl = newVideoUrl;
+            existingLesson.displayOrder = lessonIdx + 1;
+            existingLesson.durationMinutes = lessonPayload.durationMinutes || 15;
+            existingLesson.videos = newVideos;
+            existingLesson.audios = newAudios;
+            existingLesson.keyPoints = lessonPayload.keyPoints || [];
+            if (contentChanged) {
+              existingLesson.contentVersion = (existingLesson.contentVersion || 1) + 1;
+              existingLesson.sourceHash = newSourceHash;
+            }
+            savedLesson = await manager.save(LessonEntity, existingLesson);
+          } else {
+            const lessonData = manager.create(LessonEntity, {
+              ...(lessonId ? { id: lessonId } : {}),
+              title: lessonPayload.title || `Lesson ${lessonIdx + 1}`,
+              description: lessonPayload.description || null,
+              videoUrl: newVideoUrl,
+              displayOrder: lessonIdx + 1,
+              durationMinutes: lessonPayload.durationMinutes || 15,
+              module: savedModule,
+              learningPath: savedLP,
+              createdBy: creator,
+              videos: newVideos,
+              audios: newAudios,
+              keyPoints: lessonPayload.keyPoints || [],
+              contentVersion: 1,
+              sourceHash: newSourceHash,
+            });
+            savedLesson = await manager.save(LessonEntity, lessonData);
+          }
+          
           createdLessonIds.push(savedLesson.id);
           if (lessonPayload.id) {
             tempIdToRealId.set(lessonPayload.id, savedLesson.id);
@@ -267,7 +319,8 @@ export class LpAuthoringService {
           await manager.delete(ResourceEntity, { lesson: { id: savedLesson.id } });
 
           // Create resources for this lesson
-          for (const resource of lessonPayload.resources || []) {
+          for (const resource of newResources) {
+            if (!resource.url) continue;
             const resourceData = manager.create(ResourceEntity, {
               title: resource.label || resource.url,
               url: resource.url,

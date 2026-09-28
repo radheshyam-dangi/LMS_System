@@ -229,7 +229,7 @@ export function LearningPathsSection({
     setErrorMessage(null);
     try {
       const [data, summary] = await Promise.all([
-        learningPathService.fetchAllPaths(accessToken, debouncedSearchQuery),
+        learningPathService.fetchAllPaths(accessToken),
         progressService.fetchPathProgressSummary(accessToken).catch(() => ({})),
       ]);
       setPaths(data);
@@ -269,7 +269,8 @@ export function LearningPathsSection({
 
   useEffect(() => {
     loadDatabasePaths();
-  }, [debouncedSearchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (isAdmin || isTrainer) {
@@ -418,19 +419,49 @@ export function LearningPathsSection({
       if (isTrainee) {
         const progress = progressSummary[path.id]?.userProgressPercent || 0;
 
-        if (activeTabFilter === "All") return true;
-        if (activeTabFilter === "Completed") return progress === 100;
-        if (activeTabFilter === "Active") return progress < 100 && path.status?.toLowerCase() !== "upcoming";
-        
-        return false;
+        if (activeTabFilter === "All") {
+          // pass to search query check
+        } else if (activeTabFilter === "Completed") {
+          if (progress !== 100) return false;
+        } else if (activeTabFilter === "Active") {
+          if (progress === 100 || path.status?.toLowerCase() === "upcoming") return false;
+        } else {
+          return false;
+        }
+      } else {
+        if (
+          activeTabFilter !== "All" &&
+          path.status?.toLowerCase() !== activeTabFilter.toLowerCase()
+        ) {
+          return false;
+        }
       }
 
-      return (
-        activeTabFilter === "All" ||
-        path.status?.toLowerCase() === activeTabFilter.toLowerCase()
-      );
+      // Dual search by Title/Name AND Skill Tags (plus Description)
+      const query = debouncedSearchQuery.trim().toLowerCase();
+      if (query) {
+        const title = (path.title || path.name || "").toLowerCase();
+        const desc = (path.description || "").toLowerCase();
+
+        let tags: string[] = [];
+        if (Array.isArray(path.skillsTags)) {
+          tags = path.skillsTags;
+        } else if (typeof path.skillsTags === "string") {
+          tags = (path.skillsTags as string).split(",").map((t) => t.trim());
+        }
+
+        const titleMatch = title.includes(query);
+        const descMatch = desc.includes(query);
+        const tagsMatch = tags.some((t) => t.toLowerCase().includes(query));
+
+        if (!titleMatch && !descMatch && !tagsMatch) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [paths, activeTabFilter, isTrainee, currentUser.id, progressSummary]);
+  }, [paths, activeTabFilter, isTrainee, currentUser.id, progressSummary, debouncedSearchQuery, searchQuery]);
 
 
   const currentTrainerName = selectedPath?.createdBy?.firstName
@@ -479,15 +510,43 @@ export function LearningPathsSection({
           ))}
         </div>
         <div className="search-filter-input-wrapper">
+          <span className="search-input-icon">🔍</span>
           <input
             type="text"
             className="paths-search-field"
-            placeholder="Search paths..."
+            placeholder="Search paths by name or skill tags (e.g. React, Python)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          {searchQuery && (
+            <button
+              type="button"
+              className="search-clear-btn"
+              onClick={() => setSearchQuery("")}
+              title="Clear search"
+              aria-label="Clear search"
+            >
+              &times;
+            </button>
+          )}
         </div>
       </section>
+
+      {/* ACTIVE SEARCH FILTER PILL */}
+      {searchQuery.trim() && (
+        <div className="search-active-pill-strip">
+          <span className="search-active-tag-badge">
+            🔎 Filtering by: <strong>"{searchQuery}"</strong> (matching path title & skill tags)
+          </span>
+          <button 
+            type="button"
+            className="btn-clear-search-pill" 
+            onClick={() => setSearchQuery("")}
+          >
+            Clear Filter ✕
+          </button>
+        </div>
+      )}
 
       {/* PATHS GRID */}
       {isLoading ? (
@@ -533,7 +592,7 @@ export function LearningPathsSection({
               </h3>
               <p style={{ margin: '0 0 32px 0', fontSize: '15px', color: '#64748b', maxWidth: '400px', lineHeight: 1.6 }}>
                 {searchQuery || activeTabFilter !== 'All'
-                  ? "We couldn't find any learning paths matching your current filters. Try adjusting your search or clearing the filters."
+                  ? "No learning paths match your search."
                   : isTrainee 
                     ? "You haven't been assigned to any learning paths yet. Check back later!"
                     : "It looks like there aren't any learning paths available right now. Once created, they will appear here."}
@@ -664,7 +723,7 @@ export function LearningPathsSection({
                   <ExpandableDescription description={path.description || ""} />
 
                   {/* SKILLS TAGS CLOUD ROW */}
-                  {currentTags.length > 0 && (
+                  {currentTags.length > 0 ? (
                     <div
                       className="card-tags-cloud-row"
                       style={{
@@ -676,27 +735,39 @@ export function LearningPathsSection({
                       }}
                     >
                       {currentTags.map((tag, idx) => {
-                        const isMatched = matchedTagsLower.includes(tag.toLowerCase());
+                        const isMatched =
+                          matchedTagsLower.includes(tag.toLowerCase()) ||
+                          (searchQuery.trim().length > 0 &&
+                            tag.toLowerCase().includes(searchQuery.trim().toLowerCase()));
                         return (
                           <span
                             key={idx}
-                            title={isMatched ? `Matched search: ${tag}` : undefined}
-                            style={{
-                              fontSize: "11px",
-                              fontWeight: 600,
-                              color: isMatched ? "#4f46e5" : "#2563eb",
-                              background: isMatched ? "rgba(79, 70, 229, 0.15)" : "#eff6ff",
-                              border: isMatched ? "1px solid #818cf8" : "1px solid #bfdbfe",
-                              padding: "2px 8px",
-                              borderRadius: "12px",
-                              boxShadow: isMatched ? "0 0 0 1px #818cf8" : "none",
+                            className={`card-skill-tag-chip ${isMatched ? "is-matched" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSearchQuery(tag);
                             }}
+                            title={`Click to filter by skill "${tag}"`}
                           >
-                            {highlightMatch(tag, debouncedSearchQuery)}
+                            <span className="tag-hash">#</span>
+                            <span className="tag-text">{highlightMatch(tag, searchQuery)}</span>
                           </span>
                         );
                       })}
                     </div>
+                  ) : (
+                    isOwnerOrAdmin && (
+                      <div 
+                        className="card-empty-tags-row"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEditModal(path);
+                        }}
+                        title="Click to add skill tags in editor"
+                      >
+                        <span className="add-tag-prompt">+ Add Skill Tags</span>
+                      </div>
+                    )
                   )}
 
                   <div className="card-counters-flex-strip">

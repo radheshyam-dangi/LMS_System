@@ -1,3 +1,5 @@
+import { sanitizeTextInput } from '../../utils/textUtils';
+
 /**
  * Client-side parser: converts Tiptap editor JSON tree into the structured
  * payload expected by the LP Authoring backend endpoint.
@@ -68,6 +70,8 @@ export interface ParsedLPDocument {
   description: string;
   level?: string;
   status?: string;
+  skillsTags?: string[];
+  imageUrl?: string;
   modules: ParsedModule[];
   _draftId?: string;
   id?: string;
@@ -151,7 +155,7 @@ function extractQuestions(node: any): ParsedQuestion[] {
       
       for (const child of q.content || []) {
         if (child.type === 'paragraph') {
-          qText += extractText(child) + '\\n';
+          qText += extractText(child) + '\n';
         } else if (child.type === 'bulletList' || child.type === 'orderedList') {
           qOptions.push(...extractListItems(child));
         }
@@ -164,12 +168,14 @@ function extractQuestions(node: any): ParsedQuestion[] {
 
       return {
         id: q.attrs?.id || crypto.randomUUID(),
-        text: qText.trim() || 'Untitled Question',
+        text: sanitizeTextInput(qText.trim()) || 'Untitled Question',
         type,
         maxPoints: q.attrs?.maxPoints || 10,
         options,
         correctIndex: q.attrs?.correctIndex,
         expectedAnswerGuideline: q.attrs?.expectedAnswerGuideline || '',
+        requiresLessonGrounding: q.attrs?.requiresLessonGrounding !== false,
+        lessonDependencies: Array.isArray(q.attrs?.lessonDependencies) ? q.attrs.lessonDependencies : [],
       };
     });
 }
@@ -193,7 +199,7 @@ function parseLesson(lessonNode: any): ParsedLesson {
         break;
       case 'description':
       case 'paragraph':
-        lesson.description += generateHTML(block);
+        lesson.description += sanitizeTextInput(generateHTML(block));
         break;
       case 'videoBlock':
         if (block.attrs?.url) lesson.videos.push(block.attrs);
@@ -238,7 +244,7 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
         
         for (const child of block.content || []) {
           if (child.type === 'paragraph') {
-            qText += extractText(child) + '\\n';
+            qText += extractText(child) + '\n';
           } else if (child.type === 'bulletList' || child.type === 'orderedList') {
             qOptions.push(...extractListItems(child));
           }
@@ -251,7 +257,7 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
 
         questions.push({
           id: block.attrs?.id || crypto.randomUUID(),
-          text: qText.trim() || 'Untitled Question',
+          text: sanitizeTextInput(qText.trim()) || 'Untitled Question',
           type,
           maxPoints: block.attrs?.maxPoints || 10,
           options,
@@ -267,8 +273,8 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
 
   return {
     id: attrs.id || crypto.randomUUID(),
-    title,
-    body,
+    title: sanitizeTextInput(title.trim()) || 'Untitled Assignment',
+    body: sanitizeTextInput(body),
     questions,
     dependsOnLessonIds: attrs.dependsOnLessonIds !== undefined ? attrs.dependsOnLessonIds : null, // will be resolved in parseModule
     lockConfig: {
@@ -289,7 +295,7 @@ function parseModule(moduleNode: any): ParsedModule {
   const module: ParsedModule = {
     id: attrs.id || crypto.randomUUID(),
     title: '',
-    description: '',
+    description: attrs.description || '',
     sequentialLessonLock: attrs.sequentialLessonLock !== false,
     learningObjectives: attrs.learningObjectives || [],
     learningOutcomes: attrs.learningOutcomes || [],
@@ -304,9 +310,11 @@ function parseModule(moduleNode: any): ParsedModule {
       case 'heading':
         if (!module.title) module.title = extractText(child);
         break;
-      case 'paragraph':
-        module.description += generateHTML(child);
+      case 'paragraph': {
+        // Module description is stored in attrs.description and edited via textarea.
+        // Ignore standalone paragraphs in the module body to avoid overwriting the real description.
         break;
+      }
       case 'lesson':
         module.lessons.push(parseLesson(child));
         break;
@@ -339,6 +347,8 @@ export function parseLPDocument(doc: any, draftId?: string, pathId?: string): Pa
     description: '',
     level: doc?.attrs?.level || 'basic',
     status: doc?.attrs?.status || 'upcoming',
+    skillsTags: Array.isArray(doc?.attrs?.skillsTags) ? doc.attrs.skillsTags : [],
+    imageUrl: doc?.attrs?.imageUrl || '',
     modules: [],
   };
 
@@ -357,7 +367,7 @@ export function parseLPDocument(doc: any, draftId?: string, pathId?: string): Pa
           // First text content is title if no lpTitle node
           lp.title = extractText(node);
         } else {
-          lp.description += generateHTML(node);
+          lp.description += sanitizeTextInput(generateHTML(node));
         }
         break;
       case 'module':

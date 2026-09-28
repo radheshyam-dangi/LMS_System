@@ -8,6 +8,7 @@ import { DeadlineDisplay } from '../DeadlineDisplay';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
 import { Filter, X } from 'lucide-react';
 import { RichText } from '../common/RichText';
+import { renderMultilineText } from '../../utils/textUtils';
 import './TraineeAssignments.css';
 
 type Props = {
@@ -797,7 +798,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                           <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
                             <strong style={{ fontSize: 15, color: '#0f172a' }}>Q{idx + 1}.</strong>
                             <div style={{ fontSize: 15, color: '#0f172a', fontWeight: 'bold' }}>
-                              <RichText content={String(q.text || q.questionText || q.question || '').replace(/\\n/g, '<br/>')} emptyStateText="No question text" />
+                              {renderMultilineText(q.text || q.questionText || q.question || '') || 'No question text'}
                             </div>
                           </div>
                           <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, background: '#e2e8f0', padding: '2px 8px', borderRadius: 12, whiteSpace: 'nowrap', marginLeft: 12 }}>

@@ -16,7 +16,8 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
     type: 'doc',
     attrs: {
       level: lp.difficulty?.toLowerCase() || 'basic',
-      status: lp.status?.toLowerCase() || 'upcoming'
+      status: lp.status?.toLowerCase() || 'upcoming',
+      skillsTags: Array.isArray(lp.skillsTags) ? lp.skillsTags : []
     },
     content: [
       {
@@ -40,6 +41,7 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
         sequentialLessonLock: mod.lessonLocking ?? true,
         learningObjectives: mod.objectives || [],
         learningOutcomes: mod.outcomes || [],
+        description: cleanHTML(mod.description) || '',
         moduleResources: (mod.resources || []).map((r: any) => ({
           label: r.title || r.label,
           url: r.url,
@@ -55,13 +57,7 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
       ]
     };
 
-    if (mod.description) {
-      const modDesc = createTextNode(mod.description);
-      moduleNode.content.push({
-        type: 'paragraph',
-        ...(modDesc.length ? { content: modDesc } : {})
-      });
-    }
+    // Module description is already stored in attrs.description
 
     for (const lesson of mod.lessons || []) {
       const lessonTitle = createTextNode(lesson.title);
@@ -85,7 +81,8 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
         });
       }
 
-      for (const video of lesson.videos || []) {
+      const videos = lesson.videos?.length ? lesson.videos : (lesson.videoUrl ? [{ url: lesson.videoUrl }] : []);
+      for (const video of videos) {
         lessonNode.content.push({
           type: 'videoBlock',
           attrs: { url: video.url || video }
@@ -169,7 +166,9 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
             questionType: q.type || 'Subjective',
             maxPoints: q.maxPoints || 10,
             correctIndex: q.correctIndex,
-            expectedAnswerGuideline: q.expectedAnswerGuideline || ''
+            expectedAnswerGuideline: q.expectedAnswerGuideline || '',
+            requiresLessonGrounding: q.requiresLessonGrounding !== false,
+            lessonDependencies: Array.isArray(q.lessonDependencies) ? q.lessonDependencies : (Array.isArray(q.questionLessonDependencies) ? q.questionLessonDependencies.map((d: any) => d.lessonId || d) : [])
           },
           content: [
             {

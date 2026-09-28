@@ -4,7 +4,7 @@ import {
   NotFoundException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, IsNull } from 'typeorm';
 import { BaseService } from '../../../common/services/base.service';
 import { ModuleEntity } from '../../entities/module.entity';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
@@ -12,6 +12,7 @@ import { UserEntity } from '../../entities/user.entity';
 import { LessonEntity } from '../../entities/lesson.entity';
 import { ModuleKeyPointEntity } from '../../entities/moduleKeyPoint.entity';
 import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
+import { AssignmentEntity } from '../../entities/assignment.entity';
 import { AssignmentEntityService } from '../assignment/assignment.service';
 import { forwardRef, Inject } from '@nestjs/common';
 
@@ -267,7 +268,7 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
    */
   async findModulesByPathId(learningPathId: string): Promise<ModuleEntity[]> {
     try {
-      return await this.repository.find({
+      const modules = await this.repository.find({
         where: {
           learningPath: { id: learningPathId },
         },
@@ -283,6 +284,32 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
         ],
         order: { createdAt: 'ASC' },
       });
+
+      // Find any assignments linked to learning path that might not have moduleId set
+      const unattachedAssignments = await this.datasource.getRepository(AssignmentEntity).find({
+        where: {
+          learningPath: { id: learningPathId },
+          module: IsNull(),
+          lesson: IsNull(),
+        },
+      });
+
+      if (unattachedAssignments.length > 0 && modules.length > 0) {
+        for (const asg of unattachedAssignments) {
+          let targetModule = modules[0];
+          if (asg.dependsOnLessonIds && asg.dependsOnLessonIds.length > 0) {
+            const depSet = new Set(asg.dependsOnLessonIds.map(String));
+            const matchingMod = modules.find(m => (m.lessons || []).some(l => depSet.has(String(l.id))));
+            if (matchingMod) targetModule = matchingMod;
+          }
+          if (!targetModule.assignments) targetModule.assignments = [];
+          if (!targetModule.assignments.some(a => a.id === asg.id)) {
+            targetModule.assignments.push(asg);
+          }
+        }
+      }
+
+      return modules;
     } catch (error: any) {
       throw new InternalServerErrorException(
         `Failed to fetch modules: ${error.message}`,
@@ -332,6 +359,37 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
       (result as any).keyPoints = keyPoints;
     } catch {}
 
+    // Attach any path-level assignments for this module's LP that belong here
+    if (result.learningPath?.id) {
+      const pathLevelAssignments = await this.datasource.getRepository(AssignmentEntity).find({
+        where: {
+          learningPath: { id: result.learningPath.id },
+          module: IsNull(),
+          lesson: IsNull(),
+        },
+      });
+
+      const moduleLessonIds = new Set((result.lessons || []).map(l => String(l.id)));
+      const existingAssignmentIds = new Set((result.assignments || []).map(a => a.id));
+
+      for (const asg of pathLevelAssignments) {
+        if (existingAssignmentIds.has(asg.id)) continue;
+
+        let belongsToThisModule = false;
+        if (asg.dependsOnLessonIds && asg.dependsOnLessonIds.length > 0) {
+          belongsToThisModule = asg.dependsOnLessonIds.some((lid: string) => moduleLessonIds.has(String(lid)));
+        } else {
+          belongsToThisModule = true;
+        }
+
+        if (belongsToThisModule) {
+          if (!result.assignments) result.assignments = [];
+          result.assignments.push(asg);
+          existingAssignmentIds.add(asg.id);
+        }
+      }
+    }
+
     // Compute locking
     if (result.lessons) {
       result.lessons.sort((a, b) => {
@@ -366,6 +424,17 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
           (lesson as any).isLocked = false;
         }
         
+        // Strip content if locked
+        if ((lesson as any).isLocked) {
+          lesson.description = '';
+          lesson.videoUrl = null as any;
+          lesson.articleUrl = null as any;
+          lesson.videos = [];
+          lesson.audios = [];
+          lesson.keyPoints = [];
+          lesson.resources = [];
+        }
+
         previousCompleted = isCompleted;
         if (!isCompleted) allLessonsCompleted = false;
       }
@@ -381,6 +450,18 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
             (task as any).isLocked = lockState.isLocked;
             (task as any).lockReason = lockState.lockReason;
           }
+        }
+      }
+
+      // Apply task locking to module-level assignments
+      if (result.assignments) {
+        for (const task of result.assignments) {
+          let lockState: { isLocked: boolean; lockReason: string | null } = { isLocked: false, lockReason: null };
+          if (userId) {
+            lockState = await this.assignmentService.evaluateLockState(task as any, userId);
+          }
+          (task as any).isLocked = lockState.isLocked;
+          (task as any).lockReason = lockState.lockReason;
         }
       }
     }

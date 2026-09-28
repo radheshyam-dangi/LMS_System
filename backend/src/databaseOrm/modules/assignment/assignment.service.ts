@@ -18,6 +18,8 @@ import { ModuleEntity } from '../../entities/module.entity';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { EnrollmentEntity } from '../../entities/enrollment.entity';
 import { UserEntity } from '../../entities/user.entity';
+import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
+import { isAssignmentUnlocked } from '../../../shared/lockLogic';
 import { NotificationService } from '../notification/notification.service';
 // B1: Lazy import via forwardRef to avoid circular dependency
 import type { AiEvaluationService } from '../aiEvaluation/aiEvaluation.service';
@@ -55,6 +57,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   private learningPathRepository: Repository<LearningPathEntity>;
   private enrollmentRepository: Repository<EnrollmentEntity>;
   private userRepository: Repository<UserEntity>;
+  private userLessonProgressRepo: Repository<UserLessonProgressEntity>;
 
   constructor(
     private readonly datasource: DataSource,
@@ -86,6 +89,10 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       this.datasource.getRepository<LearningPathEntity>(LearningPathEntity);
     this.enrollmentRepository =
       this.datasource.getRepository<EnrollmentEntity>(EnrollmentEntity);
+    this.userLessonProgressRepo =
+      this.datasource.getRepository<UserLessonProgressEntity>(
+        UserLessonProgressEntity,
+      );
   }
 
   private extractUserRoles(user: any): string[] {
@@ -245,17 +252,39 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       if (lessonId && UUID_REGEX.test(lessonId)) {
         lesson = await this.lessonRepository.findOne({
           where: { id: lessonId },
+          relations: ['module', 'module.learningPath'],
         });
+        if (lesson && !module && lesson.module) {
+          module = lesson.module;
+        }
+        if (lesson && !learningPath && lesson.module?.learningPath) {
+          learningPath = lesson.module.learningPath;
+        }
       }
       if (moduleId && UUID_REGEX.test(moduleId)) {
         module = await this.moduleRepository.findOne({
           where: { id: moduleId },
+          relations: ['learningPath'],
         });
+        if (module && !learningPath && module.learningPath) {
+          learningPath = module.learningPath;
+        }
       }
       if (learningPathId && UUID_REGEX.test(learningPathId)) {
         learningPath = await this.learningPathRepository.findOne({
           where: { id: learningPathId },
+          relations: ['modules', 'modules.lessons'],
         });
+        if (!module && learningPath?.modules?.length) {
+          if (dto.dependsOnLessonIds?.length) {
+            const depSet = new Set(dto.dependsOnLessonIds.map(String));
+            const matchingMod = learningPath.modules.find(m => (m.lessons || []).some(l => depSet.has(String(l.id))));
+            if (matchingMod) module = matchingMod;
+          }
+          if (!module) {
+            module = learningPath.modules[0];
+          }
+        }
       }
     }
 
@@ -457,6 +486,49 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const updated = this.repository.merge(assignment, rest);
     if (anchorType) {
       updated.anchorType = anchorType;
+    }
+
+    if (moduleId && UUID_REGEX.test(moduleId)) {
+      const mod = await this.moduleRepository.findOne({
+        where: { id: moduleId },
+        relations: ['learningPath'],
+      });
+      if (mod) {
+        updated.module = mod;
+        if (!updated.learningPath && mod.learningPath) {
+          updated.learningPath = mod.learningPath;
+        }
+      }
+    }
+    if (lessonId && UUID_REGEX.test(lessonId)) {
+      const les = await this.lessonRepository.findOne({
+        where: { id: lessonId },
+        relations: ['module', 'module.learningPath'],
+      });
+      if (les) {
+        updated.lesson = les;
+        if (les.module) updated.module = les.module;
+        if (les.module?.learningPath) updated.learningPath = les.module.learningPath;
+      }
+    }
+    if (learningPathId && UUID_REGEX.test(learningPathId)) {
+      const lp = await this.learningPathRepository.findOne({
+        where: { id: learningPathId },
+        relations: ['modules', 'modules.lessons'],
+      });
+      if (lp) {
+        updated.learningPath = lp;
+        if (!updated.module && lp.modules?.length) {
+          if (dto.dependsOnLessonIds?.length) {
+            const depSet = new Set(dto.dependsOnLessonIds.map(String));
+            const matchingMod = lp.modules.find(m => (m.lessons || []).some(l => depSet.has(String(l.id))));
+            if (matchingMod) updated.module = matchingMod;
+          }
+          if (!updated.module) {
+            updated.module = lp.modules[0];
+          }
+        }
+      }
     }
 
     if (Array.isArray(traineeIds) || Array.isArray(assignedToTraineeIds)) {
@@ -1402,7 +1474,21 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   }
 
   async evaluateLockState(assignment: AssignmentEntity, userId: string): Promise<{ isLocked: boolean; lockReason: string | null }> {
-    return { isLocked: false, lockReason: null };
+    if (!userId || !assignment) return { isLocked: false, lockReason: null };
+    try {
+      const completedProgress = await this.userLessonProgressRepo.find({
+        where: { user: { id: userId }, isCompleted: true },
+        relations: ['lesson'],
+      });
+      const completedLessonIds = completedProgress.map(p => p.lesson?.id).filter(Boolean) as string[];
+      const unlocked = isAssignmentUnlocked(assignment as any, { completedLessonIds });
+      if (!unlocked) {
+        return { isLocked: true, lockReason: 'Complete required preceding lessons to unlock this task.' };
+      }
+      return { isLocked: false, lockReason: null };
+    } catch {
+      return { isLocked: false, lockReason: null };
+    }
   }
 
   async getQuestionLessonOptions(assignmentId: string, questionId: string) {

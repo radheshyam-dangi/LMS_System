@@ -174,6 +174,9 @@ export const progressService = {
       totalResources: data?.totalResources ?? 0,
       tasksAccepted: data?.tasksAccepted ?? 0,
       totalAssignments: data?.totalAssignments ?? 0,
+      completedLessonIds: data?.completedLessonIds ?? [],
+      visitedResourceIds: data?.visitedResourceIds ?? [],
+      averageScore: data?.averageScore ?? 0,
     };
   },
   fetchMyProgress: async (token: string) => {

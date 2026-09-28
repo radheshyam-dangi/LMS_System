@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { RichText } from '../common/RichText';
+import DOMPurify from 'dompurify';
 
 interface TraineeCurriculumViewProps {
   learningPathId: string;
@@ -162,7 +163,7 @@ export function TraineeCurriculumView({
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div style={{ padding: '24px 32px', maxWidth: '1050px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ padding: '24px 32px', maxWidth: '1280px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
 
       {/* BACK BUTTON */}
       <button type="button" onClick={onBack} style={{ fontSize: '13px', color: '#4f46e5', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: '20px', padding: '0', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -275,9 +276,14 @@ export function TraineeCurriculumView({
                     }}>
                       {modulePct >= 100 ? '✓' : mIdx + 1}
                     </div>
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0, paddingRight: '16px' }}>
                       <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }}>Module {mIdx + 1}: {module.title}</div>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                      {module.description && !isOpen && (
+                        <div style={{ fontSize: '12px', color: '#475569', marginTop: '6px', maxHeight: '36px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.5 }}>
+                           <div style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(module.description.replace(/<[^>]*>?/gm, ' ').substring(0, 150) + (module.description.length > 150 ? '...' : '')) }} />
+                        </div>
+                      )}
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
                         {lessons.length} lessons · {moduleDone}/{moduleTotal} tasks completed
                       </div>
                     </div>
@@ -352,13 +358,18 @@ export function TraineeCurriculumView({
                         {/* Lesson content */}
                         <div style={{ padding: '14px 16px' }}>
                           {/* Resource links */}
-                          {(lesson.videoUrl || lesson.articleUrl) && (
+                          {(lesson.videoUrl || lesson.articleUrl || (lesson.videos && lesson.videos.length > 0)) && (
                             <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
                               {lesson.videoUrl && (
                                 <a href={lesson.videoUrl} target="_blank" rel="noreferrer" style={{ padding: '7px 14px', background: '#fee2e2', color: '#dc2626', borderRadius: '8px', textDecoration: 'none', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.15s' }}>
                                   ▶ Watch Video Tutorial
                                 </a>
                               )}
+                              {lesson.videos?.map((v: any, i: number) => (
+                                <a key={`vid-${i}`} href={v.url} target="_blank" rel="noreferrer" style={{ padding: '7px 14px', background: '#fee2e2', color: '#dc2626', borderRadius: '8px', textDecoration: 'none', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.15s' }}>
+                                  ▶ {v.title || 'Watch Video Tutorial'}
+                                </a>
+                              ))}
                               {lesson.articleUrl && (
                                 <a href={lesson.articleUrl} target="_blank" rel="noreferrer" style={{ padding: '7px 14px', background: '#dbeafe', color: '#2563eb', borderRadius: '8px', textDecoration: 'none', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.15s' }}>
                                   📄 Read Reference Article

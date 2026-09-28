@@ -28,6 +28,7 @@ export class LpAuthoringController {
   @Post('submit')
   @Roles('Admin', 'Trainer')
   async submitLearningPath(@Body() payload: any, @GetUser() currentUser: any) {
+    console.log("RECEIVED LP PAYLOAD:", JSON.stringify(payload, null, 2));
     const creatorId = currentUser?.id || currentUser?.sub;
     const result = await this.lpAuthoringService.createLearningPathFromDocument(
       payload,

@@ -55,6 +55,7 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
         .andWhere(
            new Brackets(qb => {
              qb.where('lp.title ILIKE :q', { q })
+               .orWhere('lp.description ILIKE :q', { q })
                .orWhere('lp."skillsTags"::text ILIKE :q', { q });
            })
         )

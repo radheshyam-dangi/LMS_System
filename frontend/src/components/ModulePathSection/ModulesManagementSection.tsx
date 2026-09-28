@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { learningPathService } from "../../services/learningPathService";
 import { curriculumService } from "../../services/curriculumService";
@@ -10,6 +11,7 @@ import { ExpandableDescription } from "../ExpandableDescription/ExpandableDescri
 import { LessonCard } from "../SharedCards/LessonCard";
 import { AssignmentCard } from "../SharedCards/AssignmentCard";
 import { RichText } from "../common/RichText";
+import { renderMultilineText, ModuleDescription } from "../../utils/textUtils";
 import "./ModulesManagement.css";
 
 interface ModulesProps {
@@ -19,6 +21,8 @@ interface ModulesProps {
   accessToken: string;
   onBack: () => void;
 }
+
+import { ModuleDescriptionPreview, ModuleShowMoreModal } from '../common/ModuleShowMoreModal';
 
 export function ModulesManagementSection({
   currentPathId,
@@ -42,6 +46,7 @@ export function ModulesManagementSection({
   // ── Drill-in: which module is open in detail view ─────────────────────────
   const [openModuleId, setOpenModuleId] = useState<string | null>(null);
   const [openModuleData, setOpenModuleData] = useState<any | null>(null);
+  const [moduleStats, setModuleStats] = useState<any | null>(null);
   const [moduleLoading, setModuleLoading] = useState(false);
   const [isModuleDropdownOpen, setIsModuleDropdownOpen] = useState(false);
 
@@ -56,6 +61,7 @@ export function ModulesManagementSection({
   const [showNewModuleModal, setShowNewModuleModal] = useState(false);
   const [moduleTitle, setModuleTitle] = useState('');
   const [moduleDescription, setModuleDescription] = useState('');
+  const [showMoreModalOpen, setShowMoreModalOpen] = useState(false);
   const [moduleResourceUrl, setModuleResourceUrl] = useState('');
   const [moduleLevel, setModuleLevel] = useState('Beginner');
   const [moduleObjectives, setModuleObjectives] = useState('');
@@ -113,12 +119,14 @@ export function ModulesManagementSection({
         const mods = Array.isArray(data) ? data : [];
         setModules(mods);
 
-        // Open the module if urlModuleId changes, or open first module if none is open
+        // Open or refresh module for Trainee
         if (isTrainee && mods.length > 0) {
-          if (urlModuleId && urlModuleId !== openModuleId) {
-            void openModule(urlModuleId);
-          } else if (!openModuleId && !urlModuleId) {
-            void openModule(mods[0].id);
+          if (urlModuleId) {
+            void openModule(urlModuleId, true);
+          } else if (openModuleId && mods.some((m: any) => m.id === openModuleId)) {
+            void openModule(openModuleId, true);
+          } else {
+            void openModule(mods[0].id, false);
           }
         }
       })
@@ -133,24 +141,48 @@ export function ModulesManagementSection({
   }, [accessToken, isTrainee]);
 
   // ── Drill into a module ───────────────────────────────────────────────────
-  const openModule = async (moduleId: string) => {
+  const openModule = async (moduleId: string, preserveTab: boolean = false) => {
     setOpenModuleId(moduleId);
-    setOpenModuleData(null);
     setModuleLoading(true);
-    setActiveTab('Lessons');
+    if (!preserveTab) {
+      setActiveTab('Lessons');
+    }
     try {
-      const [mod, subs] = await Promise.all([
+      const [mod, subs, modStats] = await Promise.all([
         curriculumService.fetchModuleById(moduleId, accessToken),
         isTrainee
           ? assignmentService.fetchMySubmissions(accessToken).catch(() => [])
           : Promise.resolve([]),
+        isTrainee
+          ? progressService.fetchModuleStats(moduleId, accessToken).catch(() => null)
+          : Promise.resolve(null),
       ]);
       setOpenModuleData(mod);
       setMySubs(Array.isArray(subs) ? subs : []);
+      setModuleStats(modStats);
     } catch {
       setOpenModuleData(null);
     } finally {
       setModuleLoading(false);
+    }
+  };
+
+  const refreshModuleData = async (moduleId: string) => {
+    try {
+      const [mod, subs, modStats] = await Promise.all([
+        curriculumService.fetchModuleById(moduleId, accessToken),
+        isTrainee
+          ? assignmentService.fetchMySubmissions(accessToken).catch(() => [])
+          : Promise.resolve([]),
+        isTrainee
+          ? progressService.fetchModuleStats(moduleId, accessToken).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      setOpenModuleData(mod);
+      setMySubs(Array.isArray(subs) ? subs : []);
+      setModuleStats(modStats);
+    } catch {
+      // Keep current state on background network blip
     }
   };
 
@@ -160,8 +192,37 @@ export function ModulesManagementSection({
     } else {
       setOpenModuleId(null);
       setOpenModuleData(null);
+      setModuleStats(null);
     }
   };
+
+  // Refetch on window focus & periodic polling to ensure updated DB data is always visible (§6.2)
+  useEffect(() => {
+    const refreshAll = () => {
+      if (selectedPathId) {
+        curriculumService.fetchModulesByPath(selectedPathId, accessToken)
+          .then((data: any) => {
+            const mods = Array.isArray(data) ? data : [];
+            setModules(mods);
+            if (openModuleId) {
+              if (mods.some((m: any) => m.id === openModuleId)) {
+                void refreshModuleData(openModuleId);
+              } else if (mods.length > 0 && isTrainee) {
+                void openModule(mods[0].id, false);
+              }
+            }
+          })
+          .catch(() => { });
+      }
+    };
+
+    window.addEventListener('focus', refreshAll);
+    const interval = setInterval(refreshAll, 6000);
+    return () => {
+      window.removeEventListener('focus', refreshAll);
+      clearInterval(interval);
+    };
+  }, [openModuleId, selectedPathId, accessToken, isTrainee]);
 
   // ── Mark lesson watched (Trainee) ─────────────────────────────────────────
   const markLessonWatched = async (lessonId: string) => {
@@ -290,8 +351,9 @@ export function ModulesManagementSection({
     return { bg: '#f1f5f9', color: '#475569' };
   };
 
+  // Use module-level stats if drilled in (more accurate), fallback to LP-level stats for list view
   const completedLessonIds = new Set<string>(
-    (progressStats?.completedLessonIds || []).map(String)
+    (moduleStats?.completedLessonIds || progressStats?.completedLessonIds || []).map(String)
   );
 
   const subByAssignment = React.useMemo(() => {
@@ -325,13 +387,29 @@ export function ModulesManagementSection({
 
     const lessons = openModuleData?.lessons || [];
     const resources = openModuleData?.resources || [];
-    const moduleLevelAssignments = (openModuleData?.assignments || []).filter((a: any) => !a.lessonId);
-    const tasks = lessons.flatMap((l: any) =>
-      (l.assignments || []).map((a: any) => ({ ...a, lessonTitle: l.title }))
-    ).concat(moduleLevelAssignments);
 
-    const completedLessons = lessons.filter((l: any) => completedLessonIds.has(String(l.id))).length;
-    const visitedResourceIds = new Set<string>((progressStats?.visitedResourceIds || []).map(String));
+    const lessonTasks = lessons.flatMap((l: any) =>
+      (l.assignments || []).map((a: any) => ({ ...a, lessonTitle: l.title }))
+    );
+    const seenTaskIds = new Set(lessonTasks.map((t: any) => String(t.id)));
+
+    const moduleLevelAssignments = (openModuleData?.assignments || [])
+      .filter((a: any) => !seenTaskIds.has(String(a.id)))
+      .map((a: any) => {
+        if (!a.lessonTitle) {
+          const matchedLesson = lessons.find((l: any) => String(l.id) === String(a.lessonId || a.lesson?.id));
+          if (matchedLesson) {
+            return { ...a, lessonTitle: matchedLesson.title };
+          }
+        }
+        return a;
+      });
+
+    const tasks = [...lessonTasks, ...moduleLevelAssignments];
+
+    // Use backend computed-on-read values (§2 — no stale counters)
+    const completedLessons = moduleStats?.completedLessons ?? lessons.filter((l: any) => completedLessonIds.has(String(l.id))).length;
+    const visitedResourceIds = new Set<string>((moduleStats?.visitedResourceIds || progressStats?.visitedResourceIds || []).map(String));
     const isTaskSubmitted = (sub: any) => sub && sub.status !== 'AVAILABLE' && sub.status !== 'LOCKED';
     const tasksSubmitted = tasks.filter((t: any) => isTaskSubmitted(subByAssignment.get(t.id))).length;
     const tasksScored = tasks.filter((t: any) => {
@@ -341,51 +419,44 @@ export function ModulesManagementSection({
     const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
     const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
-    const visitedResourcesCount = resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
+    const visitedResourcesCount = moduleStats?.visitedResources ?? resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
 
-    // Dynamic Weighted Progress Calculation
-    const W_L = 40; const W_T = 50; const W_R = 10;
-    const current_W_L = lessons.length > 0 ? W_L : 0;
-    const current_W_T = tasks.length > 0 ? W_T : 0;
-    const current_W_R = resources.length > 0 ? W_R : 0;
-    const total_weight = current_W_L + current_W_T + current_W_R;
-
-    let progressPercent = 0;
-    if (total_weight > 0) {
-      const ratio_L = lessons.length > 0 ? (completedLessons / lessons.length) : 0;
-      const ratio_T = tasks.length > 0 ? (tasksSubmitted / tasks.length) : 0;
-      const ratio_R = resources.length > 0 ? (visitedResourcesCount / resources.length) : 0;
-      progressPercent = Math.round(((ratio_L * current_W_L) + (ratio_T * current_W_T) + (ratio_R * current_W_R)) / total_weight * 100);
-    }
+    // Module progress from backend (computed-on-read, §2 — single source of truth)
+    const progressPercent = moduleStats?.completionPercent ?? 0;
 
     const rawObj = openModuleData?.objectives;
+    const rawKeyPoints = Array.isArray(openModuleData?.keyPoints)
+      ? openModuleData.keyPoints.map((kp: any) => kp.title || kp.description || kp).filter(Boolean)
+      : [];
+
     const objectives: string[] = Array.isArray(rawObj) && rawObj.length
       ? rawObj
       : typeof rawObj === 'string' && rawObj.trim()
-        ? rawObj.split('\n').filter(Boolean)
-        : [
-          'Understand RESTful architecture principles',
-          'Design clean, versioned API endpoints',
-          'Implement JWT-based authentication flows',
-          'Write comprehensive API documentation',
-        ];
+        ? rawObj.split('\n').map((s: string) => s.trim()).filter(Boolean)
+        : rawKeyPoints.length > 0
+          ? rawKeyPoints
+          : [
+            `Master the core concepts and principles of ${openModuleData.title || 'this module'}`,
+            `Complete all guided lessons and practical coursework`,
+            `Submit assessments to validate practical knowledge and understanding`,
+            `Demonstrate proficiency across key competency metrics`,
+          ];
 
     const rawOut = openModuleData?.outcomes;
     const outcomes: string[] = Array.isArray(rawOut) && rawOut.length
       ? rawOut
       : typeof rawOut === 'string' && rawOut.trim()
-        ? rawOut.split('\n').filter(Boolean)
+        ? rawOut.split('\n').map((s: string) => s.trim()).filter(Boolean)
         : [
-          'Build a fully functional REST API with CRUD operations',
-          'Secure endpoints with JWT authentication',
-          'Handle errors gracefully with proper status codes',
-          'Document APIs using OpenAPI / Swagger',
+          `Ability to independently apply concepts learned in ${openModuleData.title || 'this module'}`,
+          `Practical implementation and hands-on problem solving skills`,
+          `Successful evaluation and verified completion of all assigned module tasks`,
+          `Solid foundation to advance to subsequent curriculum milestones`,
         ];
 
-    const tabLabels: Array<['Lessons' | 'Tasks' | 'Resources', string]> = [
+    const tabLabels: Array<['Lessons' | 'Tasks', string]> = [
       ['Lessons', `Lessons (${completedLessons}/${lessons.length})`],
       ['Tasks', `Tasks (${tasksSubmitted}/${tasks.length})`],
-      ['Resources', `Resources (${visitedResourcesCount}/${resources.length})`],
     ];
 
     return (
@@ -487,7 +558,7 @@ export function ModulesManagementSection({
         </div>
 
         {/* ── Premium Hero Banner ── */}
-        <div style={{ margin: '0 24px', position: 'relative' }}>
+        <div style={{ margin: '0 auto 24px auto', maxWidth: 1440, width: '100%', padding: '0 24px', boxSizing: 'border-box', position: 'relative' }}>
           <div style={{
             background: 'linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #8b5cf6 100%)',
             color: '#fff',
@@ -507,9 +578,36 @@ export function ModulesManagementSection({
             <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
               <div style={{ flex: 1 }}>
                 <h1 style={{ fontSize: 36, margin: '0 0 16px', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em' }}>{openModuleData.title}</h1>
-                <p style={{ margin: 0, opacity: 0.9, fontSize: 15, maxWidth: 680, lineHeight: 1.6, color: '#e0e7ff' }}>
-                  {openModuleData.description || 'Module content and assessments for this learning track.'}
-                </p>
+                <ModuleDescriptionPreview 
+                  description={openModuleData.description} 
+                  resources={resources.filter((r: any) => !r.lesson && !r.lessonId)}
+                  onShowMore={() => setShowMoreModalOpen(true)} 
+                />
+                
+                {resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
+                  <div style={{ marginTop: 16, background: 'rgba(255,255,255,0.1)', padding: '16px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12, color: '#e0e7ff' }}>
+                      Module Resources
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any) => (
+                        <a 
+                          key={res.id} 
+                          href={res.url} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          onClick={() => { if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(()=>{}); }}
+                          style={{ color: '#fff', fontSize: 14, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}
+                          onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                          onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                        >
+                          <span style={{ fontSize: 16 }}>🔗</span>
+                          {res.title}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0, background: 'rgba(255,255,255,0.1)', padding: '16px 24px', borderRadius: 16, backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)' }}>
                 <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Module Progress</div>
@@ -571,7 +669,7 @@ export function ModulesManagementSection({
         </div>
 
         {/* ── Body ── */}
-        <div style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
+        <div style={{ padding: '28px 32px', maxWidth: 1440, margin: '0 auto' }}>
 
           {/* Objectives + Outcomes */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 40, marginTop: 12 }}>
@@ -668,6 +766,10 @@ export function ModulesManagementSection({
                       isDone={isDone}
                       isLocked={lesson.isLocked}
                       isTrainee={isTrainee}
+                      resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
+                      onVisitResource={(res) => {
+                        if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(()=>{});
+                      }}
                       onMarkWatched={markLessonWatched}
                       onClickLocked={() => lesson.isLocked && alert(lesson.lockReason)}
                     />
@@ -712,46 +814,7 @@ export function ModulesManagementSection({
             </div>
           )}
 
-          {/* ── RESOURCES TAB ── */}
-          {activeTab === 'Resources' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {resources.length === 0 ? (
-                <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 10 }}>
-                  No resources attached to this module yet.
-                </div>
-              ) : (
-                resources.map((res: any) => {
-                  const visited = (progressStats?.visitedResourceIds || []).map(String).includes(String(res.id));
-                  return (
-                    <div key={res.id} style={{ padding: '16px 22px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <span style={{ fontSize: 22 }}>🔗</span>
-                        <div>
-                          <strong style={{ fontSize: 14, color: '#0f172a' }}>{res.title}</strong>
-                          <div style={{ fontSize: 12, color: '#64748b' }}>{res.type || 'Link'} · {visited ? '✓ Visited' : 'Not visited'}</div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            if (res?.id && isTrainee) await progressService.visitResource(res.id, accessToken);
-                            if (res?.url) window.open(res.url, '_blank', 'noopener,noreferrer');
-                            if (openModuleId) await openModule(openModuleId);
-                          } catch {
-                            if (res?.url) window.open(res.url, '_blank', 'noopener,noreferrer');
-                          }
-                        }}
-                        style={{ padding: '7px 16px', background: visited ? '#ecfdf5' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: visited ? '#047857' : '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
-                      >
-                        {visited ? 'Open Again' : 'Open & Mark Visited'}
-                      </button>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
+          {/* Resources tab removed */}
 
           {/* ── ASSESSMENTS TAB ── */}
           {activeTab === 'Assessments' && (
@@ -1061,7 +1124,7 @@ export function ModulesManagementSection({
   // MODULE LIST VIEW
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div style={{ padding: '24px 32px', maxWidth: '1100px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ padding: '24px 32px', maxWidth: '1440px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
@@ -1315,6 +1378,15 @@ export function ModulesManagementSection({
             </form>
           </div>
         </div>
+      )}
+      {showMoreModalOpen && (
+        <ModuleShowMoreModal 
+          description={openModuleData?.description} 
+          resources={(openModuleData?.resources || []).filter((r: any) => !r.lesson && !r.lessonId)} 
+          onClose={() => setShowMoreModalOpen(false)} 
+          onVisitResource={(id) => { if (isTrainee) progressService.visitResource(id, accessToken).catch(()=>{}); }} 
+          isTrainee={isTrainee}
+        />
       )}
     </div>
   );

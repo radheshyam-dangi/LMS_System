@@ -34,6 +34,7 @@ export const ModuleNode = Node.create({
       learningObjectives: { default: [] },
       learningOutcomes: { default: [] },
       moduleResources: { default: [] },
+      description: { default: '' },
     };
   },
 

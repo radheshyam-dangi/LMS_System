@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import DOMPurify from 'dompurify';
 import './UserProfileDrawer.css';
 import type { UserDetail } from './UserManagement';
 import { API_BASE_URL } from '../../api';
@@ -180,7 +181,7 @@ export function UserProfileDrawer({ user, isOpen, onClose }: UserProfileDrawerPr
                           {activity.type === 'complete' ? '✅' : activity.type === 'submit' ? '📤' : activity.type === 'create' ? '✨' : activity.type === 'join' ? '🎉' : '🚪'}
                         </div>
                         <div className="timeline-content">
-                          <p dangerouslySetInnerHTML={{ __html: activity.description }}></p>
+                          <p dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(activity.description) }}></p>
                           <span className="time">{dateStr}</span>
                         </div>
                       </div>

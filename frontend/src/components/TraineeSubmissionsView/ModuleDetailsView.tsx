@@ -1,13 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { curriculumService } from '../../services/curriculumService';
 import { assignmentService } from '../../services/assignmentService';
 import { DeadlineDisplay } from '../DeadlineDisplay';
 import { progressService } from '../../services/lmsApi';
 import { useNotifications } from '../../context/NotificationContext';
+import { useScrollLock } from '../../hooks/useScrollLock';
 import { LessonCard } from '../SharedCards/LessonCard';
 import { AssignmentCard } from '../SharedCards/AssignmentCard';
 import { isLessonUnlocked, isAssignmentUnlocked } from '../../shared/lockLogic';
 import { RichText } from '../common/RichText';
+import { ModuleDescriptionPreview, ModuleShowMoreModal } from '../common/ModuleShowMoreModal';
+import { renderMultilineText } from '../../utils/textUtils';
+import './ModuleDetails.css';
 import './TraineeAssignments.css';
 
 
@@ -19,7 +24,8 @@ type Props = {
 };
 
 /**
- * Figma-aligned Module Details: lessons watched, tasks submitted, resources visited → progress.
+ * Module Details: lessons watched, tasks submitted, resources visited → progress.
+ * All derived values are computed-on-read from the backend (no stale counters).
  */
 export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: Props) {
   const isTrainee = userRole === 'Trainee';
@@ -27,13 +33,18 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   const [moduleData, setModuleData] = useState<any | null>(null);
   const [stats, setStats] = useState<any | null>(null);
   const [mySubs, setMySubs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'Lessons' | 'Tasks' | 'Resources' | 'Assessments'>('Lessons');
+  const [activeTab, setActiveTab] = useState<'Lessons' | 'Tasks' | 'Assessments'>('Lessons');
   const [loading, setLoading] = useState(true);
   const [submitTask, setSubmitTask] = useState<any | null>(null);
   const [submissionText, setSubmissionText] = useState('');
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [mcqAnswers, setMcqAnswers] = useState<Record<number, number | number[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(true);
+  const [prevStats, setPrevStats] = useState<any | null>(null);
+  const [showMoreModalOpen, setShowMoreModalOpen] = useState(false);
+
+  useScrollLock(!!submitTask);
 
   const openSubmitModal = useCallback((task: any, sub: any) => {
     setSubmitTask(task);
@@ -101,6 +112,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           : Promise.resolve([]),
       ]);
       setModuleData(resolved);
+      // Track previous stats for animation pulse
+      if (stats) setPrevStats(stats);
       setStats(progress);
       setMySubs(Array.isArray(subs) ? subs : []);
     } catch (err: any) {
@@ -115,6 +128,14 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     void load();
   }, [load]);
 
+  // Refetch on window focus (§6.2 — trainee-side reactivity)
+  useEffect(() => {
+    const handleFocus = () => { void load(); };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [load]);
+
+  // Use completedLessonIds/visitedResourceIds from module-level stats (now returned by backend)
   const completedLessonIds = useMemo(
     () => new Set<string>((stats?.completedLessonIds || []).map(String)),
     [stats],
@@ -135,13 +156,21 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     const fromLessons = (lessons || []).flatMap((l: any) =>
       (l.assignments || []).map((a: any) => ({ ...a, lessonTitle: l.title })),
     );
-    const fromModule = (moduleData?.assignments || []).map((a: any) => ({ ...a, lessonTitle: 'Module Task' }));
+    const seen = new Set(fromLessons.map((t: any) => String(t.id)));
+    const fromModule = (moduleData?.assignments || [])
+      .filter((a: any) => !seen.has(String(a.id)))
+      .map((a: any) => ({ ...a, lessonTitle: 'Module Task' }));
     return [...fromLessons, ...fromModule];
   }, [lessons, moduleData]);
 
-  const completedLessons = lessons.filter((l: any) => completedLessonIds.has(String(l.id))).length;
-
-  const visitedResourcesCount = resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
+  // All derived values computed from stats (backend computed-on-read) with zero-guards
+  const completedLessons = stats?.completedLessons ?? 0;
+  const totalLessons = stats?.totalLessons ?? lessons.length;
+  const visitedResourcesCount = stats?.visitedResources ?? 0;
+  const totalResources = stats?.totalResources ?? resources.length;
+  const tasksAccepted = stats?.tasksAccepted ?? 0;
+  const totalAssignments = stats?.totalAssignments ?? tasks.length;
+  const averageScore = stats?.averageScore ?? 0;
 
   const passedTasks = tasks.filter((t: any) => {
     const s = subByAssignment.get(t.id);
@@ -152,6 +181,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   const isTaskSubmitted = (sub: any) => sub && sub.status !== 'AVAILABLE' && sub.status !== 'LOCKED';
   const tasksSubmitted = tasks.filter((t: any) => isTaskSubmitted(subByAssignment.get(t.id))).length;
 
+  // Client-side avg score calculation for display (score/maxScore format)
   const tasksScored = tasks.filter((t: any) => {
     const s = subByAssignment.get(t.id);
     return s && typeof s.score === 'number';
@@ -159,7 +189,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
   const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
-  // Weighted progress is now safely calculated by the backend!
+  // Module Progress from backend (computed-on-read, §2)
   const progressPercent = stats?.completionPercent ?? 0;
 
   const objectives: string[] =
@@ -223,14 +253,25 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     }
   };
 
+  // Detect stat changes for pulse animation
+  const didChange = useCallback((key: string) => {
+    if (!prevStats || !stats) return false;
+    return prevStats[key] !== stats[key];
+  }, [prevStats, stats]);
+
   if (loading) {
-    return <div style={{ padding: 40, color: '#64748b' }}>Loading module details...</div>;
+    return (
+      <div className="mdv-loading">
+        <div className="mdv-loading-spinner" />
+        <span>Loading module details...</span>
+      </div>
+    );
   }
 
   if (!moduleData) {
     return (
       <div style={{ padding: 40 }}>
-        <button type="button" onClick={onBack} style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer' }}>
+        <button type="button" onClick={onBack} className="mdv-back-btn">
           ← Back
         </button>
         <p style={{ color: '#94a3b8' }}>Module not found.</p>
@@ -238,37 +279,55 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     );
   }
 
+  // Stats cards data with zero-guards
+  const statsCards = [
+    { icon: '⏱️', label: 'Duration', value: moduleData.durationLabel || `${moduleData.durationWeeks || 2} weeks`, key: 'duration' },
+    { icon: '📖', label: 'Lessons', value: `${Math.min(completedLessons, totalLessons)}/${totalLessons} done`, key: 'completedLessons' },
+    { icon: '🎯', label: 'Tasks', value: `${Math.min(tasksPassedCount, totalAssignments)}/${totalAssignments} passed`, key: 'tasksAccepted' },
+    { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0`, key: 'averageScore', tooltip: 'Average of all graded task scores in this module' },
+  ];
+
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100%', fontFamily: 'system-ui, sans-serif' }}>
-      <div style={{ padding: '16px 32px 0' }}>
-        <button type="button" onClick={onBack} style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', marginBottom: 8 }}>
+    <div className="mdv-container">
+      {/* Breadcrumb & Back */}
+      <div className="mdv-top-bar">
+        <button type="button" onClick={onBack} className="mdv-back-btn">
           ← Back to Modules
         </button>
-        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
-          Learning Paths › {moduleData.learningPath?.title || 'Path'} › {moduleData.title}
+        <div className="mdv-breadcrumb">
+          <span className="mdv-breadcrumb-segment">Learning Paths</span>
+          <span className="mdv-breadcrumb-sep">›</span>
+          <span className="mdv-breadcrumb-segment mdv-breadcrumb-truncate">{moduleData.learningPath?.title || 'Path'}</span>
+          <span className="mdv-breadcrumb-sep">›</span>
+          <span className="mdv-breadcrumb-segment">{moduleData.title}</span>
         </div>
       </div>
 
-      <div style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: '#fff', borderRadius: 16, margin: '0 24px', overflow: 'hidden' }}>
-        <div style={{ padding: '32px 40px' }}>
-          <p style={{ fontSize: 12, opacity: 0.9, margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>
+      {/* Banner */}
+      <div className="mdv-banner">
+        <div className="mdv-banner-inner">
+          <div className="mdv-banner-badges">
             MODULE · {(moduleData.level || moduleData.difficultyLevel || 'Beginner').toUpperCase()} · {moduleData.learningPath?.title || 'TRACK'}
-          </p>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, alignItems: 'flex-start' }}>
-            <div>
-              <h1 style={{ fontSize: 30, margin: '0 0 10px', fontWeight: 800 }}>{moduleData.title}</h1>
-              <div style={{ margin: 0, opacity: 0.95, fontSize: 14, maxWidth: 720, lineHeight: 1.6 }}>
+          </div>
+          <div className="mdv-banner-content">
+            <div className="mdv-banner-text">
+              <h1 className="mdv-banner-title">{moduleData.title}</h1>
+              <div className="mdv-banner-desc">
                 {moduleData.description ? (
-                  <RichText content={moduleData.description} />
+                  <ModuleDescriptionPreview
+                    description={moduleData.description}
+                    resources={resources.filter((r: any) => !r.lesson && !r.lessonId)}
+                    onShowMore={() => setShowMoreModalOpen(true)}
+                  />
                 ) : (
-                  'Module content and assessments for this learning path.'
+                  'Module content and assessments for this learning track.'
                 )}
               </div>
               
               {resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
-                <div style={{ marginTop: 20 }}>
-                  <strong style={{ display: 'block', fontSize: 12, textTransform: 'uppercase', opacity: 0.8, marginBottom: 8 }}>Module Resources</strong>
-                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div className="mdv-module-resources">
+                  <strong className="mdv-module-resources-label">Module Resources</strong>
+                  <div className="mdv-module-resources-list">
                     {resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any) => (
                       <a 
                         key={res.id} 
@@ -276,14 +335,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                         target="_blank" 
                         rel="noreferrer"
                         onClick={() => { if (res.id) progressService.visitResource(res.id, accessToken).catch(()=>{}); }}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', padding: '6px 14px', 
-                          background: 'rgba(255, 255, 255, 0.2)', borderRadius: 20, 
-                          color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 500,
-                          transition: 'background 0.2s'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.3)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.2)'}
+                        className="mdv-module-resource-link"
                       >
                         🔗 {res.title}
                       </a>
@@ -292,50 +344,52 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                 </div>
               )}
             </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ fontSize: 12, opacity: 0.9 }}>Module Progress</div>
-              <div style={{ fontSize: 36, fontWeight: 800 }}>{progressPercent}%</div>
+            <div className="mdv-progress-box">
+              <div className="mdv-progress-label">Module Progress</div>
+              <div className="mdv-progress-value">{progressPercent}%</div>
             </div>
           </div>
-          <div style={{ width: '100%', height: 6, background: 'rgba(255,255,255,0.25)', borderRadius: 4, marginTop: 24 }}>
-            <div style={{ width: `${progressPercent}%`, height: '100%', background: '#fff', borderRadius: 4 }} />
+          <div className="mdv-progress-bar-track">
+            <div className="mdv-progress-bar-fill" style={{ width: `${progressPercent}%` }} />
           </div>
         </div>
 
-        <div style={{ background: '#fff', color: '#0f172a', padding: '16px 40px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-          {[
-            { icon: '⏱️', label: 'Duration', value: moduleData.durationLabel || `${moduleData.durationWeeks || 2} weeks` },
-            { icon: '📖', label: 'Lessons', value: `${completedLessons}/${lessons.length} done` },
-            { icon: '🎯', label: 'Tasks', value: `${tasksPassedCount}/${tasks.length} passed` },
-            { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
-          ].map((m) => (
-            <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 20 }}>{m.icon}</span>
+        {/* Stats Cards */}
+        <div className="mdv-stats-row">
+          {statsCards.map((m) => (
+            <div key={m.label} className={`mdv-stat-card${didChange(m.key) ? ' mdv-stat-pulse' : ''}`} title={m.tooltip || ''}>
+              <span className="mdv-stat-icon">{m.icon}</span>
               <div>
-                <span style={{ display: 'block', fontSize: 11, color: '#64748b' }}>{m.label}</span>
-                <strong style={{ fontSize: 14 }}>{m.value}</strong>
+                <span className="mdv-stat-label">
+                  {m.label}
+                  {m.tooltip && (
+                    <span className="mdv-stat-info" title={m.tooltip}>ⓘ</span>
+                  )}
+                </span>
+                <strong className="mdv-stat-value">{m.value}</strong>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ padding: '28px 32px', maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
-          <div style={{ background: '#fff', padding: 22, borderRadius: 12, border: '1px solid #e2e8f0' }}>
-            <h4 style={{ margin: '0 0 14px', color: '#4f46e5' }}>◎ Learning Objectives</h4>
-            <ul style={{ margin: 0, paddingLeft: 18, color: '#475569', fontSize: 14, lineHeight: 1.8 }}>
+      {/* Objectives / Outcomes */}
+      <div className="mdv-content-area">
+        <div className="mdv-objectives-outcomes">
+          <div className="mdv-card">
+            <h4 className="mdv-card-title mdv-card-title--objectives">◎ Learning Objectives</h4>
+            <ul className="mdv-card-list">
               {objectives.map((o) => (
                 <li key={o}>{o}</li>
               ))}
             </ul>
           </div>
-          <div style={{ background: '#fff', padding: 22, borderRadius: 12, border: '1px solid #e2e8f0' }}>
-            <h4 style={{ margin: '0 0 14px', color: '#16a34a' }}>✓ Learning Outcomes</h4>
-            <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', color: '#475569', fontSize: 14, lineHeight: 1.8 }}>
+          <div className="mdv-card">
+            <h4 className="mdv-card-title mdv-card-title--outcomes">✓ Learning Outcomes</h4>
+            <ul className="mdv-card-list mdv-card-list--outcomes">
               {outcomes.map((o) => (
                 <li key={o}>
-                  <span style={{ color: '#16a34a', marginRight: 8 }}>✓</span>
+                  <span className="mdv-outcome-check">✓</span>
                   {o}
                 </li>
               ))}
@@ -343,12 +397,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 28, borderBottom: '2px solid #e2e8f0', marginBottom: 20 }}>
+        {/* Tabs */}
+        <div className="mdv-tabs-row">
           {(
             [
-              ['Lessons', `Lessons (${completedLessons}/${lessons.length})`],
-              ['Tasks', `Tasks (${tasksSubmitted}/${tasks.length})`],
-              ['Resources', `Resources (${visitedResourcesCount}/${resources.length || 0})`],
+              ['Lessons', `Lessons (${Math.min(completedLessons, totalLessons)}/${totalLessons})`],
+              ['Tasks', `Tasks (${tasksSubmitted}/${totalAssignments})`],
               ['Assessments', `Assessments (${tasks.filter((t: any) => t.assignmentType === 'MCQ').length})`],
             ] as const
           ).map(([key, label]) => (
@@ -356,17 +410,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
               key={key}
               type="button"
               onClick={() => setActiveTab(key)}
-              style={{
-                paddingBottom: 14,
-                border: 'none',
-                background: 'none',
-                cursor: 'pointer',
-                fontWeight: 600,
-                fontSize: 14,
-                color: activeTab === key ? '#4f46e5' : '#64748b',
-                borderBottom: activeTab === key ? '2px solid #4f46e5' : '2px solid transparent',
-                marginBottom: -2,
-              }}
+              className={`mdv-tab-btn${activeTab === key ? ' mdv-tab-btn--active' : ''}`}
             >
               {label}
             </button>
@@ -374,7 +418,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
         </div>
 
         {activeTab === 'Lessons' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="mdv-tab-content">
             {lessons.map((lesson: any, index: number) => {
               const isDone = completedLessonIds.has(String(lesson.id));
               const isLocked = isTrainee && !isLessonUnlocked(
@@ -390,13 +434,15 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                   isDone={isDone}
                   isLocked={isLocked}
                   isTrainee={isTrainee}
+                  resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
+                  onVisitResource={(res) => res.id && progressService.visitResource(res.id, accessToken).catch(()=>{})}
                   onMarkWatched={() => markLessonWatched(lesson.id)}
                   onClickLocked={() => alert('Complete the previous lesson to unlock this lesson.')}
                 />
               );
             })}
             {lessons.length === 0 && (
-              <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 8 }}>
+              <div className="mdv-empty-state">
                 No lessons in this module yet.
               </div>
             )}
@@ -404,9 +450,9 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
         )}
 
         {activeTab === 'Tasks' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="mdv-tab-content">
             {tasks.filter((t: any) => t.assignmentType !== 'MCQ').length === 0 ? (
-              <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 8 }}>
+              <div className="mdv-empty-state">
                 No tasks assigned yet.
               </div>
             ) : (
@@ -443,77 +489,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           </div>
         )}
 
-        {activeTab === 'Resources' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {resources.length === 0 ? (
-              <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 8 }}>
-                No resources yet. Review lesson video/article links before submitting tasks.
-              </div>
-            ) : (
-              resources.map((res: any) => {
-                const visited = visitedResourceIds.has(String(res.id));
-                let isResLocked = false;
-                if (res.lesson || res.lessonId) {
-                  const lId = res.lesson?.id || res.lessonId;
-                  const lIdx = lessons.findIndex((l: any) => String(l.id) === String(lId));
-                  if (lIdx !== -1) {
-                    isResLocked = isTrainee && !isLessonUnlocked(
-                      { id: lId },
-                      lIdx,
-                      { sequentialLessonLock: moduleData.sequentialLessonLock, lessons },
-                      { completedLessonIds: Array.from(completedLessonIds) }
-                    );
-                  }
-                }
-
-                return (
-                  <div
-                    key={res.id}
-                    style={{
-                      padding: '14px 18px',
-                      background: '#fff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 8,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      opacity: isResLocked ? 0.6 : 1,
-                    }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: 14 }}>{res.title}</strong>
-                      <div style={{ fontSize: 12, color: '#64748b' }}>
-                        {res.type || 'Link'} · {isResLocked ? 'Locked' : (visited ? 'Visited' : 'Not visited')}
-                      </div>
-                    </div>
-                    {isResLocked ? (
-                      <button
-                        type="button"
-                        style={{ padding: '6px 14px', background: '#f1f5f9', color: '#94a3b8', border: '1px solid #cbd5e1', borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: 'not-allowed', display: 'flex', alignItems: 'center', gap: 6 }}
-                        onClick={() => alert('Complete previous lessons to unlock this resource.')}
-                      >
-                        🔒 Locked
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void visitResource(res)}
-                        style={{ padding: '6px 14px', background: visited ? '#ecfdf5' : '#4f46e5', color: visited ? '#047857' : '#fff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
-                      >
-                        {visited ? 'Open again' : 'Open & Mark Visited'}
-                      </button>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
+        {/* Resources tab content removed. Module resources moved to Module Overview, Lesson resources moved to Lesson Rows. */}
 
         {activeTab === 'Assessments' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="mdv-tab-content">
             {tasks.filter((t: any) => t.assignmentType === 'MCQ').length === 0 ? (
-              <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 8 }}>
+              <div className="mdv-empty-state">
                 No assessments assigned yet.
               </div>
             ) : (
@@ -523,17 +504,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                 return (
                   <div
                     key={task.id}
-                    style={{
-                      padding: '16px 20px',
-                      background: '#fff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: 8,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 12,
-                      opacity: task.isLocked || status === 'LOCKED' ? 0.6 : 1,
-                    }}
+                    className="mdv-task-list-item"
+                    style={{ opacity: task.isLocked || status === 'LOCKED' ? 0.6 : 1 }}
                   >
                     <div>
                       <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>
@@ -546,28 +518,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                     <DeadlineDisplay task={task} submission={sub} />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '4px 10px',
-                          borderRadius: 999,
-                          background:
-                            status.toLowerCase() === 'approved'
-                              ? '#dcfce7'
-                              : status.toLowerCase() === 'rejected'
-                                ? '#fee2e2'
-                                : status.toLowerCase() === 'submitted'
-                                  ? '#fef3c7'
-                                  : '#f1f5f9',
-                          color:
-                            status.toLowerCase() === 'approved'
-                              ? '#166534'
-                              : status.toLowerCase() === 'rejected'
-                                ? '#b91c1c'
-                                : status.toLowerCase() === 'submitted'
-                                  ? '#b45309'
-                                  : '#475569',
-                        }}
+                        className={`mdv-status-badge mdv-status-badge--${status.toLowerCase()}`}
                       >
                         {status.toLowerCase() === 'approved' ? 'Passed' : status}
                         {typeof sub?.score === 'number' ? ` · ${sub.score}` : ''}
@@ -577,7 +528,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                           type="button"
                           disabled={task.isLocked || status === 'LOCKED'}
                           onClick={() => openSubmitModal(task, sub)}
-                          style={{ padding: '6px 14px', background: task.isLocked || status === 'LOCKED' ? '#94a3b8' : '#4f46e5', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: task.isLocked || status === 'LOCKED' ? 'not-allowed' : 'pointer' }}
+                          className="btn-trainee-action-primary"
+                          style={{ opacity: task.isLocked || status === 'LOCKED' ? 0.5 : 1, cursor: task.isLocked || status === 'LOCKED' ? 'not-allowed' : 'pointer' }}
                         >
                           {isTaskSubmitted(sub) ? 'Resubmit' : 'Attempt'}
                         </button>
@@ -591,9 +543,10 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
         )}
       </div>
 
-      {submitTask && (
-        <div className="assignment-modal-overlay">
-          <div className="assignment-modal-container">
+      {/* Submit Task Modal — rendered via portal */}
+      {submitTask && createPortal(
+        <div className="assignment-modal-overlay" onClick={closeSubmitModal}>
+          <div className="assignment-modal-container" onClick={(e) => e.stopPropagation()}>
             {/* Context Panel */}
             <div className="assignment-modal-context">
               <h3 style={{ margin: '0 0 4px', fontSize: 18, color: '#0f172a' }}>{submitTask.title}</h3>
@@ -603,10 +556,25 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 {submitTask.dependsOnLessonIds?.length > 0 && (
-                  <div>
-                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Depends On</strong>
-                    <div style={{ fontSize: 13, color: '#334155' }}>
-                      {submitTask.dependsOnLessonIds.map((id: string) => lessons.find((l: any) => String(l.id) === String(id))?.title).filter(Boolean).join(', ') || 'Prerequisite lessons'}
+                  <div style={{ marginTop: 8, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
+                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 12 }}>Required Content</strong>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {submitTask.dependsOnLessonIds.map((id: string) => {
+                        const lesson = lessons.find((l: any) => String(l.id) === String(id));
+                        if (!lesson) return null;
+                        return (
+                          <div key={lesson.id} style={{ transform: 'scale(0.95)', transformOrigin: 'top left', width: '105%' }}>
+                            <LessonCard 
+                              lesson={lesson} 
+                              isDone={completedLessonIds.has(String(lesson.id))} 
+                              isTrainee={isTrainee} 
+                              resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
+                              onVisitResource={(res) => res.id && progressService.visitResource(res.id, accessToken).catch(()=>{})}
+                              onMarkWatched={() => markLessonWatched(lesson.id)}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -646,15 +614,19 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
             <form onSubmit={handleSubmit} className="assignment-modal-content">
               <div className="assignment-modal-scroll">
                 
-                {/* Instructions Banner */}
+                {/* Instructions Banner — collapsible */}
                 {submitTask.instructions && (
-                  <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '16px', marginBottom: '24px' }}>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '8px' }}>
-                      Instructions
-                    </div>
-                    <div style={{ fontSize: '14px', color: '#0c4a6e', margin: 0, fontFamily: 'inherit', lineHeight: 1.6 }}>
-                      <RichText content={submitTask.instructions} emptyStateText="No instructions provided." />
-                    </div>
+                  <div className="instructions-box" style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '16px', marginBottom: '24px' }}>
+                    <button type="button" onClick={() => setInstructionsOpen(!instructionsOpen)} style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', width: '100%', padding: 0, cursor: 'pointer', textAlign: 'left', minHeight: '32px' }}>
+                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                        {instructionsOpen ? '▾ Instructions' : '▸ Instructions'}
+                      </div>
+                    </button>
+                    {instructionsOpen && (
+                      <div style={{ fontSize: '14px', color: '#0c4a6e', margin: '8px 0 0 0', fontFamily: 'inherit', lineHeight: 1.6 }}>
+                        <RichText content={submitTask.instructions} emptyStateText="No instructions provided." />
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -664,12 +636,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                     questionsArray.map((q: any, idx: number) => {
                       const hasOptions = q.options && q.options.length > 0;
                       return (
-                      <div key={idx} style={{ marginBottom: 20, padding: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                      <div key={idx} className="question-box" style={{ marginBottom: 20, padding: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
                             <strong style={{ fontSize: 15, color: '#0f172a' }}>Q{idx + 1}.</strong>
                             <div style={{ fontSize: 15, color: '#0f172a', fontWeight: 'bold' }}>
-                              <RichText content={q.text || q.questionText || q.question} emptyStateText="No question text" />
+                              {renderMultilineText(q.text || q.questionText || q.question || '') || 'No question text'}
                             </div>
                           </div>
                           <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, background: '#e2e8f0', padding: '2px 8px', borderRadius: 12, whiteSpace: 'nowrap', marginLeft: 12 }}>
@@ -719,11 +691,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                           )
                         ) : (
                           <textarea
+                            className="answer-textarea"
                             rows={4}
                             value={answers[idx] || ''}
                             onChange={(e) => setAnswers((prev) => ({ ...prev, [idx]: e.target.value }))}
                             placeholder="Type your answer here..."
-                            style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                            style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
                           />
                         )}
                       </div>
@@ -735,7 +708,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                       value={submissionText}
                       onChange={(e) => setSubmissionText(e.target.value)}
                       placeholder="Write your submission..."
-                      style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #cbd5e1', marginBottom: 12, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                      className="answer-textarea"
+                      style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #cbd5e1', marginBottom: 12, fontSize: 14, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }}
                     />
                   );
                 })()}
@@ -763,7 +737,15 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
               </div>
             </form>
           </div>
-        </div>
+        </div>, document.body)}
+      {showMoreModalOpen && (
+        <ModuleShowMoreModal 
+          description={moduleData?.description} 
+          resources={resources.filter((r: any) => !r.lesson && !r.lessonId)} 
+          onClose={() => setShowMoreModalOpen(false)} 
+          onVisitResource={(id) => { progressService.visitResource(id, accessToken).catch(()=>{}); }} 
+          isTrainee={true}
+        />
       )}
     </div>
   );
