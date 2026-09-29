@@ -514,7 +514,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             else if (displayStatus === 'Submitted') { bg = '#fef3c7'; color = '#b45309'; }
             else if (displayStatus === 'Missed/Overdue') { bg = '#fecaca'; color = '#991b1b'; }
 
-            const showDeadline = displayStatus !== 'Locked' || a.anchorType === 'LP_ASSIGNED';
+            const showDeadline = displayStatus !== 'Locked';
+            // Locked with prerequisite lessons → show lock message in center
+            const isLockedByLessons = displayStatus === 'Locked' && (a.dependsOnLessonIds?.length > 0 || a.lockUntilLessonsComplete);
+            // Subtitle tag
+            const subtypeLabel = a.module?.title || a.lesson?.module?.title || 'Module task';
 
             return (
               <div
@@ -525,16 +529,18 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  gap: 12,
-                  padding: '14px 16px',
+                  gap: 16,
+                  padding: '14px 18px',
                   border: '1px solid #e2e8f0',
                   borderRadius: 12,
                   background: '#fff',
-                  opacity: displayStatus === 'Locked' ? 0.6 : 1,
+                  opacity: displayStatus === 'Locked' ? 0.75 : 1,
+                  transition: 'box-shadow 0.15s',
                 }}
               >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                {/* LEFT: Assignment title + type tags */}
+                <div style={{ minWidth: 0, flex: '0 0 220px' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
                     <span
                       style={{
                         fontSize: 10,
@@ -543,51 +549,47 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                         borderRadius: 999,
                         background: isExternal ? '#ede9fe' : '#e0f2fe',
                         color: isExternal ? '#6d28d9' : '#0369a1',
+                        whiteSpace: 'nowrap',
                       }}
                     >
                       {isExternal ? 'External' : (a.learningPath?.title || a.module?.learningPath?.title || a.lesson?.module?.learningPath?.title || 'Learning Path')}
                     </span>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{a.assignmentType || 'Task'}</span>
+                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{a.assignmentType || 'Subjective'} · {subtypeLabel}</span>
                   </div>
-                  <strong style={{ display: 'block', fontSize: 14, color: '#0f172a' }}>
-                    {displayStatus === 'Locked' ? '🔒 ' : ''}{a.title}
+                  <strong style={{ display: 'block', fontSize: 14, color: '#0f172a', wordBreak: 'break-word' }}>
+                    {a.title}
                   </strong>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {showDeadline && (
-                      <DeadlineDisplay task={a} submission={sub} />
-                    )}
-                    
-                    {displayStatus === 'Submitted' && submittedAt && (
-                      <span style={{ color: '#b45309' }}>Submitted on {submittedAt.toLocaleString()}</span>
-                    )}
 
-                    {displayStatus === 'Submitted' && (
-                      <span style={{ color: '#475569', fontWeight: 500 }}>
-                        Assigned by: {a.assignedBy ? (`${a.assignedBy.firstName || ''} ${a.assignedBy.lastName || ''}`.trim() || a.assignedBy.email) : 'Trainer'}
-                      </span>
-                    )}
-
-                    {displayStatus === 'Needs Improvement' && sub?.feedback && (
-                      <span style={{ color: '#c2410c' }}>Feedback: {sub.feedback}</span>
-                    )}
-
-                    {displayStatus === 'Rejected' && (
-                      <>
-                        <span style={{ color: '#b91c1c', fontWeight: 600 }}>Rejected{sub?.evaluatedBy ? ` by ${sub.evaluatedBy.firstName || ''} ${sub.evaluatedBy.lastName || ''}`.trim() : ''}</span>
-                        {sub?.feedback && <span style={{ color: '#b91c1c' }}>Reason: {sub.feedback}</span>}
-                      </>
-                    )}
-
-                    {a.externalUrl && displayStatus !== 'Locked' && (
-                      <span>
-                        <a href={a.externalUrl} target="_blank" rel="noreferrer" style={{ color: '#4f46e5' }}>
-                          Open resource
-                        </a>
-                      </span>
-                    )}
-                  </div>
+                  {/* Rejection reason (below title on left) */}
+                  {displayStatus === 'Rejected' && sub?.feedback && (
+                    <span style={{ fontSize: 11, color: '#b91c1c', marginTop: 3, display: 'block' }}>Reason: {sub.feedback}</span>
+                  )}
+                  {displayStatus === 'Needs Improvement' && sub?.feedback && (
+                    <span style={{ fontSize: 11, color: '#c2410c', marginTop: 3, display: 'block' }}>Feedback: {sub.feedback}</span>
+                  )}
                 </div>
 
+                {/* CENTER: Deadline / countdown OR lock message */}
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#64748b', gap: 6 }}>
+                  {isLockedByLessons ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      Unlocks after prerequisite lessons
+                    </span>
+                  ) : showDeadline && (sub || a.computedDeadline) ? (
+                    <DeadlineDisplay task={a} submission={sub} />
+                  ) : displayStatus === 'Submitted' && submittedAt ? (
+                    <span style={{ color: '#b45309' }}>Submitted {submittedAt.toLocaleDateString()}</span>
+                  ) : null}
+
+                  {a.externalUrl && displayStatus !== 'Locked' && (
+                    <a href={a.externalUrl} target="_blank" rel="noreferrer" style={{ color: '#4f46e5', marginLeft: 8 }}>
+                      Open resource
+                    </a>
+                  )}
+                </div>
+
+                {/* RIGHT: Status badge + action buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span
                     style={{
@@ -597,23 +599,25 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                       borderRadius: 999,
                       background: bg,
                       color: color,
+                      whiteSpace: 'nowrap',
+                      letterSpacing: '0.02em',
                     }}
                   >
-                    {displayStatus}
-                    {typeof sub?.score === 'number' && (displayStatus === 'Approved' || displayStatus === 'Needs Improvement' || displayStatus === 'Rejected') ? ` · ${sub.score} marks` : ''}
+                    {displayStatus === 'Approved' ? 'Approved' : displayStatus === 'Rejected' ? 'REJECTED' : displayStatus === 'Needs Improvement' ? 'Needs Improvement' : displayStatus}
+                    {typeof sub?.score === 'number' && (displayStatus === 'Approved' || displayStatus === 'Needs Improvement' || displayStatus === 'Rejected') ? ` · ${sub.score}` : ''}
                   </span>
-                  
+
                   {(displayStatus === 'Approved' || displayStatus === 'Needs Improvement' || displayStatus === 'Rejected' || rawStatus === 'EVALUATED') && sub && (
                     <button
                       type="button"
                       onClick={() => setViewDetailsTarget({ assignment: a, submission: sub })}
                       style={{
-                        padding: '8px 14px',
+                        padding: '7px 13px',
                         borderRadius: 8,
                         border: '1px solid #e2e8f0',
                         background: '#fff',
                         color: '#0f172a',
-                        fontWeight: 700,
+                        fontWeight: 600,
                         fontSize: 12,
                         cursor: 'pointer',
                       }}
@@ -622,6 +626,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                     </button>
                   )}
 
+                  {/* Submit / Resubmit / Start button */}
                   {!isExpired && !isOverdue && displayStatus !== 'Locked' && (displayStatus !== 'Approved' || isBelowCutoff) && displayStatus !== 'Submitted' && (
                     <>
                       {rawStatus === 'AVAILABLE' && a.anchorType === 'TASK_START' ? (
@@ -654,7 +659,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                           type="button"
                           onClick={() => {
                             setSubmitTarget(a);
-                            
+
                             let prefilledMcq = {};
                             let prefilledSubj = {};
                             let prefilledText = '';
@@ -676,14 +681,15 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                             setAttachmentUrl(a.externalUrl || '');
                           }}
                           style={{
-                            padding: '8px 14px',
+                            padding: '8px 16px',
                             borderRadius: 8,
                             border: 'none',
-                            background: '#4f46e5',
+                            background: (displayStatus === 'Needs Improvement' || displayStatus === 'Rejected' || isBelowCutoff) ? '#7c3aed' : '#4f46e5',
                             color: '#fff',
                             fontWeight: 700,
                             fontSize: 12,
                             cursor: 'pointer',
+                            boxShadow: '0 1px 4px rgba(79,70,229,0.3)',
                           }}
                         >
                           {displayStatus === 'Needs Improvement' || displayStatus === 'Rejected' || isBelowCutoff ? 'Resubmit' : 'Submit'}

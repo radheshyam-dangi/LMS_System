@@ -109,11 +109,11 @@ export const LessonCard: React.FC<Props> = ({
             📄 Article
           </a>
         )}
-        {lesson.videos?.map((v, i) => (
+        {/* {lesson.videos?.map((v, i) => (
           <a key={`vid-${i}`} href={v.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#4f46e5', background: '#e0e7ff', padding: '4px 10px', borderRadius: '6px', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
             🎬 {v.title || 'Video'}
           </a>
-        ))}
+        ))} */}
         {lesson.audios?.map((a, i) => (
           <a key={`aud-${i}`} href={a.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#9333ea', background: '#f3e8ff', padding: '4px 10px', borderRadius: '6px', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
             🎵 {a.title || 'Audio'}

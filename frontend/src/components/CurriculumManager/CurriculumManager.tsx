@@ -727,20 +727,20 @@ export function CurriculumManager({
                           onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
                           title="Click to view module resources"
                         >
-                          <span>📎</span> {module.resources.length} Module Resources
+                          <span>📎</span> {module.resources.filter((r: any) => !r.lesson && !r.lessonId).length} Module Resources
                         </div>
                       )}
                     </div>
                   )}
 
                   {/* Module Resources Shelf (if present) */}
-                  {hasResources && (
+                  {hasResources && module.resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
                     <div className="cm-card-resources-shelf">
                       <div className="cm-shelf-title">
-                        <span>📎 Attached Module Resources ({module.resources.length})</span>
+                        <span>📎 Attached Module Resources ({module.resources.filter((r: any) => !r.lesson && !r.lessonId).length})</span>
                       </div>
                       <div className="cm-resource-items-grid">
-                        {module.resources.map((res: any, rIdx: number) => (
+                        {module.resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any, rIdx: number) => (
                           <div
                             key={res.id || rIdx}
                             className="cm-resource-item-pill"
@@ -1148,13 +1148,13 @@ export function CurriculumManager({
                   </div>
 
                   {/* Module Resources */}
-                  {Array.isArray(inspectItem.data.resources) && inspectItem.data.resources.length > 0 && (
+                  {Array.isArray(inspectItem.data.resources) && inspectItem.data.resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
                     <div className="cm-inspector-section">
                       <div className="cm-section-header">
-                        <span>📎 Module Resources ({inspectItem.data.resources.length})</span>
+                        <span>📎 Module Resources ({inspectItem.data.resources.filter((r: any) => !r.lesson && !r.lessonId).length})</span>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {inspectItem.data.resources.map((res: any, idx: number) => (
+                        {inspectItem.data.resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any, idx: number) => (
                           <div key={res.id || idx} className="cm-link-action-card">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                               <span style={{ fontSize: '18px' }}>

@@ -16,11 +16,17 @@ export class ResourceEntity extends BaseEntity {
   type: string; // e.g., 'PDF', 'Link', 'Video'
 
   // 🌟 1. Optional attachment to Module (For Module-level resources)
+  @Column({ type: 'uuid', nullable: true })
+  moduleId?: string;
+
   @ManyToOne(() => ModuleEntity, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'moduleId' })
   module?: ModuleEntity;
 
   // 🌟 2. Optional attachment to Lesson
+  @Column({ type: 'uuid', nullable: true })
+  lessonId?: string;
+
   @ManyToOne(() => LessonEntity, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'lessonId' })
   lesson?: LessonEntity;

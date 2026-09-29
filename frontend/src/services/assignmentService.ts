@@ -209,7 +209,7 @@ export const assignmentService = {
    */
   evaluateSubmission: async (
     submissionId: string,
-    payload: { score?: number | null; feedback: string; status?: 'Accepted' | 'Approved' | 'Rejected' | 'Evaluated' },
+    payload: { score?: number | null; feedback: string; status?: 'Accepted' | 'Approved' | 'Rejected' | 'Evaluated'; questionScores?: Record<string, number> },
     token: string
   ) => {
     const response = await axios.put(

@@ -378,6 +378,44 @@ export function TraineeCurriculumView({
                             </div>
                           )}
 
+                          {/* Render Lesson Resources */}
+                          {lesson.resources && lesson.resources.length > 0 && (
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                              {lesson.resources.map((res: any, idx: number) => (
+                                <a
+                                  key={`res-${idx}`}
+                                  href={res.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ padding: '7px 14px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '8px', textDecoration: 'none', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+                                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.background = '#f1f5f9'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+                                >
+                                  🔗 {res.title}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Fallback to Module resources with matching lessonId (if not nested) */}
+                          {module.resources && module.resources.filter((r: any) => String(r.lessonId) === String(lesson.id)).length > 0 && (
+                            <div style={{ display: 'flex', gap: '10px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                              {module.resources.filter((r: any) => String(r.lessonId) === String(lesson.id)).map((res: any, idx: number) => (
+                                <a
+                                  key={`modres-${idx}`}
+                                  href={res.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ padding: '7px 14px', background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a', borderRadius: '8px', textDecoration: 'none', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}
+                                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#94a3b8'; e.currentTarget.style.background = '#f1f5f9'; }}
+                                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.background = '#f8fafc'; }}
+                                >
+                                  🔗 {res.title}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+
                           {/* Tasks */}
                           {lesson.assignments?.length > 0 ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

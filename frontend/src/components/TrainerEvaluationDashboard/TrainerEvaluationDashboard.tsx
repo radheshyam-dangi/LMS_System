@@ -8,7 +8,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useSearch } from '../../context/SearchContext';
 import { useSearchParams } from 'react-router-dom';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
-import { SubmissionDetailView } from './SubmissionDetailView';
+import { SubmissionDetailView, extractAssignmentQuestions } from './SubmissionDetailView';
 import './TrainerDashboard.css';
 
 interface TrainerEvaluationDashboardProps {
@@ -249,8 +249,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   };
 
   const renderParsedSubmission = (sub: any) => {
-    const questions = sub.assignment?.mcqConfig?.questions || [];
-    const isMcq = sub.assignment?.assignmentType === 'MCQ';
+    const questions = extractAssignmentQuestions(sub.assignment);
+    const isMcq = sub.assignment?.assignmentType === 'MCQ' || questions.some((q: any) => q.type === 'MCQ' || (q.options && q.options.length > 0));
     let parsedAnswers: Record<string, any> = {};
     let isJson = false;
     let rawText = sub.submissionText || '';
@@ -266,7 +266,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
       }
     } catch { }
 
-    if (!isJson || questions.length === 0) {
+    if (!isJson && questions.length === 0) {
       return (
         <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
           <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '4px' }}>Submitted Solution:</strong>
@@ -278,22 +278,22 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {questions.map((q: any, idx: number) => {
-          const traineeAnswer = parsedAnswers[idx] ?? parsedAnswers[String(idx)] ?? (idx === 0 && rawText ? rawText : null);
+          const traineeAnswer = parsedAnswers[q.id] ?? parsedAnswers[idx] ?? parsedAnswers[String(idx)] ?? (idx === 0 && rawText ? rawText : null);
           const questionPoints = q.points || q.maxPoints || 10;
-          if (isMcq) {
-            const traineeChoiceIdx = Number(traineeAnswer);
-            const correctChoiceIdx = Number(q.correctIndex);
-            const isCorrect = traineeChoiceIdx === correctChoiceIdx;
+          if (isMcq && q.options?.length > 0) {
+            const traineeChoiceIdx = traineeAnswer !== null && traineeAnswer !== '' ? Number(traineeAnswer) : null;
+            const correctChoiceIdx = q.correctIndex !== null ? Number(q.correctIndex) : null;
+            const isCorrect = traineeChoiceIdx !== null && correctChoiceIdx !== null && traineeChoiceIdx === correctChoiceIdx;
             return (
-              <div key={idx} style={{ padding: '12px', background: isCorrect ? '#f0fdf4' : '#fef2f2', border: `1px solid ${isCorrect ? '#86efac' : '#fca5a5'}`, borderRadius: '6px' }}>
+              <div key={q.id || idx} style={{ padding: '12px', background: isCorrect ? '#f0fdf4' : '#fef2f2', border: `1px solid ${isCorrect ? '#86efac' : '#fca5a5'}`, borderRadius: '6px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>Q{idx + 1}: {q.questionText || q.question}</strong>
+                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>Q{idx + 1}: {q.text || q.questionText || q.question}</strong>
                   <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', padding: '2px 6px', borderRadius: '4px' }}>{questionPoints} Pts</span>
                 </div>
                 <div style={{ fontSize: '12px', marginTop: '6px' }}>
-                  Trainee Selected: <span style={{ fontWeight: 700, color: isCorrect ? '#15803d' : '#b91c1c' }}>{q.options?.[traineeChoiceIdx] ?? (traineeAnswer !== null ? String(traineeAnswer) : 'No option selected')}</span>
+                  Trainee Selected: <span style={{ fontWeight: 700, color: isCorrect ? '#15803d' : '#b91c1c' }}>{traineeChoiceIdx !== null && q.options?.[traineeChoiceIdx] ? q.options[traineeChoiceIdx] : (traineeAnswer !== null ? String(traineeAnswer) : 'No option selected')}</span>
                 </div>
-                {typeof q.correctIndex === 'number' && (
+                {correctChoiceIdx !== null && (
                   <div style={{ fontSize: '12px', color: '#15803d', fontWeight: 600, marginTop: '2px' }}>
                     ✓ Correct Answer: {q.options?.[correctChoiceIdx] ?? 'N/A'}
                   </div>

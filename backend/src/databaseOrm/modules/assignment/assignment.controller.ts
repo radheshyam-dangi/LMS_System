@@ -78,6 +78,7 @@ export class AssignmentController {
       score: number;
       feedback: string;
       status?: 'Approved' | 'Rejected' | 'Evaluated';
+      questionScores?: Record<string, number>;
     },
     @GetUser() currentUser: any,
   ) {
@@ -89,7 +90,8 @@ export class AssignmentController {
       dto.score,
       dto.feedback,
       dto.status || 'Approved',
-      isAdmin
+      isAdmin,
+      dto.questionScores
     );
   }
 

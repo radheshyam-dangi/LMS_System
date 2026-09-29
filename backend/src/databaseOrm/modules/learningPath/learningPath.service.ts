@@ -310,26 +310,38 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
 
       for (const task of allAssignmentsInPath) {
         // Read directly from the task configuration
-        const isUnlockAnchor = (task as any).countdownStart === 'onUnlock' || (task as any).countdownStart === 'onTraineeStart';
+        const isUnlockAnchor = (task as any).countdownStart === 'onUnlock' || (task as any).countdownStart === 'onTraineeStart' || (task as any).anchorType === 'TASK_UNLOCKED';
+        const hasLockConfig = (task as any).lockUntilLessonsComplete === true;
+        const hasDepsConfigured = ((task as any).dependsOnLessonIds || []).length > 0;
+        // An assignment is truly locked only if it has lock enabled AND has dependent lessons
+        const shouldBeLocked = hasLockConfig && hasDepsConfigured;
         
         let lpAssignedAt: Date | null = now;
         let taskUnlockedAt: Date | null = null;
         let computedDeadline: Date | null = null;
         
-        // Ensure timer duration falls back to 0 if null
-        const totalMins = (task as any).timerDuration || 0;
+        // Use real duration fields + legacy timerDuration fallback
+        const totalDurationMinutes =
+          ((task as any).durationDays || 0) * 24 * 60 +
+          ((task as any).durationHours || 0) * 60 +
+          ((task as any).durationMinutes || 0) +
+          ((task as any).timerDuration || 0);
 
-        if (isUnlockAnchor) {
+        if (isUnlockAnchor || shouldBeLocked) {
           // Type B: Unlock (lesson-locked) - clock starts on unlock
           lpAssignedAt = null;
           taskUnlockedAt = null; // Stays null until progress unlocks it
+          // Deadline computed at unlock time — not now
         } else {
           // Type A: LP Assignment - clock starts instantly
-          if (totalMins > 0) {
+          if (!shouldBeLocked) {
+            taskUnlockedAt = now; // Immediately available
+          }
+          if (totalDurationMinutes > 0) {
             computedDeadline = new Date(now.getTime());
-            const days = Math.floor(totalMins / (24 * 60));
-            const hours = Math.floor((totalMins % (24 * 60)) / 60);
-            const mins = totalMins % 60;
+            const days = Math.floor(totalDurationMinutes / (24 * 60));
+            const hours = Math.floor((totalDurationMinutes % (24 * 60)) / 60);
+            const mins = totalDurationMinutes % 60;
             if (days) computedDeadline.setDate(computedDeadline.getDate() + days);
             if (hours) computedDeadline.setHours(computedDeadline.getHours() + hours);
             if (mins) computedDeadline.setMinutes(computedDeadline.getMinutes() + mins);
@@ -339,7 +351,7 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
         submissions.push(submissionRepo.create({
           assignment: { id: (task as any).id } as any,
           trainee: { id: traineeId } as any,
-          status: 'LOCKED',
+          status: shouldBeLocked ? 'LOCKED' : 'AVAILABLE',
           lpAssignedAt: lpAssignedAt,
           taskUnlockedAt: taskUnlockedAt,
           deadline: computedDeadline

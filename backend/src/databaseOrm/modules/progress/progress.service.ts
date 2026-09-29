@@ -118,14 +118,21 @@ export class ProgressEntityService {
             // Ensure anchorType fallback safely handles standard unlocks as well, per user addendum logic.
             // A task with countdownStart === 'onUnlock' triggering unlock means we trigger Type B computation.
             const isUnlockAnchor = task.countdownStart === 'onUnlock' || task.countdownStart === 'onTraineeStart' || task.anchorType === 'TASK_UNLOCKED';
-            if (isUnlockAnchor && !sub.taskUnlockedAt) {
+            if (!sub.taskUnlockedAt) {
               sub.taskUnlockedAt = now;
-              const totalMins = task.timerDuration || 0;
-              if (totalMins > 0) {
+            }
+            if (!sub.deadline) {
+              // Use durationDays/Hours/Minutes (real fields) + legacy timerDuration as fallback
+              const totalDurationMinutes =
+                (task.durationDays || 0) * 24 * 60 +
+                (task.durationHours || 0) * 60 +
+                (task.durationMinutes || 0) +
+                (task.timerDuration || 0);
+              if (totalDurationMinutes > 0) {
                 const computedDeadline = new Date(now.getTime());
-                const days = Math.floor(totalMins / (24 * 60));
-                const hours = Math.floor((totalMins % (24 * 60)) / 60);
-                const mins = totalMins % 60;
+                const days = Math.floor(totalDurationMinutes / (24 * 60));
+                const hours = Math.floor((totalDurationMinutes % (24 * 60)) / 60);
+                const mins = totalDurationMinutes % 60;
                 if (days) computedDeadline.setDate(computedDeadline.getDate() + days);
                 if (hours) computedDeadline.setHours(computedDeadline.getHours() + hours);
                 if (mins) computedDeadline.setMinutes(computedDeadline.getMinutes() + mins);
@@ -138,6 +145,51 @@ export class ProgressEntityService {
       
       if (changed) {
         await this.submissionRepository.save(submissions);
+      }
+
+      // ── Also unlock lesson-linked assignments whose dependsOnLessonIds are now all satisfied ──
+      // These are assignments attached to a lesson (not just module-level) inside this module.
+      const lessonLinkedSubs = await this.submissionRepository.find({
+        where: {
+          trainee: { id: userId },
+          assignment: { lesson: { module: { id: lesson.module.id } } },
+          status: 'LOCKED' as any,
+        },
+        relations: ['assignment', 'assignment.lesson', 'assignment.module', 'assignment.learningPath'],
+      });
+
+      let lessonLinkedChanged = false;
+      for (const sub of lessonLinkedSubs) {
+        const task = sub.assignment;
+        const lockState = await this.assignmentService.evaluateLockState(task, userId);
+        if (!lockState.isLocked) {
+          sub.status = 'AVAILABLE';
+          lessonLinkedChanged = true;
+          if (!sub.taskUnlockedAt) {
+            sub.taskUnlockedAt = now;
+          }
+          if (!sub.deadline) {
+            const totalDurationMinutes =
+              (task.durationDays || 0) * 24 * 60 +
+              (task.durationHours || 0) * 60 +
+              (task.durationMinutes || 0) +
+              (task.timerDuration || 0);
+            if (totalDurationMinutes > 0) {
+              const computedDeadline = new Date(now.getTime());
+              const dDays = Math.floor(totalDurationMinutes / (24 * 60));
+              const dHours = Math.floor((totalDurationMinutes % (24 * 60)) / 60);
+              const dMins = totalDurationMinutes % 60;
+              if (dDays) computedDeadline.setDate(computedDeadline.getDate() + dDays);
+              if (dHours) computedDeadline.setHours(computedDeadline.getHours() + dHours);
+              if (dMins) computedDeadline.setMinutes(computedDeadline.getMinutes() + dMins);
+              sub.deadline = computedDeadline;
+            }
+          }
+        }
+      }
+
+      if (lessonLinkedChanged) {
+        await this.submissionRepository.save(lessonLinkedSubs);
       }
     }
 

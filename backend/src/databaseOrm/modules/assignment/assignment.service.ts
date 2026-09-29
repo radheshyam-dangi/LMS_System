@@ -541,7 +541,49 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       updated.assignedToTraineeIds = Array.from(new Set(ids));
     }
 
-    return await this.repository.save(updated);
+    const saved = await this.repository.save(updated);
+
+    // Re-evaluate LOCKED submissions for this assignment in case dependsOnLessonIds changed
+    // Any trainee whose prerequisites are now all complete should be immediately unlocked.
+    if (dto.dependsOnLessonIds !== undefined || dto.lockUntilLessonsComplete !== undefined) {
+      const lockedSubs = await this.submissionRepository.find({
+        where: { assignment: { id: saved.id }, status: 'LOCKED' as any },
+        relations: ['trainee'],
+      });
+      const now = new Date();
+      let anyChanged = false;
+      for (const sub of lockedSubs) {
+        if (!sub.trainee?.id) continue;
+        const lockState = await this.evaluateLockState(saved as any, sub.trainee.id);
+        if (!lockState.isLocked) {
+          sub.status = 'AVAILABLE';
+          anyChanged = true;
+          if (!sub.taskUnlockedAt) sub.taskUnlockedAt = now;
+          if (!sub.deadline) {
+            const totalDurationMinutes =
+              (saved.durationDays || 0) * 24 * 60 +
+              (saved.durationHours || 0) * 60 +
+              (saved.durationMinutes || 0) +
+              (saved.timerDuration || 0);
+            if (totalDurationMinutes > 0 && (saved.anchorType === 'LP_ASSIGNED' || saved.anchorType === 'TASK_UNLOCKED')) {
+              const deadline = new Date(now.getTime());
+              const dDays = Math.floor(totalDurationMinutes / (24 * 60));
+              const dHours = Math.floor((totalDurationMinutes % (24 * 60)) / 60);
+              const dMins = totalDurationMinutes % 60;
+              if (dDays) deadline.setDate(deadline.getDate() + dDays);
+              if (dHours) deadline.setHours(deadline.getHours() + dHours);
+              if (dMins) deadline.setMinutes(deadline.getMinutes() + dMins);
+              sub.deadline = deadline;
+            }
+          }
+        }
+      }
+      if (anyChanged) {
+        await this.submissionRepository.save(lockedSubs);
+      }
+    }
+
+    return saved;
   }
 
   async deleteAssignment(id: string): Promise<void> {
@@ -593,6 +635,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     feedback: string,
     status: 'Approved' | 'Rejected' | 'Evaluated' = 'Approved',
     isAdmin: boolean = false,
+    questionScores?: Record<string, number>
   ): Promise<AssignmentSubmissionEntity> {
     if (status === 'Rejected' && (!feedback || !feedback.trim())) {
       throw new BadRequestException(
@@ -633,6 +676,10 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     submission.status = status.toUpperCase() as any;
     submission.evaluatedAt = new Date();
     submission.evaluatedBy = { id: evaluatorId } as any;
+    
+    if (questionScores) {
+      submission.questionScores = questionScores;
+    }
 
     const saved = await this.submissionRepository.save(submission);
 
