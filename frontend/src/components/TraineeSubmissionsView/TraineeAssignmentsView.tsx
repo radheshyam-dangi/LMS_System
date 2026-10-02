@@ -9,8 +9,8 @@ import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
 import { Filter, X } from 'lucide-react';
 import { RichText } from '../common/RichText';
 import { renderMultilineText } from '../../utils/textUtils';
+import { SharedAssignmentModal } from '../SharedCards/SharedAssignmentModal';
 import './TraineeAssignments.css';
-
 type Props = {
   accessToken: string;
   currentUser?: any;
@@ -41,11 +41,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const [searchQuery, setSearchQuery] = useState('');
   const [submitTarget, setSubmitTarget] = useState<any | null>(null);
   const [viewDetailsTarget, setViewDetailsTarget] = useState<any | null>(null);
-  const [submissionText, setSubmissionText] = useState('');
-  const [selectedMcqAnswers, setSelectedMcqAnswers] = useState<Record<number, number | number[]>>({});
-  const [subjectiveAnswers, setSubjectiveAnswers] = useState<Record<number, string>>({});
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  
+  
+  
+  
   const [instructionsOpen, setInstructionsOpen] = useState(true);
 
   useScrollLock(!!submitTarget || !!viewDetailsTarget);
@@ -162,75 +162,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     }
   ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // F1: Support both new Tiptap 'questions' JSONB array and legacy 'mcqConfig.questions'
-    const questions: any[] = submitTarget?.questions || submitTarget?.mcqConfig?.questions || [];
-    const hasMcqQuestions = questions.some((q: any) => (q.type || q.questionType || '').toUpperCase() === 'MCQ');
-    const hasSubjectiveQuestions = questions.some((q: any) => (q.type || q.questionType || '') !== 'MCQ');
-
-    // F2: Build structured answers array with questionId for backend AI pipeline
-    const structuredAnswers: Array<{ questionId: string; answer: string }> = questions.map((q: any, idx: number) => {
-      const qId = q.id || String(idx);
-      const isMCQ = (q.type || q.questionType || '').toUpperCase() === 'MCQ';
-      if (isMCQ) {
-        const selectedIdx = selectedMcqAnswers[idx];
-        return {
-          questionId: qId,
-          answer: typeof selectedIdx === 'number' ? String(selectedIdx) : '',
-        };
-      } else {
-        return {
-          questionId: qId,
-          answer: subjectiveAnswers[idx] || submissionText,
-        };
-      }
-    });
-
-    // Build submissionText fallback (for legacy compatibility and general assignments)
-    let finalText = submissionText;
-    if (questions.length > 0) {
-      finalText = JSON.stringify({
-        answers: selectedMcqAnswers,
-        textAnswers: subjectiveAnswers,
-        raw: submissionText,
-      });
-    }
-    if (!finalText.trim()) finalText = 'Task completed & submitted';
-
-    if (!submitTarget) {
-      alert('Please select an assignment to submit.');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      // F3: Pass structured answers for AI evaluation pipeline
-      await assignmentService.submitAssignment(
-        submitTarget.id,
-        {
-          submissionText: finalText,
-          attachmentUrl: attachmentUrl || undefined,
-          answers: structuredAnswers.length > 0 ? structuredAnswers : undefined,
-        },
-        accessToken,
-      );
-      setSubmitTarget(null);
-      setSubmissionText('');
-      setAttachmentUrl('');
-      setSelectedMcqAnswers({});
-      setSubjectiveAnswers({});
-      await loadData();
-      await refreshNotifications();
-    } catch (err: any) {
-      alert(err?.response?.data?.message || err.message || 'Submission failed.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  if (loading) {
+    if (loading) {
     return <div style={{ padding: 24, color: '#64748b' }}>Loading your assignments...</div>;
   }
 
@@ -675,10 +607,10 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                               } catch(e) {}
                             }
 
-                            setSubmissionText(prefilledText);
-                            setSelectedMcqAnswers(prefilledMcq);
-                            setSubjectiveAnswers(prefilledSubj);
-                            setAttachmentUrl(a.externalUrl || '');
+                            
+                            
+                            
+                            
                           }}
                           style={{
                             padding: '8px 16px',
@@ -710,218 +642,18 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         )}
       </div>
 
-      {submitTarget && createPortal(
-        <div className="assignment-modal-overlay">
-          <div className="assignment-modal-container">
-            {/* Context Panel */}
-            <div className="assignment-modal-context">
-              <h3 style={{ margin: '0 0 4px', fontSize: 18, color: '#0f172a' }}>{submitTarget.title}</h3>
-              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
-                {submitTarget.assignmentType} · {submitTarget.lessonTitle || 'Module Task'}
-              </div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {submitTarget.dependsOnLessonIds?.length > 0 && (
-                  <div>
-                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Depends On</strong>
-                    <div style={{ fontSize: 13, color: '#334155' }}>
-                      {submitTarget.dependsOnLessonIds.length} Prerequisite lessons
-                    </div>
-                  </div>
-                )}
-                {submitTarget.createdBy?.firstName && (
-                  <div>
-                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Assigned By</strong>
-                    <div style={{ fontSize: 13, color: '#334155' }}>{submitTarget.createdBy.firstName} {submitTarget.createdBy.lastName}</div>
-                  </div>
-                )}
-                
-                {submitTarget.countdownStart === 'onAssignment' ? (
-                  <div>
-                    <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>LP Assigned Time</strong>
-                    <div style={{ fontSize: 13, color: '#334155' }}>
-                      {submissionByAssignment.get(submitTarget.id)?.lpAssignedAt ? new Date(submissionByAssignment.get(submitTarget.id)!.lpAssignedAt!).toLocaleString(undefined, { timeZoneName: 'short' }) : new Date(submitTarget.createdAt).toLocaleString(undefined, { timeZoneName: 'short' })}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <strong style={{ display: 'block', fontSize: 11, color: '#0f172a', textTransform: 'uppercase' }}>Unlocked Time</strong>
-                    <div style={{ fontSize: 13, color: '#334155' }}>
-                      {submissionByAssignment.get(submitTarget.id)?.taskUnlockedAt ? new Date(submissionByAssignment.get(submitTarget.id)!.taskUnlockedAt!).toLocaleString(undefined, { timeZoneName: 'short' }) : 'Unlocks after prerequisite lessons'}
-                    </div>
-                  </div>
-                )}
-                
-                {submissionByAssignment.get(submitTarget.id)?.deadline && (
-                  <div>
-                    <strong style={{ display: 'block', fontSize: 11, color: '#94a3b8', textTransform: 'uppercase' }}>Due Date</strong>
-                    <DeadlineDisplay task={submitTarget} submission={submissionByAssignment.get(submitTarget.id)!} />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Main Form Content */}
-            <form onSubmit={handleSubmit} className="assignment-modal-content">
-              <div className="assignment-modal-scroll">
-                
-                {/* Instructions Banner */}
-                {submitTarget.instructions && (
-                  <div className="instructions-box" style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '16px', marginBottom: '24px' }}>
-                    <button type="button" onClick={() => setInstructionsOpen(!instructionsOpen)} style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', width: '100%', padding: 0, cursor: 'pointer', textAlign: 'left', minHeight: '32px' }}>
-                      <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        {instructionsOpen ? '▾ Instructions' : '▸ Instructions'}
-                      </div>
-                    </button>
-                    {instructionsOpen && (
-                      <div style={{ fontSize: '14px', color: '#0c4a6e', margin: '8px 0 0 0', fontFamily: 'inherit', lineHeight: 1.6 }}>
-                        <RichText content={submitTarget.instructions} emptyStateText="No instructions provided." />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Resource URL */}
-                {submitTarget.externalUrl && (
-                  <a
-                    href={submitTarget.externalUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', textDecoration: 'none', fontSize: '14px', color: '#2563eb', fontWeight: 600, marginBottom: '24px' }}
-                  >
-                    🔗 Reference Resource: {submitTarget.externalUrl}
-                  </a>
-                )}
-
-                {(() => {
-                  const questionsArray = submitTarget.questions?.length > 0 ? submitTarget.questions : (submitTarget.mcqConfig?.questions || []);
-                  return questionsArray.length > 0 ? (
-                    questionsArray.map((q: any, idx: number) => {
-                      const hasOptions = q.options && q.options.length > 0;
-                      return (
-                      <div key={idx} style={{ marginBottom: 20, padding: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
-                            <strong style={{ fontSize: 15, color: '#0f172a' }}>Q{idx + 1}.</strong>
-                            <div style={{ fontSize: 15, color: '#0f172a', fontWeight: 'bold' }}>
-                              {renderMultilineText(q.text || q.questionText || q.question || '') || 'No question text'}
-                            </div>
-                          </div>
-                          <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, background: '#e2e8f0', padding: '2px 8px', borderRadius: 12, whiteSpace: 'nowrap', marginLeft: 12 }}>
-                            {q.maxPoints || 10} pts
-                          </span>
-                        </div>
-                        
-                        {(q.type || q.questionType || '').toUpperCase() === 'MCQ' || (submitTarget.assignmentType === 'MCQ' && hasOptions) ? (
-                          !hasOptions ? (
-                            <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
-                              Invalid question configuration: no options provided.
-                            </div>
-                          ) : (
-                            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                              {(q.options || []).map((opt: string, oi: number) => (
-                                <label key={oi} style={{ fontSize: 14, display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                                  <input
-                                    type={q.allowMultipleCorrect ? "checkbox" : "radio"}
-                                    name={`q-${idx}`}
-                                    checked={
-                                      q.allowMultipleCorrect 
-                                        ? (Array.isArray(selectedMcqAnswers[idx]) ? (selectedMcqAnswers[idx] as any as number[]).includes(oi) : false)
-                                        : selectedMcqAnswers[idx] === oi
-                                    }
-                                    onChange={() => {
-                                      if (q.allowMultipleCorrect) {
-                                        setSelectedMcqAnswers(prev => {
-                                          const current = Array.isArray(prev[idx]) ? (prev[idx] as any as number[]) : [];
-                                          if (current.includes(oi)) {
-                                            return { ...prev, [idx]: current.filter(o => o !== oi) };
-                                          } else {
-                                            return { ...prev, [idx]: [...current, oi] };
-                                          }
-                                        });
-                                      } else {
-                                        setSelectedMcqAnswers(prev => ({ ...prev, [idx]: oi }));
-                                      }
-                                    }}
-                                    style={{ width: 16, height: 16, cursor: 'pointer' }}
-                                  />
-                                  <div style={{ display: 'inline-block' }}>
-                                    <RichText content={opt || `Option ${oi + 1}`} emptyStateText={`Option ${oi + 1}`} />
-                                  </div>
-                                </label>
-                              ))}
-                            </div>
-                          )
-                        ) : (
-                          <textarea
-                            className="answer-textarea"
-                            rows={4}
-                            value={subjectiveAnswers[idx] || ''}
-                            onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [idx]: e.target.value }))}
-                            placeholder="Type your answer here..."
-                            style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
-                          />
-                        )}
-                      </div>
-                    )})
-                  ) : (
-                    <textarea
-                      required
-                      rows={8}
-                      value={submissionText}
-                      onChange={(e) => setSubmissionText(e.target.value)}
-                      placeholder="Write your submission..."
-                      style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #cbd5e1', marginBottom: 12, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
-                    />
-                  );
-                })()}
-
-              {/* Attachment URL */}
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
-                  Attachment URL <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 400 }}>(Optional — GitHub / Google Drive / Workspace)</span>
-                </label>
-                <input
-                  type="url"
-                  className="attachment-field"
-                  placeholder="https://github.com/..."
-                  value={attachmentUrl}
-                  onChange={(e) => setAttachmentUrl(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                />
-              </div>
-              </div>
-              
-              <div className="assignment-modal-footer">
-                {(() => {
-                  const deadlineDate = submissionByAssignment.get(submitTarget.id)?.deadline ? new Date(submissionByAssignment.get(submitTarget.id)!.deadline!).getTime() : null;
-                  const isExpired = deadlineDate && new Date().getTime() > deadlineDate;
-                  
-                  return (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSubmitTarget(null);
-                        }}
-                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isSubmitting || !!isExpired}
-                        style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: isExpired ? '#94a3b8' : '#4f46e5', color: '#fff', fontWeight: 700, cursor: isExpired ? 'not-allowed' : 'pointer' }}
-                      >
-                        {isExpired ? 'Expired' : isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
-                      </button>
-                    </>
-                  );
-                })()}
-              </div>
-            </form>
-          </div>
-        </div>, document.body)}
+            {submitTarget && (
+        <SharedAssignmentModal
+          task={submitTarget}
+          submission={submissionByAssignment.get(submitTarget.id)}
+          accessToken={accessToken}
+          onClose={() => setSubmitTarget(null)}
+          onSuccess={() => {
+              loadData();
+              refreshNotifications();
+          }}
+        />
+      )}
 
       {/* View Details Modal for Approved Assignments */}
       {viewDetailsTarget && (() => {

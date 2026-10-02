@@ -38,6 +38,14 @@ export const AssignmentCard: React.FC<Props> = ({
   const isTaskSubmitted = submission && status !== 'AVAILABLE' && status !== 'LOCKED';
   const isExpired = submission?.deadline && new Date(submission.deadline).getTime() < Date.now();
   
+  const maxScore = (task as any).maxScore || 100;
+  const isBelowCutoff = status.toUpperCase() === 'APPROVED' && typeof submission?.score === 'number' && (submission.score / maxScore) * 100 < 35;
+  
+  let displayStatus = status.toLowerCase() === 'approved' ? 'Approved' : status === 'NEEDS_IMPROVEMENT' ? 'Needs Improvement' : status === 'EVALUATING' ? 'Evaluating' : (isLocked ? 'Locked' : status);
+  if (isBelowCutoff) {
+    displayStatus = 'Needs Improvement';
+  }
+
   return (
     <div
       title={isLocked || status === 'LOCKED' ? lockReason || 'Locked task' : undefined}
@@ -82,21 +90,23 @@ export const AssignmentCard: React.FC<Props> = ({
             padding: '4px 10px',
             borderRadius: 999,
             background:
-              status.toLowerCase() === 'approved' ? '#dcfce7'
+              displayStatus === 'Needs Improvement' ? '#ffedd5'
+              : displayStatus === 'Approved' ? '#dcfce7'
               : status.toLowerCase() === 'rejected' ? '#fee2e2'
               : status.toLowerCase() === 'submitted' ? '#fef3c7'
               : '#f1f5f9',
             color:
-              status.toLowerCase() === 'approved' ? '#166534'
+              displayStatus === 'Needs Improvement' ? '#c2410c'
+              : displayStatus === 'Approved' ? '#166534'
               : status.toLowerCase() === 'rejected' ? '#b91c1c'
               : status.toLowerCase() === 'submitted' ? '#b45309'
               : '#475569',
           }}
         >
-          {status.toLowerCase() === 'approved' ? 'Approved' : status === 'NEEDS_IMPROVEMENT' ? 'Needs Improvement' : status === 'EVALUATING' ? 'Evaluating' : (isLocked ? 'Locked' : status)}
+          {displayStatus}
           {typeof submission?.score === 'number' ? ` · ${submission.score}` : ''}
         </span>
-        {isTrainee && status.toLowerCase() !== 'approved' && !isLocked && status !== 'LOCKED' && !isExpired && (
+        {isTrainee && displayStatus !== 'Approved' && !isLocked && status !== 'LOCKED' && !isExpired && (
           <button
             type="button"
             onClick={(e) => {
@@ -114,7 +124,7 @@ export const AssignmentCard: React.FC<Props> = ({
               cursor: 'pointer' 
             }}
           >
-            {isTaskSubmitted ? 'Resubmit' : 'Attempt'}
+            {isTaskSubmitted ? 'Resubmit' : 'Submit'}
           </button>
         )}
       </div>

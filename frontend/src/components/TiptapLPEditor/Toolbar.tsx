@@ -37,6 +37,14 @@ const makeLessonNode = () => ({
   ],
 });
 
+const defaultAssignmentInstructionBlocks = () => [
+  'Read the assignment brief fully and note the objective, deliverables, and deadline.',
+  'Revise the related lessons and concepts before you begin.',
+  'Prepare your tools, software, and reference materials.',
+  'Plan your work in steps and set an internal deadline.',
+  'Submit original, accurate work that follows the evaluation criteria.',
+].map(text => ({ type: 'paragraph', content: [{ type: 'text', text }] }));
+
 const makeAssignmentNode = () => ({
   type: 'assignment',
   attrs: {
@@ -47,7 +55,7 @@ const makeAssignmentNode = () => ({
   },
   content: [
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-    { type: 'paragraph', content: [{ type: 'text', text: 'Assignment instructions...' }] },
+    ...defaultAssignmentInstructionBlocks(),
     {
       type: 'questionBlock',
       attrs: {

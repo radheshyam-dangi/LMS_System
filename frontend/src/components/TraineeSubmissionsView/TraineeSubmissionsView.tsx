@@ -14,6 +14,8 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
   const [resubmitTask, setResubmitTask] = useState<any | null>(null);
   const [subjectiveAnswers, setSubjectiveAnswers] = useState<Record<number, string>>({});
   const [selectedMcqAnswers, setSelectedMcqAnswers] = useState<Record<number, number>>({});
+  const [originalSubjectiveAnswers, setOriginalSubjectiveAnswers] = useState<Record<number, string>>({});
+  const [originalMcqAnswers, setOriginalMcqAnswers] = useState<Record<number, number>>({});
   const [singleTextAnswer, setSingleTextAnswer] = useState('');
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -90,6 +92,8 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
     setAttachmentUrl(sub.attachmentUrl || '');
     setSubjectiveAnswers({});
     setSelectedMcqAnswers({});
+    setOriginalSubjectiveAnswers({});
+    setOriginalMcqAnswers({});
     setSingleTextAnswer('');
 
     if (sub.submissionText) {
@@ -98,8 +102,10 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
         if (parsed.answers) {
           if (sub.assignment?.assignmentType === 'MCQ') {
             setSelectedMcqAnswers(parsed.answers);
+            setOriginalMcqAnswers(parsed.answers);
           } else {
             setSubjectiveAnswers(parsed.answers);
+            setOriginalSubjectiveAnswers(parsed.answers);
           }
         }
       } catch {
@@ -316,48 +322,135 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
 
       {/* 🌟 RESUBMIT MODAL WITH INDIVIDUAL QUESTIONS */}
       {resubmitTask && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ background: '#fff', width: '580px', padding: '24px', borderRadius: '8px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h3 style={{ margin: '0 0 6px 0' }}>Resubmit: {resubmitTask.assignment?.title}</h3>
-            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
-              Revise your solutions based on the trainer's feedback to gain full points.
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}>
+          <div style={{ background: '#fff', width: '820px', padding: '32px', borderRadius: '12px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '22px', color: '#0f172a' }}>🔄 Resubmit: {resubmitTask.assignment?.title}</h3>
+            
+            {/* META INFO SECTION */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Submitted By</span>
+                <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>You (Trainee)</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reviewed By</span>
+                <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>
+                  {resubmitTask.evaluatedBy ? `${resubmitTask.evaluatedBy.firstName || ''} ${resubmitTask.evaluatedBy.lastName || ''}`.trim() || 'Trainer' : (resubmitTask.evaluationMethod === 'ai_auto' ? 'AI Evaluator' : 'Trainer')}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Evaluated Time</span>
+                <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>
+                  {resubmitTask.evaluatedAt ? new Date(resubmitTask.evaluatedAt).toLocaleString() : (resubmitTask.updatedAt ? new Date(resubmitTask.updatedAt).toLocaleString() : 'N/A')}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deadline Countdown</span>
+                <span style={{ fontSize: '14px', color: resubmitTask.deadline && new Date(resubmitTask.deadline).getTime() < Date.now() ? '#b91c1c' : '#0f172a', fontWeight: 600 }}>
+                  {resubmitTask.deadline ? (() => {
+                     const dl = new Date(resubmitTask.deadline);
+                     const diffDays = Math.ceil((dl.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                     if (diffDays < 0) return 'Expired';
+                     if (diffDays === 0) return 'Ends Today';
+                     return `In ${diffDays} days (${dl.toLocaleDateString()})`;
+                  })() : 'No Deadline'}
+                </span>
+              </div>
+            </div>
+
+            {/* ASSIGNMENT INSTRUCTIONS */}
+            {(resubmitTask.assignment?.instructions || resubmitTask.assignment?.description) && (
+              <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: '8px', border: '1px solid #bae6fd', marginBottom: '24px' }}>
+                <span style={{ fontSize: '12px', color: '#0369a1', fontWeight: 700, display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>📋 Assignment Instructions</span>
+                <div 
+                  style={{ fontSize: '13px', color: '#0284c7', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}
+                  dangerouslySetInnerHTML={{ __html: resubmitTask.assignment.instructions || resubmitTask.assignment.description }}
+                />
+              </div>
+            )}
+
+            <p style={{ fontSize: '14px', color: '#475569', margin: '0 0 16px 0', fontWeight: 500 }}>
+              Review the feedback and previous answers below, then submit your improved responses to gain full points.
             </p>
 
             <form onSubmit={handleResubmitSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               
               {/* Question Mapping */}
               {resubmitTask.assignment?.mcqConfig?.questions?.length > 0 ? (
-                <div>
-                  {resubmitTask.assignment.mcqConfig.questions.map((q: any, qIdx: number) => (
-                    <div key={qIdx} style={{ background: '#f8fafc', padding: '12px', borderRadius: '6px', marginBottom: '10px', border: '1px solid #cbd5e1' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '6px' }}>
-                        Q{qIdx + 1}: {q.questionText || q.question} ({q.points || q.maxPoints || 10} pts)
-                      </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {resubmitTask.assignment.mcqConfig.questions.map((q: any, qIdx: number) => {
+                    const maxPts = q.points || q.maxPoints || 10;
+                    const qId = q.id || qIdx;
+                    
+                    let qScore = 0;
+                    if (resubmitTask.questionScores && resubmitTask.questionScores[qId] !== undefined) {
+                      qScore = resubmitTask.questionScores[qId];
+                    } else if (resubmitTask.questionScores && resubmitTask.questionScores[qIdx] !== undefined) {
+                      qScore = resubmitTask.questionScores[qIdx];
+                    } else if (resubmitTask.aiQuestionScores) {
+                       const aiScoreData = resubmitTask.aiQuestionScores.find((aiq: any) => aiq.questionId === qId || aiq.questionIndex === qIdx);
+                       if (aiScoreData) qScore = aiScoreData.score || 0;
+                    }
 
-                      {resubmitTask.assignment?.assignmentType === 'MCQ' ? (
-                        q.options?.map((opt: string, optIdx: number) => (
-                          <label key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', marginTop: '4px', cursor: 'pointer' }}>
-                            <input
-                              type="radio"
-                              name={`resubmit_q_${qIdx}`}
-                              checked={selectedMcqAnswers[qIdx] === optIdx}
-                              onChange={() => setSelectedMcqAnswers((prev) => ({ ...prev, [qIdx]: optIdx }))}
-                            />
-                            {opt}
+                    const isMcq = resubmitTask.assignment?.assignmentType === 'MCQ';
+                    const prevAnswerVal = isMcq ? originalMcqAnswers[qIdx] : originalSubjectiveAnswers[qIdx];
+                    const hasPrevAnswer = prevAnswerVal !== undefined;
+                    
+                    const scorePercentage = (qScore / maxPts) * 100;
+                    const scoreColor = scorePercentage >= 75 ? '#15803d' : scorePercentage >= 50 ? '#c2410c' : '#b91c1c';
+                    const scoreBg = scorePercentage >= 75 ? '#dcfce7' : scorePercentage >= 50 ? '#ffedd5' : '#fee2e2';
+
+                    return (
+                      <div key={qIdx} style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+                          <label style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: '#0f172a', flex: 1, margin: 0 }}>
+                            Q{qIdx + 1}: {q.questionText || q.question}
                           </label>
-                        ))
-                      ) : (
-                        <textarea
-                          rows={3}
-                          required
-                          value={subjectiveAnswers[qIdx] || ''}
-                          onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [qIdx]: e.target.value }))}
-                          placeholder="Write your updated answer..."
-                          style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #cbd5e1', fontSize: '13px' }}
-                        />
-                      )}
-                    </div>
-                  ))}
+                          <div style={{ padding: '6px 10px', borderRadius: '6px', background: scoreBg, color: scoreColor, fontSize: '13px', fontWeight: 700, border: `1px solid ${scoreColor}40`, marginLeft: '16px', whiteSpace: 'nowrap' }}>
+                            Score: {qScore} / {maxPts}
+                          </div>
+                        </div>
+
+                        {hasPrevAnswer && (
+                          <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '8px', border: '1px dashed #94a3b8', marginBottom: '16px' }}>
+                             <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px', letterSpacing: '0.05em' }}>Your Previous Answer</span>
+                             <div style={{ fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                               {isMcq ? (q.options?.[Number(prevAnswerVal)] || 'None') : prevAnswerVal}
+                             </div>
+                          </div>
+                        )}
+
+                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+                          <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '12px' }}>Your Updated Answer</span>
+                          {isMcq ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {q.options?.map((opt: string, optIdx: number) => (
+                                <label key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', cursor: 'pointer', padding: '8px 12px', borderRadius: '6px', background: selectedMcqAnswers[qIdx] === optIdx ? '#e0f2fe' : '#fff', border: selectedMcqAnswers[qIdx] === optIdx ? '1px solid #7dd3fc' : '1px solid #cbd5e1', transition: 'all 0.2s', margin: 0 }}>
+                                  <input
+                                    type="radio"
+                                    name={`resubmit_q_${qIdx}`}
+                                    checked={selectedMcqAnswers[qIdx] === optIdx}
+                                    onChange={() => setSelectedMcqAnswers((prev) => ({ ...prev, [qIdx]: optIdx }))}
+                                    style={{ margin: 0, width: '16px', height: '16px' }}
+                                  />
+                                  {opt}
+                                </label>
+                              ))}
+                            </div>
+                          ) : (
+                            <textarea
+                              rows={4}
+                              required
+                              value={subjectiveAnswers[qIdx] || ''}
+                              onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [qIdx]: e.target.value }))}
+                              placeholder="Write your improved answer..."
+                              style={{ width: '100%', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '14px', resize: 'vertical', fontFamily: 'inherit' }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div>

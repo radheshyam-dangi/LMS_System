@@ -165,7 +165,7 @@ export class AssignmentEntity extends BaseEntity {
   }>;
 
   /**
-   * UUIDs of lessons this assignment depends on.
+   * UUIDs of lessons this assignment DEPENDS ON.
    * Populated from authoring order — all lessons preceding this assignment
    * in the same module are dependencies.
    */

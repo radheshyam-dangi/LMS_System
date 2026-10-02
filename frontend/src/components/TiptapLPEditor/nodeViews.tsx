@@ -3,6 +3,14 @@ import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
 import { Settings, Lock, Unlock, Play, FileText, LayoutList, ChevronDown, ChevronRight, Video, FileAudio, Link2, Trash2, Clock } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
+const defaultAssignmentInstructionBlocks = () => [
+  'Read the assignment brief fully and note the objective, deliverables, and deadline.',
+  'Revise the related lessons and concepts before you begin.',
+  'Prepare your tools, software, and reference materials.',
+  'Plan your work in steps and set an internal deadline.',
+  'Submit original, accurate work that follows the evaluation criteria.',
+].map(text => ({ type: 'paragraph', content: [{ type: 'text', text }] }));
+
 // ─────────────────────────────────────────────
 // MODULE NODE VIEW
 // ─────────────────────────────────────────────
@@ -18,12 +26,12 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
           <span>📄 Module Overview & Description</span>
           <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>(Visible to Trainees)</span>
         </div>
-        <textarea 
-          className="styled-form-control" 
-          rows={3} 
-          value={node.attrs.description || ''} 
-          placeholder="Provide a comprehensive description of this module and its learning objectives for trainees..." 
-          onChange={e => updateAttributes({ description: e.target.value })} 
+        <textarea
+          className="styled-form-control"
+          rows={3}
+          value={node.attrs.description || ''}
+          placeholder="Provide a comprehensive description of this module and its learning objectives for trainees..."
+          onChange={e => updateAttributes({ description: e.target.value })}
           style={{ width: '100%', boxSizing: 'border-box' }}
         />
       </div>
@@ -36,20 +44,20 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
           </div>
           {objectives.map((obj: string, i: number) => (
             <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-              <input 
-                className="styled-form-control" 
+              <input
+                className="styled-form-control"
                 style={{ flex: 1 }}
-                value={obj} 
-                placeholder="e.g. Understand core concepts & principles" 
+                value={obj}
+                placeholder="e.g. Understand core concepts & principles"
                 onChange={e => {
                   const newArr = [...objectives];
                   newArr[i] = e.target.value;
                   updateAttributes({ learningObjectives: newArr });
-                }} 
+                }}
               />
-              <button 
+              <button
                 type="button"
-                className="delete-node-btn" 
+                className="delete-node-btn"
                 onClick={() => {
                   const newArr = [...objectives];
                   newArr.splice(i, 1);
@@ -61,9 +69,9 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
               </button>
             </div>
           ))}
-          <button 
+          <button
             type="button"
-            className="ghost-add-btn" 
+            className="ghost-add-btn"
             style={{ marginTop: '6px' }}
             onClick={() => updateAttributes({ learningObjectives: [...objectives, ''] })}
           >
@@ -78,20 +86,20 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
           </div>
           {outcomes.map((out: string, i: number) => (
             <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-              <input 
-                className="styled-form-control" 
+              <input
+                className="styled-form-control"
                 style={{ flex: 1 }}
-                value={out} 
-                placeholder="e.g. Build end-to-end working implementation" 
+                value={out}
+                placeholder="e.g. Build end-to-end working implementation"
                 onChange={e => {
                   const newArr = [...outcomes];
                   newArr[i] = e.target.value;
                   updateAttributes({ learningOutcomes: newArr });
-                }} 
+                }}
               />
-              <button 
+              <button
                 type="button"
-                className="delete-node-btn" 
+                className="delete-node-btn"
                 onClick={() => {
                   const newArr = [...outcomes];
                   newArr.splice(i, 1);
@@ -103,9 +111,9 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
               </button>
             </div>
           ))}
-          <button 
+          <button
             type="button"
-            className="ghost-add-btn" 
+            className="ghost-add-btn"
             style={{ marginTop: '6px' }}
             onClick={() => updateAttributes({ learningOutcomes: [...outcomes, ''] })}
           >
@@ -121,32 +129,32 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
         </div>
         {resources.map((res: any, i: number) => (
           <div key={i} style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-            <input 
-              className="styled-form-control" 
-              value={res.label} 
-              placeholder="Resource Label (e.g. Official Documentation)" 
-              style={{ flex: 1, minWidth: '160px' }} 
+            <input
+              className="styled-form-control"
+              value={res.label}
+              placeholder="Resource Label (e.g. Official Documentation)"
+              style={{ flex: 1, minWidth: '160px' }}
               onChange={e => {
                 const newArr = [...resources];
                 newArr[i] = { ...newArr[i], label: e.target.value };
                 updateAttributes({ moduleResources: newArr });
-              }} 
+              }}
             />
-            <input 
-              className="styled-form-control" 
-              value={res.url} 
-              placeholder="https://..." 
-              style={{ flex: 2, minWidth: '200px' }} 
+            <input
+              className="styled-form-control"
+              value={res.url}
+              placeholder="https://..."
+              style={{ flex: 2, minWidth: '200px' }}
               onChange={e => {
                 const newArr = [...resources];
                 newArr[i] = { ...newArr[i], url: e.target.value };
                 updateAttributes({ moduleResources: newArr });
-              }} 
+              }}
             />
-            <select 
-              className="styled-form-control" 
-              style={{ width: '100px' }} 
-              value={res.type || 'Link'} 
+            <select
+              className="styled-form-control"
+              style={{ width: '100px' }}
+              value={res.type || 'Link'}
               onChange={e => {
                 const newArr = [...resources];
                 newArr[i] = { ...newArr[i], type: e.target.value };
@@ -157,9 +165,9 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
               <option value="PDF">📄 PDF</option>
               <option value="Video">🎥 Video</option>
             </select>
-            <button 
+            <button
               type="button"
-              className="delete-node-btn" 
+              className="delete-node-btn"
               onClick={() => {
                 const newArr = [...resources];
                 newArr.splice(i, 1);
@@ -171,9 +179,9 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
             </button>
           </div>
         ))}
-        <button 
+        <button
           type="button"
-          className="ghost-add-btn" 
+          className="ghost-add-btn"
           style={{ marginTop: '4px' }}
           onClick={() => updateAttributes({ moduleResources: [...resources, { label: '', url: '', type: 'Link' }] })}
         >
@@ -247,13 +255,13 @@ export const ModuleNodeView = (props: any) => {
           <span className="module-badge">MODULE {index}</span>
         </div>
         <div className="module-actions">
-          <button 
-            className="lock-toggle" 
-            style={{ 
-              background: showSettings ? '#d1fae5' : '#ffffff', 
-              borderColor: showSettings ? '#a7f3d0' : '#e2e8f0', 
+          <button
+            className="lock-toggle"
+            style={{
+              background: showSettings ? '#d1fae5' : '#ffffff',
+              borderColor: showSettings ? '#a7f3d0' : '#e2e8f0',
               color: '#065f46',
-              fontWeight: 700 
+              fontWeight: 700
             }}
             onClick={() => setShowSettings(!showSettings)}
             title="Toggle Module Objectives, Outcomes & Resources"
@@ -261,7 +269,7 @@ export const ModuleNodeView = (props: any) => {
             <Settings size={14} />
             <span>Metadata</span>
           </button>
-          <button 
+          <button
             className={`lock-toggle ${isLocked ? 'locked' : 'unlocked'}`}
             onClick={() => updateAttributes({ sequentialLessonLock: !isLocked })}
             title="Sequential Lesson Lock: Trainees must complete lessons in order"
@@ -281,9 +289,9 @@ export const ModuleNodeView = (props: any) => {
             <div className="module-desc-preview-header">
               <span className="module-desc-preview-icon">📋</span>
               <span className="module-desc-preview-title">Module Description (Trainee View)</span>
-              <button 
-                type="button" 
-                className="module-desc-edit-link" 
+              <button
+                type="button"
+                className="module-desc-edit-link"
                 onClick={() => setShowSettings(true)}
               >
                 Edit
@@ -295,9 +303,9 @@ export const ModuleNodeView = (props: any) => {
         {!node.attrs.description && !showSettings && (
           <div className="module-desc-prompt-banner" contentEditable={false}>
             <span>💡 No module overview added yet. Trainees see this on their module page.</span>
-            <button 
-              type="button" 
-              className="module-add-desc-pill-btn" 
+            <button
+              type="button"
+              className="module-add-desc-pill-btn"
               onClick={() => setShowSettings(true)}
             >
               + Add Description
@@ -316,14 +324,14 @@ export const ModuleNodeView = (props: any) => {
             <button className="ghost-add-btn" onClick={() => {
               if (typeof getPos === 'function') {
                 const pos = getPos() + node.nodeSize - 1;
-                editor.commands.insertContentAt(pos, { 
-                  type: 'assignment', 
-                  attrs: { id: uuidv4() }, 
+                editor.commands.insertContentAt(pos, {
+                  type: 'assignment',
+                  attrs: { id: uuidv4() },
                   content: [
-                    { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] }, 
-                    { type: 'paragraph', content: [{ type: 'text', text: 'Assignment instructions...' }] },
+                    { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
+                    ...defaultAssignmentInstructionBlocks(),
                     { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] }
-                  ] 
+                  ]
                 });
               }
             }}>+ Add Assignment</button>
@@ -351,7 +359,7 @@ export const LessonNodeView = (props: any) => {
         const $pos = editor.state.doc.resolve(pos);
         const parent = $pos.node($pos.depth);
         if (parent.type.name !== 'module') return;
-        
+
         let count = 1;
         let found = false;
         parent.descendants((n: any) => {
@@ -363,9 +371,9 @@ export const LessonNodeView = (props: any) => {
           if (n.type.name === 'lesson') count++;
         });
         setIndex(count);
-      } catch (e) {}
+      } catch (e) { }
     };
-    
+
     updateIndex();
     editor.on('transaction', updateIndex);
     return () => editor.off('transaction', updateIndex);
@@ -404,9 +412,9 @@ export const LessonNodeView = (props: any) => {
             hasDependentAssignment = true;
           }
         });
-      } catch(e) {}
+      } catch (e) { }
     }
-    
+
     if (hasDependentAssignment) {
       if (!window.confirm('This lesson is a dependency for an Assignment in this module. Confirm deletion?')) return;
     } else if (node.content && node.content.size > 0) {
@@ -443,19 +451,19 @@ export const LessonNodeView = (props: any) => {
         <div className="ghost-btn-row" contentEditable={false}>
           <button className="ghost-add-btn" onClick={() => {
             if (typeof getPos === 'function') {
-               const pos = getPos() + node.nodeSize - 1;
-               editor.commands.insertContentAt(pos, { type: 'videoBlock' });
+              const pos = getPos() + node.nodeSize - 1;
+              editor.commands.insertContentAt(pos, { type: 'videoBlock' });
             }
           }}>+ Video</button>
           <button className="ghost-add-btn" onClick={() => {
             if (typeof getPos === 'function') {
-               const pos = getPos() + node.nodeSize - 1;
-               editor.commands.insertContentAt(pos, { type: 'resourceBlock' });
+              const pos = getPos() + node.nodeSize - 1;
+              editor.commands.insertContentAt(pos, { type: 'resourceBlock' });
             }
           }}>+ Resource</button>
         </div>
       </div>
-      
+
       {/* Sibling insertion row */}
       <div className="sibling-btn-row" contentEditable={false}>
         <button className="sibling-add-btn" onClick={() => {
@@ -467,14 +475,14 @@ export const LessonNodeView = (props: any) => {
         <button className="sibling-add-btn" onClick={() => {
           if (typeof getPos === 'function') {
             const pos = getPos() + node.nodeSize;
-            editor.commands.insertContentAt(pos, { 
-              type: 'assignment', 
-              attrs: { id: uuidv4() }, 
+            editor.commands.insertContentAt(pos, {
+              type: 'assignment',
+              attrs: { id: uuidv4() },
               content: [
-                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] }, 
-                { type: 'paragraph', content: [{ type: 'text', text: 'Assignment instructions...' }] },
+                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
+                ...defaultAssignmentInstructionBlocks(),
                 { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] }
-              ] 
+              ]
             });
           }
         }}>+ Add Assignment</button>
@@ -505,7 +513,7 @@ export const AssignmentNodeView = (props: any) => {
         const $pos = editor.state.doc.resolve(pos);
         const parent = $pos.node($pos.depth);
         if (parent.type.name !== 'module') return;
-        
+
         let count = 1;
         let found = false;
         parent.descendants((n: any) => {
@@ -517,9 +525,9 @@ export const AssignmentNodeView = (props: any) => {
           if (n.type.name === 'assignment') count++;
         });
         setIndex(count);
-      } catch (e) {}
+      } catch (e) { }
     };
-    
+
     updateIndex();
     editor.on('transaction', updateIndex);
     return () => editor.off('transaction', updateIndex);
@@ -547,10 +555,10 @@ export const AssignmentNodeView = (props: any) => {
         const $pos = editor.state.doc.resolve(pos);
         const parent = $pos.node($pos.depth);
         if (parent.type.name !== 'module') return;
-        
+
         let lessons: { id: string, title: string }[] = [];
         let foundSelf = false;
-        
+
         parent.descendants((childNode: any) => {
           if (foundSelf) return false;
           if (childNode === node) {
@@ -569,25 +577,25 @@ export const AssignmentNodeView = (props: any) => {
             return false;
           }
         });
-        
+
         setPrecedingLessons(lessons);
 
         // Compute text based on explicit dependsOnLessonIds or all preceding
         const selectedIds = node.attrs.dependsOnLessonIds;
-        
+
         if (lessons.length === 0) {
           setDependencyText('No lesson dependency — unlocked immediately');
         } else if (selectedIds === null) {
-          setDependencyText(`Depends on: All preceding lessons (${lessons.length})`);
+          setDependencyText(`DEPENDS ON: All preceding lessons (${lessons.length})`);
         } else if (selectedIds.length === 0) {
-          setDependencyText('Depends on: None');
+          setDependencyText('DEPENDS ON: None');
         } else {
           const selectedTitles = selectedIds.map((id: string) => lessons.find(l => l.id === id)?.title).filter(Boolean);
-          setDependencyText(`Depends on: ${selectedTitles.length} lesson(s)`);
+          setDependencyText(`DEPENDS ON: ${selectedTitles.length} lesson(s)`);
         }
-      } catch (e) {}
+      } catch (e) { }
     };
-    
+
     updateDependencies();
     editor.on('transaction', updateDependencies);
     return () => editor.off('transaction', updateDependencies);
@@ -622,8 +630,8 @@ export const AssignmentNodeView = (props: any) => {
           <span className="assignment-badge">ASSIGNMENT {index}</span>
           {dependencyText && (
             <div style={{ position: 'relative' }} ref={dropdownRef}>
-              <button 
-                className="live-dependency-label" 
+              <button
+                className="live-dependency-label"
                 title={dependencyText}
                 onClick={() => setShowDependencyDropdown(!showDependencyDropdown)}
                 style={{ cursor: 'pointer', background: 'transparent', border: 'none', padding: 0, outline: 'none' }}
@@ -631,7 +639,7 @@ export const AssignmentNodeView = (props: any) => {
                 {dependencyText}
                 <ChevronDown size={12} style={{ marginLeft: 4 }} />
               </button>
-              
+
               {showDependencyDropdown && precedingLessons.length > 0 && (
                 <div style={{
                   position: 'absolute',
@@ -650,7 +658,7 @@ export const AssignmentNodeView = (props: any) => {
                 }}>
                   <div style={{ padding: '0 12px 8px', borderBottom: '1px solid #f1f5f9', marginBottom: '4px', display: 'flex', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' }}>Select Dependencies</span>
-                    <button 
+                    <button
                       onClick={() => updateAttributes({ dependsOnLessonIds: null })}
                       style={{ fontSize: '11px', color: '#4f46e5', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                     >
@@ -661,7 +669,7 @@ export const AssignmentNodeView = (props: any) => {
                     const selectedIds = node.attrs.dependsOnLessonIds;
                     // If null, all are selected by default
                     const isSelected = selectedIds === null || selectedIds.includes(lesson.id);
-                    
+
                     return (
                       <label key={lesson.id} style={{
                         display: 'flex',
@@ -672,7 +680,7 @@ export const AssignmentNodeView = (props: any) => {
                         fontSize: '13px',
                         color: '#334155'
                       }}>
-                        <input 
+                        <input
                           type="checkbox"
                           checked={isSelected}
                           onChange={(e) => {
@@ -707,7 +715,7 @@ export const AssignmentNodeView = (props: any) => {
           )}
         </div>
         <div className="assignment-actions">
-          <button 
+          <button
             className={`lock-toggle ${node.attrs.lockUntilLessonsComplete ? 'locked' : 'unlocked'}`}
             onClick={() => updateAttributes({ lockUntilLessonsComplete: !node.attrs.lockUntilLessonsComplete })}
             title="Lock until lessons complete"
@@ -715,19 +723,19 @@ export const AssignmentNodeView = (props: any) => {
             {node.attrs.lockUntilLessonsComplete ? <Lock size={14} /> : <Unlock size={14} />}
             <span>{node.attrs.lockUntilLessonsComplete ? 'Locked' : 'Unlocked'}</span>
           </button>
-          
+
           {hasSubjectiveQuestions && (
             <>
-              <button 
+              <button
                 className={`lock-toggle ${node.attrs.autoEvaluateWithAI ? 'locked' : 'unlocked'}`}
                 onClick={() => updateAttributes({ autoEvaluateWithAI: !node.attrs.autoEvaluateWithAI })}
                 title="Applies to subjective questions only. Multiple-choice questions are always graded automatically based on the correct answer(s) you selected."
               >
                 <span>{node.attrs.autoEvaluateWithAI ? 'AI Eval ON' : 'AI Eval OFF'}</span>
               </button>
-              
+
               {node.attrs.autoEvaluateWithAI && (
-                <button 
+                <button
                   className={`lock-toggle ${node.attrs.humanInterventionRequired ? 'locked' : 'unlocked'}`}
                   onClick={() => updateAttributes({ humanInterventionRequired: !node.attrs.humanInterventionRequired })}
                   title="Human Intervention Required"
@@ -738,7 +746,7 @@ export const AssignmentNodeView = (props: any) => {
             </>
           )}
 
-          <button 
+          <button
             className={`lock-toggle ${isSettingsExpanded ? 'locked' : 'unlocked'}`}
             onClick={() => { setIsSettingsExpanded(!isSettingsExpanded); setIsCollapsed(false); }}
             style={{ borderStyle: 'dashed' }}
@@ -752,7 +760,7 @@ export const AssignmentNodeView = (props: any) => {
           </button>
         </div>
       </div>
-      
+
       {!isCollapsed && isSettingsExpanded && (
         <div className="assignment-settings" contentEditable={false}>
           <div className="setting-card">
@@ -762,7 +770,7 @@ export const AssignmentNodeView = (props: any) => {
               onChange={(e) => {
                 const newType = e.target.value;
                 updateAttributes({ assignmentType: newType });
-                
+
                 // If it's not Mixed, force all existing child questions to this type
                 if (newType !== 'Mixed') {
                   const tr = editor.state.tr;
@@ -823,18 +831,18 @@ export const AssignmentNodeView = (props: any) => {
               <div className="duration-unit-box">
                 <span className="duration-unit-label">DAYS</span>
                 <div className="duration-unit-input-row">
-                  <input 
-                    type="number" 
-                    min={0} 
-                    max={365} 
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
                     value={node.attrs.timerDuration?.days ?? 0}
-                    onChange={e => updateAttributes({ 
-                      timerDuration: { 
+                    onChange={e => updateAttributes({
+                      timerDuration: {
                         days: Math.max(0, parseInt(e.target.value, 10) || 0),
                         hours: Number(node.attrs.timerDuration?.hours) || 0,
                         minutes: Number(node.attrs.timerDuration?.minutes) || 0,
-                      } 
-                    })} 
+                      }
+                    })}
                     className="duration-unit-input"
                     aria-label="Duration days"
                   />
@@ -845,18 +853,18 @@ export const AssignmentNodeView = (props: any) => {
               <div className="duration-unit-box">
                 <span className="duration-unit-label">HOURS</span>
                 <div className="duration-unit-input-row">
-                  <input 
-                    type="number" 
-                    min={0} 
-                    max={23} 
+                  <input
+                    type="number"
+                    min={0}
+                    max={23}
                     value={node.attrs.timerDuration?.hours ?? 0}
-                    onChange={e => updateAttributes({ 
-                      timerDuration: { 
+                    onChange={e => updateAttributes({
+                      timerDuration: {
                         days: Number(node.attrs.timerDuration?.days) || 0,
                         hours: Math.min(23, Math.max(0, parseInt(e.target.value, 10) || 0)),
                         minutes: Number(node.attrs.timerDuration?.minutes) || 0,
-                      } 
-                    })} 
+                      }
+                    })}
                     className="duration-unit-input"
                     aria-label="Duration hours"
                   />
@@ -867,18 +875,18 @@ export const AssignmentNodeView = (props: any) => {
               <div className="duration-unit-box">
                 <span className="duration-unit-label">MINUTES</span>
                 <div className="duration-unit-input-row">
-                  <input 
-                    type="number" 
-                    min={0} 
-                    max={59} 
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
                     value={node.attrs.timerDuration?.minutes ?? 0}
-                    onChange={e => updateAttributes({ 
-                      timerDuration: { 
+                    onChange={e => updateAttributes({
+                      timerDuration: {
                         days: Number(node.attrs.timerDuration?.days) || 0,
                         hours: Number(node.attrs.timerDuration?.hours) || 0,
                         minutes: Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)),
-                      } 
-                    })} 
+                      }
+                    })}
                     className="duration-unit-input"
                     aria-label="Duration minutes"
                   />
@@ -889,29 +897,29 @@ export const AssignmentNodeView = (props: any) => {
 
             <div className="duration-quick-presets">
               <span className="duration-preset-label">Presets:</span>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="duration-preset-btn"
                 onClick={() => updateAttributes({ timerDuration: { days: 1, hours: 0, minutes: 0 } })}
               >
                 1 Day
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="duration-preset-btn"
                 onClick={() => updateAttributes({ timerDuration: { days: 3, hours: 0, minutes: 0 } })}
               >
                 3 Days
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="duration-preset-btn"
                 onClick={() => updateAttributes({ timerDuration: { days: 7, hours: 0, minutes: 0 } })}
               >
                 1 Week
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="duration-preset-btn"
                 onClick={() => updateAttributes({ timerDuration: { days: 0, hours: 0, minutes: 0 } })}
               >
@@ -928,8 +936,8 @@ export const AssignmentNodeView = (props: any) => {
           <button className="ghost-add-btn" onClick={() => {
             if (typeof getPos === 'function') {
               const pos = getPos() + node.nodeSize - 1;
-              const childType = (node.attrs.assignmentType && node.attrs.assignmentType !== 'Mixed') 
-                ? node.attrs.assignmentType 
+              const childType = (node.attrs.assignmentType && node.attrs.assignmentType !== 'Mixed')
+                ? node.attrs.assignmentType
                 : 'Subjective';
               editor.commands.insertContentAt(pos, { type: 'questionBlock', attrs: { id: uuidv4(), questionType: childType, maxPoints: 10, correctIndex: 0, options: ['', '', '', ''] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] });
             }
@@ -948,14 +956,14 @@ export const AssignmentNodeView = (props: any) => {
         <button className="sibling-add-btn" onClick={() => {
           if (typeof getPos === 'function') {
             const pos = getPos() + node.nodeSize;
-            editor.commands.insertContentAt(pos, { 
-              type: 'assignment', 
-              attrs: { id: uuidv4() }, 
+            editor.commands.insertContentAt(pos, {
+              type: 'assignment',
+              attrs: { id: uuidv4() },
               content: [
-                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] }, 
-                { type: 'paragraph', content: [{ type: 'text', text: 'Assignment instructions...' }] },
+                { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
+                ...defaultAssignmentInstructionBlocks(),
                 { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] }
-              ] 
+              ]
             });
           }
         }}>+ Add Assignment</button>
@@ -973,11 +981,11 @@ export const VideoBlockView = (props: any) => {
     <NodeViewWrapper className="media-block-view video-block">
       <div className="media-icon"><Video size={18} /></div>
       <div className="media-inputs">
-        <input 
-          type="text" 
-          value={node.attrs.url || ''} 
-          onChange={(e) => updateAttributes({ url: e.target.value })} 
-          placeholder="Enter Video URL" 
+        <input
+          type="text"
+          value={node.attrs.url || ''}
+          onChange={(e) => updateAttributes({ url: e.target.value })}
+          placeholder="Enter Video URL"
           className="media-url-input"
         />
         {node.attrs.url && <a href={node.attrs.url} target="_blank" rel="noreferrer" className="media-preview-link">Preview</a>}
@@ -993,11 +1001,11 @@ export const AudioBlockView = (props: any) => {
     <NodeViewWrapper className="media-block-view audio-block">
       <div className="media-icon"><FileAudio size={18} /></div>
       <div className="media-inputs">
-        <input 
-          type="text" 
-          value={node.attrs.url || ''} 
-          onChange={(e) => updateAttributes({ url: e.target.value })} 
-          placeholder="Enter Audio URL" 
+        <input
+          type="text"
+          value={node.attrs.url || ''}
+          onChange={(e) => updateAttributes({ url: e.target.value })}
+          placeholder="Enter Audio URL"
           className="media-url-input"
         />
         {node.attrs.url && <a href={node.attrs.url} target="_blank" rel="noreferrer" className="media-preview-link">Preview</a>}
@@ -1013,18 +1021,18 @@ export const ResourceBlockView = (props: any) => {
     <NodeViewWrapper className="media-block-view resource-block">
       <div className="media-icon"><Link2 size={18} /></div>
       <div className="media-inputs">
-        <input 
-          type="text" 
-          value={node.attrs.label || ''} 
-          onChange={(e) => updateAttributes({ label: e.target.value })} 
-          placeholder="Resource Label (e.g., PDF Guide)" 
+        <input
+          type="text"
+          value={node.attrs.label || ''}
+          onChange={(e) => updateAttributes({ label: e.target.value })}
+          placeholder="Resource Label (e.g., PDF Guide)"
           className="media-label-input"
         />
-        <input 
-          type="text" 
-          value={node.attrs.url || ''} 
-          onChange={(e) => updateAttributes({ url: e.target.value })} 
-          placeholder="Enter Resource URL" 
+        <input
+          type="text"
+          value={node.attrs.url || ''}
+          onChange={(e) => updateAttributes({ url: e.target.value })}
+          placeholder="Enter Resource URL"
           className="media-url-input"
         />
         {node.attrs.url && <a href={node.attrs.url} target="_blank" rel="noreferrer" className="media-preview-link">Preview</a>}
@@ -1040,7 +1048,7 @@ export const ResourceBlockView = (props: any) => {
 export const QuestionBlockView = (props: any) => {
   const { node, updateAttributes, getPos, editor } = props;
   const [showDependencyPicker, setShowDependencyPicker] = React.useState(false);
-  const [lessonPool, setLessonPool] = React.useState<{id: string, title: string}[]>([]);
+  const [lessonPool, setLessonPool] = React.useState<{ id: string, title: string }[]>([]);
   const dependencyPickerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -1065,7 +1073,7 @@ export const QuestionBlockView = (props: any) => {
         const pos = getPos();
         const $pos = editor.state.doc.resolve(pos);
         const parent = $pos.node($pos.depth);
-        
+
         if (parent && parent.type.name === 'assignment') {
           // Find index
           let count = 0;
@@ -1076,34 +1084,34 @@ export const QuestionBlockView = (props: any) => {
           // Update lesson pool from module
           const moduleNode = $pos.node($pos.depth - 1);
           if (moduleNode && moduleNode.type.name === 'module') {
-             let allLessons: {id: string, title: string}[] = [];
-             let foundSelf = false;
-             moduleNode.descendants((n: any) => {
-               if (foundSelf) return false;
-               if (n === parent) {
-                 foundSelf = true;
-                 return false;
-               }
-               if (n.type.name === 'lesson') {
-                 let title = 'Untitled Lesson';
-                 if (n.content && n.content.childCount > 0 && n.content.child(0).type.name === 'heading') {
-                    title = n.content.child(0).textContent || 'Untitled Lesson';
-                 }
-                 allLessons.push({ id: n.attrs.id, title });
-                 return false;
-               }
-             });
-             
-             // Filter by assignment pool
-             const poolIds = parent.attrs.dependsOnLessonIds;
-             if (poolIds === null) {
-                setLessonPool(allLessons); // all preceding
-             } else {
-                setLessonPool(allLessons.filter(l => poolIds.includes(l.id)));
-             }
+            let allLessons: { id: string, title: string }[] = [];
+            let foundSelf = false;
+            moduleNode.descendants((n: any) => {
+              if (foundSelf) return false;
+              if (n === parent) {
+                foundSelf = true;
+                return false;
+              }
+              if (n.type.name === 'lesson') {
+                let title = 'Untitled Lesson';
+                if (n.content && n.content.childCount > 0 && n.content.child(0).type.name === 'heading') {
+                  title = n.content.child(0).textContent || 'Untitled Lesson';
+                }
+                allLessons.push({ id: n.attrs.id, title });
+                return false;
+              }
+            });
+
+            // Filter by assignment pool
+            const poolIds = parent.attrs.dependsOnLessonIds;
+            if (poolIds === null) {
+              setLessonPool(allLessons); // all preceding
+            } else {
+              setLessonPool(allLessons.filter(l => poolIds.includes(l.id)));
+            }
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     };
     updateContext();
     editor.on('transaction', updateContext);
@@ -1115,7 +1123,7 @@ export const QuestionBlockView = (props: any) => {
     const $pos = editor.state.doc.resolve(pos);
     const parent = $pos.node($pos.depth);
     assignmentType = parent.attrs.assignmentType || 'Mixed';
-    
+
     let count = 0;
     parent.descendants((child: any) => {
       if (child === node) {
@@ -1132,9 +1140,9 @@ export const QuestionBlockView = (props: any) => {
         <div className="question-header-left">
           <span className="drag-handle" data-drag-handle>⠿</span>
           <span className="question-index-badge">Question {index}</span>
-          
+
           {assignmentType === 'Mixed' ? (
-            <select 
+            <select
               className="styled-form-control question-type-select"
               value={node.attrs.questionType}
               onChange={e => updateAttributes({ questionType: e.target.value })}
@@ -1144,22 +1152,22 @@ export const QuestionBlockView = (props: any) => {
               <option value="MCQ">🔘 Multiple Choice (MCQ)</option>
             </select>
           ) : (
-            <span 
-              className="styled-form-control question-type-select" 
+            <span
+              className="styled-form-control question-type-select"
               style={{ display: 'inline-flex', alignItems: 'center', background: '#f8fafc', color: '#64748b', cursor: 'not-allowed', width: '220px' }}
             >
               {node.attrs.questionType === 'Subjective' ? '📝 Subjective (Text Response)' : '🔘 Multiple Choice (MCQ)'}
             </span>
           )}
         </div>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div className="points-input">
             <span>🏆 Points:</span>
-            <input 
-              type="number" 
-              min="1" 
-              value={node.attrs.maxPoints} 
+            <input
+              type="number"
+              min="1"
+              value={node.attrs.maxPoints}
               onChange={e => updateAttributes({ maxPoints: parseInt(e.target.value) || 1 })}
             />
           </div>
@@ -1169,63 +1177,63 @@ export const QuestionBlockView = (props: any) => {
           </button>
         </div>
       </div>
-      
-      <div className="question-grounding-bar" contentEditable={false}>
-         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', cursor: 'pointer', fontWeight: 600 }}>
-           <input 
-             type="checkbox" 
-             checked={node.attrs.requiresLessonGrounding !== false}
-             onChange={e => updateAttributes({ requiresLessonGrounding: e.target.checked })}
-             style={{ width: '16px', height: '16px', accentColor: '#8b5cf6', cursor: 'pointer' }}
-           />
-           <span>🤖 AI Lesson Grounding Ground Truth</span>
-         </label>
 
-         {node.attrs.requiresLessonGrounding !== false && (
-           <div style={{ position: 'relative' }} ref={dependencyPickerRef}>
-             <button 
-               className="styled-form-control"
-               style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '4px 10px', height: 'auto', fontWeight: 600, background: '#ffffff', color: '#4338ca', borderColor: '#c7d2fe', cursor: 'pointer' }}
-               onClick={() => setShowDependencyPicker(!showDependencyPicker)}
-             >
-               <FileText size={13} />
-               {node.attrs.lessonDependencies?.length ? `📖 ${node.attrs.lessonDependencies.length} Lessons Selected` : 'Select Dependent Lessons'}
-               <ChevronDown size={12} />
-             </button>
-             {showDependencyPicker && (
-               <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', zIndex: 100, minWidth: '240px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
-                 <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Assignment Lesson Pool</div>
-                 {lessonPool.length === 0 ? (
-                   <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>No lessons available in assignment pool.</div>
-                 ) : (
-                   lessonPool.map(l => (
-                     <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '13px', cursor: 'pointer' }}>
-                       <input 
-                         type="checkbox" 
-                         checked={(node.attrs.lessonDependencies || []).includes(l.id)}
-                         onChange={(e) => {
-                           const current = node.attrs.lessonDependencies || [];
-                           if (e.target.checked) {
-                             updateAttributes({ lessonDependencies: [...current, l.id] });
-                           } else {
-                             updateAttributes({ lessonDependencies: current.filter((id: string) => id !== l.id) });
-                           }
-                         }}
-                         style={{ accentColor: '#8b5cf6' }}
-                       />
-                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
-                     </label>
-                   ))
-                 )}
-               </div>
-             )}
-           </div>
-         )}
-         {node.attrs.requiresLessonGrounding !== false && (!node.attrs.lessonDependencies || node.attrs.lessonDependencies.length === 0) && (
-           <span style={{ fontSize: '11px', fontWeight: 700, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px' }}>
-             ⚠️ Select at least one lesson
-           </span>
-         )}
+      <div className="question-grounding-bar" contentEditable={false}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#475569', cursor: 'pointer', fontWeight: 600 }}>
+          <input
+            type="checkbox"
+            checked={node.attrs.requiresLessonGrounding !== false}
+            onChange={e => updateAttributes({ requiresLessonGrounding: e.target.checked })}
+            style={{ width: '16px', height: '16px', accentColor: '#8b5cf6', cursor: 'pointer' }}
+          />
+          <span>🤖 AI Lesson Grounding Ground Truth</span>
+        </label>
+
+        {node.attrs.requiresLessonGrounding !== false && (
+          <div style={{ position: 'relative' }} ref={dependencyPickerRef}>
+            <button
+              className="styled-form-control"
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '4px 10px', height: 'auto', fontWeight: 600, background: '#ffffff', color: '#4338ca', borderColor: '#c7d2fe', cursor: 'pointer' }}
+              onClick={() => setShowDependencyPicker(!showDependencyPicker)}
+            >
+              <FileText size={13} />
+              {node.attrs.lessonDependencies?.length ? `📖 ${node.attrs.lessonDependencies.length} Lessons Selected` : 'Select Dependent Lessons'}
+              <ChevronDown size={12} />
+            </button>
+            {showDependencyPicker && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: '4px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', zIndex: 100, minWidth: '240px', padding: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Assignment Lesson Pool</div>
+                {lessonPool.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>No lessons available in assignment pool.</div>
+                ) : (
+                  lessonPool.map(l => (
+                    <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 4px', fontSize: '13px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={(node.attrs.lessonDependencies || []).includes(l.id)}
+                        onChange={(e) => {
+                          const current = node.attrs.lessonDependencies || [];
+                          if (e.target.checked) {
+                            updateAttributes({ lessonDependencies: [...current, l.id] });
+                          } else {
+                            updateAttributes({ lessonDependencies: current.filter((id: string) => id !== l.id) });
+                          }
+                        }}
+                        style={{ accentColor: '#8b5cf6' }}
+                      />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {node.attrs.requiresLessonGrounding !== false && (!node.attrs.lessonDependencies || node.attrs.lessonDependencies.length === 0) && (
+          <span style={{ fontSize: '11px', fontWeight: 700, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px' }}>
+            ⚠️ Select at least one lesson
+          </span>
+        )}
       </div>
 
       {node.attrs.questionType === 'Subjective' && (
@@ -1254,16 +1262,16 @@ export const QuestionBlockView = (props: any) => {
             const isCorrect = node.attrs.correctIndex === idx;
             return (
               <div key={idx} className="mcq-option-row">
-                <input 
-                  type="radio" 
+                <input
+                  type="radio"
                   name={`correct-option-${node.attrs.id}`}
                   checked={isCorrect}
                   onChange={() => updateAttributes({ correctIndex: idx })}
                   className="mcq-radio"
                   title="Mark as correct answer"
                 />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={opt}
                   onChange={(e) => {
                     const newOpts = [...(node.attrs.options || ['', '', '', ''])];
@@ -1274,9 +1282,9 @@ export const QuestionBlockView = (props: any) => {
                   className={`styled-form-control mcq-text-input ${isCorrect ? 'correct' : ''}`}
                 />
                 {(node.attrs.options || []).length > 2 && (
-                  <button 
+                  <button
                     type="button"
-                    className="delete-node-btn" 
+                    className="delete-node-btn"
                     onClick={() => {
                       const newOpts = (node.attrs.options || []).filter((_: any, i: number) => i !== idx);
                       let newCorrect = node.attrs.correctIndex;
@@ -1292,8 +1300,8 @@ export const QuestionBlockView = (props: any) => {
               </div>
             );
           })}
-          <button 
-            type="button" 
+          <button
+            type="button"
             onClick={() => updateAttributes({ options: [...(node.attrs.options || []), ''] })}
             style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
           >

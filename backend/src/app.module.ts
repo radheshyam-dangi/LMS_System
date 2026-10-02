@@ -27,6 +27,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { HealthModule } from './databaseOrm/modules/health/health.module';
 import { LpAuthoringModule } from './databaseOrm/modules/lpAuthoring/lpAuthoring.module';
 import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluation.module';
+import { AssignmentChatModule } from './databaseOrm/modules/assignmentChat/assignmentChat.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluat
     SearchModule,
     LpAuthoringModule,
     AiEvaluationModule,
+    AssignmentChatModule,
   ],
 })
 export class AppModule {}

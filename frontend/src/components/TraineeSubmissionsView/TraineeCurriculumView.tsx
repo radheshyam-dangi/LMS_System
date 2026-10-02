@@ -1,7 +1,12 @@
+import { createPortal } from "react-dom";
 import React, { useState, useEffect } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { RichText } from '../common/RichText';
 import DOMPurify from 'dompurify';
+import { resolveAssignmentInstructions } from '../../utils/assignmentInstructions';
+import { DeadlineDisplay } from '../DeadlineDisplay';
+import { renderMultilineText } from '../../utils/textUtils';
+import { AssignmentInstructionsGate } from '../common/AssignmentInstructionsGate';
 
 interface TraineeCurriculumViewProps {
   learningPathId: string;
@@ -59,9 +64,11 @@ export function TraineeCurriculumView({
   const [activeTask, setActiveTask] = useState<any | null>(null);
   const [subjectiveAnswers, setSubjectiveAnswers] = useState<Record<number, string>>({});
   const [singleTextAnswer, setSingleTextAnswer] = useState('');
-  const [selectedMcqAnswers, setSelectedMcqAnswers] = useState<Record<number, number>>({});
+  const [selectedMcqAnswers, setSelectedMcqAnswers] = useState<Record<number, number | number[]>>({});
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(true);
+  const [isInstructionsGateOpen, setIsInstructionsGateOpen] = useState(false);
 
   // Tooltip state for chart/progress hover
   const [tooltip, setTooltip] = useState<{ visible: boolean; x: number; y: number; text: string }>({ visible: false, x: 0, y: 0, text: '' });
@@ -101,6 +108,7 @@ export function TraineeCurriculumView({
   // ─── Modal handlers ───────────────────────────────────────────────────────
   const handleOpenTaskModal = (task: any) => {
     setActiveTask(task);
+    setInstructionsOpen(true);
     setAttachmentUrl(task.userSubmission?.attachmentUrl || '');
     setSelectedMcqAnswers({});
     setSubjectiveAnswers({});
@@ -280,7 +288,7 @@ export function TraineeCurriculumView({
                       <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }}>Module {mIdx + 1}: {module.title}</div>
                       {module.description && !isOpen && (
                         <div style={{ fontSize: '12px', color: '#475569', marginTop: '6px', maxHeight: '36px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', lineHeight: 1.5 }}>
-                           <div style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(module.description.replace(/<[^>]*>?/gm, ' ').substring(0, 150) + (module.description.length > 150 ? '...' : '')) }} />
+                          <div style={{ margin: 0 }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(module.description.replace(/<[^>]*>?/gm, ' ').substring(0, 150) + (module.description.length > 150 ? '...' : '')) }} />
                         </div>
                       )}
                       <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>
@@ -504,111 +512,310 @@ export function TraineeCurriculumView({
       )}
 
       {/* ─── TASK SUBMISSION MODAL ─────────────────────────────────────────── */}
-      {activeTask && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', width: '600px', borderRadius: '20px', maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 25px 80px rgba(0,0,0,0.22)' }}>
-            {/* Modal header */}
-            <div style={{ padding: '22px 26px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderRadius: '20px 20px 0 0' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>📝 {activeTask.title}</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>Max Score: {activeTask.maxScore ?? 100} pts · Type: {activeTask.assignmentType || 'Subjective'}</p>
+      {activeTask && createPortal(
+        <div className="assignment-modal-overlay" onClick={() => setActiveTask(null)}>
+          <div className="assignment-modal-container" onClick={(e) => e.stopPropagation()}>
+            <button type="button" className="assignment-modal-close-btn" onClick={() => setActiveTask(null)}>Ã—</button>
+            {/* Context Panel */}
+            <div className="assignment-modal-context">
+              <h3 style={{ margin: '0 0 4px', fontSize: 18, color: '#0f172a' }}>{activeTask.title}</h3>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                {activeTask.assignmentType} Â· {activeTask.lessonTitle || 'Module Task'}
               </div>
-              <button onClick={() => setActiveTask(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', width: '32px', height: '32px', cursor: 'pointer', fontSize: '18px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16, background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                {activeTask.dependsOnLessonIds?.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>ðŸ”—</span>
+                    <div>
+                      <strong style={{ display: 'block', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>DEPENDS ON</strong>
+                      <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+                        {activeTask.dependsOnLessonIds.length} Prerequisite lessonss(s)
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {activeTask.createdBy?.firstName && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>ðŸ‘¤</span>
+                    <div>
+                      <strong style={{ display: 'block', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Assigned By</strong>
+                      <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>{activeTask.createdBy.firstName} {activeTask.createdBy.lastName}</div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTask.countdownStart === 'onAssignment' ? (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>ðŸ•’</span>
+                    <div>
+                      <strong style={{ display: 'block', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>LP Assigned Time</strong>
+                      <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+                        {activeTask.userSubmission?.lpAssignedAt ? new Date(activeTask.userSubmission!.lpAssignedAt!).toLocaleString(undefined, { timeZoneName: 'short' }) : new Date(activeTask.createdAt).toLocaleString(undefined, { timeZoneName: 'short' })}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>ðŸ”“</span>
+                    <div>
+                      <strong style={{ display: 'block', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Unlocked Time</strong>
+                      <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600 }}>
+                        {activeTask.userSubmission?.taskUnlockedAt ? new Date(activeTask.userSubmission!.taskUnlockedAt!).toLocaleString(undefined, { timeZoneName: 'short' }) : 'Unlocks after prerequisite lessons'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeTask.userSubmission?.deadline && (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <span style={{ fontSize: '18px' }}>â³</span>
+                    <div>
+                      <strong style={{ display: 'block', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Due Date</strong>
+                      <div style={{ fontWeight: 600, color: '#b91c1c' }}>
+                        <DeadlineDisplay task={activeTask} submission={activeTask.userSubmission!} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <form onSubmit={handleSubmitTask} style={{ padding: '22px 26px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {activeTask.instructions && (
-                <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '12px 16px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>Instructions</div>
-                  <p style={{ fontSize: '13px', color: '#0c4a6e', margin: 0 }}>{activeTask.instructions}</p>
-                </div>
-              )}
+            {/* Main Form Content */}
+            <form onSubmit={handleSubmitTask} className="assignment-modal-content">
+              <div className="assignment-modal-scroll">
 
-              {/* Resource URL */}
-              {activeTask.resourceUrl && (
-                <a href={activeTask.resourceUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '10px', textDecoration: 'none', fontSize: '13px', color: '#2563eb', fontWeight: 600 }}>
-                  🔗 Study Resource: {activeTask.resourceUrl}
-                </a>
-              )}
+                {/* Instructions â€” always visible in submit modal, uses trainer's text or falls back to defaults */}
+                {(() => {
+                  const { hasCustom, content: instructionContent } = resolveAssignmentInstructions(activeTask);
+                  return (
+                    <>
+                      <button type="button" onClick={() => setInstructionsOpen(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f9ff', border: '1px solid #bae6fd', width: '100%', padding: '14px', cursor: 'pointer', borderRadius: '10px', marginBottom: '24px', color: '#0369a1', fontWeight: 700, fontSize: '14px', transition: 'all 0.2s', gap: '8px' }}>
+                        <span style={{ fontSize: '18px' }}>ðŸ“–</span> View Assignment Instructions
+                        {!hasCustom && <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(Default)</span>}
+                      </button>
+                      {instructionsOpen && (
+                        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: '20px' }}>
+                          <div style={{ background: '#fff', width: '700px', maxWidth: '100%', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
+                            <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc' }}>
+                              <h4 style={{ margin: 0, fontSize: '18px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span>ðŸ“‹</span> Assignment Instructions
+                                {!hasCustom && <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(Default)</span>}
+                              </h4>
+                              <button type="button" onClick={() => setInstructionsOpen(false)} style={{ background: 'none', border: 'none', fontSize: '24px', color: '#64748b', cursor: 'pointer', padding: '0 4px' }}>&times;</button>
+                            </div>
+                            <div style={{ padding: '24px', overflowY: 'auto', fontSize: '14px', color: '#334155', lineHeight: 1.6 }}>
+                              <RichText content={instructionContent} emptyStateText="No instructions provided." />
+                            </div>
+                            <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'flex-end' }}>
+                              <button type="button" onClick={() => setInstructionsOpen(false)} style={{ padding: '10px 20px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>Close &amp; Continue</button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
 
-              {/* MCQ Questions */}
-              {activeTask.assignmentType === 'MCQ' ? (
+
+                {/* Resource URL */}
+                {activeTask.externalUrl && (
+                  <a
+                    href={activeTask.externalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px', textDecoration: 'none', fontSize: '14px', color: '#2563eb', fontWeight: 600, marginBottom: '24px' }}
+                  >
+                    ðŸ”— Reference Resource: {activeTask.externalUrl}
+                  </a>
+                )}
+
+                {(() => {
+                  const questionsArray = activeTask.questions?.length > 0 ? activeTask.questions : (activeTask.mcqConfig?.questions || []);
+                  const sub = activeTask.userSubmission;
+                  const qScores = sub?.questionScores || sub?.aiQuestionScores || {};
+
+                  let prevAnswersParsed: Record<string, any> = {};
+                  if (sub?.singleTextAnswer) {
+                    try {
+                      const parsed = JSON.parse(sub.singleTextAnswer);
+                      if (parsed.answers) prevAnswersParsed = parsed.answers;
+                    } catch (e) {
+                      // ignore
+                    }
+                  }
+
+                  return questionsArray.length > 0 ? (
+                    questionsArray.map((q: any, idx: number) => {
+                      const hasOptions = q.options && q.options.length > 0;
+                      const qId = q.id || String(idx);
+                      const previousEvaluation = qScores[qId] || qScores[idx];
+                      const prevAnsVal = prevAnswersParsed[idx] ?? prevAnswersParsed[String(idx)];
+
+                      const isResubmit = sub && sub.status !== 'AVAILABLE' && sub.status !== 'LOCKED' && sub.status !== 'Pending';
+                      const hasPrevAnswer = isResubmit && prevAnsVal !== undefined && prevAnsVal !== '';
+
+                      const isMcq = (q.type || q.questionType || '').toUpperCase() === 'MCQ' || (activeTask.assignmentType === 'MCQ' && hasOptions);
+
+                      return (
+                        <div key={idx} style={{ marginBottom: 24, padding: 24, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                            <div style={{ display: 'flex', gap: '8px', flex: 1 }}>
+                              <strong style={{ fontSize: 16, color: '#0f172a' }}>Q{idx + 1}.</strong>
+                              <div style={{ fontSize: 16, color: '#0f172a', fontWeight: 'bold' }}>
+                                {renderMultilineText(q.text || q.questionText || q.question || '') || 'No question text'}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                              <span style={{ fontSize: 13, color: '#64748b', fontWeight: 700, background: '#e2e8f0', padding: '4px 10px', borderRadius: 6, whiteSpace: 'nowrap', marginLeft: 12 }}>
+                                Max: {q.maxPoints || 10} pts
+                              </span>
+                              {isResubmit && previousEvaluation !== undefined && (
+                                <span style={{ fontSize: 12, color: '#991b1b', fontWeight: 700, background: '#fee2e2', padding: '4px 10px', borderRadius: 6, whiteSpace: 'nowrap', border: '1px solid #fca5a5' }}>
+                                  Scored: {typeof previousEvaluation === 'object' ? previousEvaluation.score : previousEvaluation} pts
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {hasPrevAnswer && (
+                            <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '8px', border: '1px dashed #94a3b8', marginBottom: '16px' }}>
+                              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px', letterSpacing: '0.05em' }}>Your Previous Answer</span>
+                              <div style={{ fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                                {isMcq ? (q.options?.[Number(prevAnsVal)] || 'None') : prevAnsVal}
+                              </div>
+                            </div>
+                          )}
+
+                          {isResubmit && previousEvaluation && previousEvaluation.feedback && (
+                            <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 13, color: '#92400e', display: 'flex', gap: '8px' }}>
+                              <span style={{ fontSize: '16px' }}>ðŸ’¬</span>
+                              <div>
+                                <strong style={{ display: 'block', fontSize: '11px', textTransform: 'uppercase', marginBottom: '4px' }}>Trainer Feedback</strong>
+                                {previousEvaluation.feedback}
+                              </div>
+                            </div>
+                          )}
+
+                          {(q.type || q.questionType || '').toUpperCase() === 'MCQ' || (activeTask.assignmentType === 'MCQ' && hasOptions) ? (
+                            !hasOptions ? (
+                              <div style={{ marginTop: 12, padding: 12, background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: 13, fontWeight: 600 }}>
+                                Invalid question configuration: no options provided.
+                              </div>
+                            ) : (
+                              <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                {(q.options || []).map((opt: string, oi: number) => (
+                                  <label key={oi} style={{ fontSize: 14, display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                                    <input
+                                      type={q.allowMultipleCorrect ? "checkbox" : "radio"}
+                                      name={`q-${idx}`}
+                                      checked={
+                                        q.allowMultipleCorrect
+                                          ? (Array.isArray(selectedMcqAnswers[idx]) ? (selectedMcqAnswers[idx] as any as number[]).includes(oi) : false)
+                                          : selectedMcqAnswers[idx] === oi
+                                      }
+                                      onChange={() => {
+                                        if (q.allowMultipleCorrect) {
+                                          setSelectedMcqAnswers(prev => {
+                                            const current = Array.isArray(prev[idx]) ? (prev[idx] as any as number[]) : [];
+                                            if (current.includes(oi)) {
+                                              return { ...prev, [idx]: current.filter(o => o !== oi) };
+                                            } else {
+                                              return { ...prev, [idx]: [...current, oi] };
+                                            }
+                                          });
+                                        } else {
+                                          setSelectedMcqAnswers(prev => ({ ...prev, [idx]: oi }));
+                                        }
+                                      }}
+                                      style={{ width: 16, height: 16, cursor: 'pointer' }}
+                                    />
+                                    <div style={{ display: 'inline-block' }}>
+                                      <RichText content={opt || `Option ${oi + 1}`} emptyStateText={`Option ${oi + 1}`} />
+                                    </div>
+                                  </label>
+                                ))}
+                              </div>
+                            )
+                          ) : (
+                            <textarea
+                              className="answer-textarea"
+                              rows={4}
+                              value={subjectiveAnswers[idx] || ''}
+                              onChange={(e) => setSubjectiveAnswers((prev) => ({ ...prev, [idx]: e.target.value }))}
+                              placeholder="Type your answer here..."
+                              style={{ width: '100%', marginTop: 16, padding: 12, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                            />
+                          )}
+                        </div>
+                      )
+                    })
+                  ) : (
+                    <textarea
+                      required
+                      rows={8}
+                      value={singleTextAnswer}
+                      onChange={(e) => setSingleTextAnswer(e.target.value)}
+                      placeholder="Write your submission..."
+                      style={{ width: '100%', padding: 16, borderRadius: 12, border: '1px solid #cbd5e1', marginBottom: 12, fontSize: 14, fontFamily: 'inherit', resize: 'vertical' }}
+                    />
+                  );
+                })()}
+
+                {/* Attachment URL */}
                 <div>
-                  {activeTask.mcqConfig?.questions?.map((q: any, qIdx: number) => (
-                    <div key={qIdx} style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', marginBottom: '12px', border: '1px solid #e2e8f0' }}>
-                      <p style={{ fontSize: '13px', fontWeight: 700, margin: '0 0 10px 0', color: '#0f172a' }}>
-                        Q{qIdx + 1}: {q.questionText || q.question} <span style={{ color: '#4f46e5', fontWeight: 600 }}>({q.points || 10} pts)</span>
-                      </p>
-                      {q.options?.map((opt: string, optIdx: number) => (
-                        <label key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', marginTop: '8px', cursor: 'pointer', padding: '8px 12px', borderRadius: '8px', background: selectedMcqAnswers[qIdx] === optIdx ? '#ede9fe' : '#fff', border: '1px solid', borderColor: selectedMcqAnswers[qIdx] === optIdx ? '#6366f1' : '#e2e8f0', transition: 'all 0.15s' }}>
-                          <input type="radio" name={`q_${qIdx}`} checked={selectedMcqAnswers[qIdx] === optIdx} onChange={() => setSelectedMcqAnswers(prev => ({ ...prev, [qIdx]: optIdx }))} style={{ accentColor: '#4f46e5' }} />
-                          {opt}
-                        </label>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ) : activeTask.mcqConfig?.questions?.length > 0 ? (
-                /* Subjective multi-question */
-                <div>
-                  {activeTask.mcqConfig.questions.map((q: any, qIdx: number) => (
-                    <div key={qIdx} style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', marginBottom: '12px', border: '1px solid #e2e8f0' }}>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#0f172a', marginBottom: '8px' }}>
-                        Q{qIdx + 1}: {q.questionText || q.question} <span style={{ color: '#4f46e5' }}>({q.maxPoints || q.points || 10} pts)</span>
-                      </label>
-                      <textarea
-                        rows={3} required
-                        placeholder="Write your answer here..."
-                        value={subjectiveAnswers[qIdx] || ''}
-                        onChange={e => setSubjectiveAnswers(prev => ({ ...prev, [qIdx]: e.target.value }))}
-                        style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1.5px solid #e2e8f0', fontSize: '13px', resize: 'vertical', outline: 'none', transition: 'border-color 0.2s' }}
-                        onFocus={e => (e.currentTarget.style.borderColor = '#6366f1')}
-                        onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                /* Single textarea fallback */
-                <div>
-                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, marginBottom: '8px', color: '#374151' }}>Your Solution / Answer *</label>
-                  <textarea
-                    rows={5} required
-                    placeholder="Type your response here..."
-                    value={singleTextAnswer}
-                    onChange={e => setSingleTextAnswer(e.target.value)}
-                    style={{ width: '100%', padding: '12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', resize: 'vertical', outline: 'none', transition: 'border-color 0.2s' }}
-                    onFocus={e => (e.currentTarget.style.borderColor = '#6366f1')}
-                    onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+                    Attachment URL <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 400 }}>(Optional â€” GitHub / Google Drive / Workspace)</span>
+                  </label>
+                  <input
+                    type="url"
+                    className="attachment-field"
+                    placeholder="https://github.com/..."
+                    value={attachmentUrl}
+                    onChange={(e) => setAttachmentUrl(e.target.value)}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
                   />
                 </div>
-              )}
-
-              {/* Attachment URL */}
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
-                  Attachment URL <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 400 }}>(Optional — GitHub / Google Drive / Workspace)</span>
-                </label>
-                <input
-                  type="url" placeholder="https://github.com/..."
-                  value={attachmentUrl} onChange={e => setAttachmentUrl(e.target.value)}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: '10px', border: '1.5px solid #e2e8f0', fontSize: '13px', outline: 'none' }}
-                />
               </div>
 
-              {/* Submit actions */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '8px', borderTop: '1px solid #f1f5f9' }}>
-                <button type="button" onClick={() => setActiveTask(null)} style={{ padding: '10px 20px', background: '#f1f5f9', border: 'none', borderRadius: '10px', cursor: 'pointer', fontWeight: 600, fontSize: '13px', color: '#475569' }}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={isSubmitting} style={{ padding: '10px 24px', background: isSubmitting ? '#a5b4fc' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: '10px', cursor: isSubmitting ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: '13px', boxShadow: '0 2px 8px rgba(99,102,241,0.35)' }}>
-                  {isSubmitting ? 'Submitting...' : 'Submit Task'}
-                </button>
+              <div className="assignment-modal-footer">
+                {(() => {
+                  const deadlineDate = activeTask.userSubmission?.deadline ? new Date(activeTask.userSubmission!.deadline!).getTime() : null;
+                  const isExpired = deadlineDate && new Date().getTime() > deadlineDate;
+
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveTask(null);
+                        }}
+                        style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: '#f1f5f9', color: '#475569', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || !!isExpired}
+                        style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: isExpired ? '#94a3b8' : '#4f46e5', color: '#fff', fontWeight: 700, cursor: isExpired ? 'not-allowed' : 'pointer' }}
+                      >
+                        {isExpired ? 'Expired' : isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
             </form>
+            {isInstructionsGateOpen && (
+              <AssignmentInstructionsGate
+                assignment={activeTask}
+                onContinue={() => setIsInstructionsGateOpen(false)}
+                onCancel={() => { setIsInstructionsGateOpen(false); setActiveTask(null); }}
+              />
+            )}
           </div>
         </div>
-      )}
+        , document.body)}
 
       {/* ─── FLOATING TOOLTIP ─── */}
       {tooltip.visible && (

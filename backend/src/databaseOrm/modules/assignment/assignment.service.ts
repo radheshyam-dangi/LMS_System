@@ -333,7 +333,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         assignedBy: { id: creatorId } as any,
       }));
       await this.traineeAssignmentRepository.save(mappings);
-      
+
       const now = new Date();
       let computedDeadline: Date | null = null;
       let lpAssignedAt: Date | null = now;
@@ -349,10 +349,10 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       } else {
         // LP_ASSIGNED or ASSIGNMENT
         if ((durationDays || 0) > 0 || (durationHours || 0) > 0 || (durationMinutes || 0) > 0) {
-           computedDeadline = new Date(now.getTime());
-           if (durationDays) computedDeadline.setDate(computedDeadline.getDate() + durationDays);
-           if (durationHours) computedDeadline.setHours(computedDeadline.getHours() + durationHours);
-           if (durationMinutes) computedDeadline.setMinutes(computedDeadline.getMinutes() + durationMinutes);
+          computedDeadline = new Date(now.getTime());
+          if (durationDays) computedDeadline.setDate(computedDeadline.getDate() + durationDays);
+          if (durationHours) computedDeadline.setHours(computedDeadline.getHours() + durationHours);
+          if (durationMinutes) computedDeadline.setMinutes(computedDeadline.getMinutes() + durationMinutes);
         }
       }
 
@@ -441,7 +441,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const existing = assignment.assignedToTraineeIds || [];
     const removedIds = ids.filter((id: string) => existing.includes(id));
     assignment.assignedToTraineeIds = existing.filter((id: string) => !ids.includes(id));
-    
+
     const saved = await this.repository.save(assignment);
 
     if (removedIds.length > 0) {
@@ -616,12 +616,12 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     }
 
     const [assignmentWithLockState] = await this.attachLockStateToAssignments([assignment], userId);
-    
+
     if (assignmentWithLockState.isLocked) {
       const { ForbiddenException } = require('@nestjs/common');
-      throw new ForbiddenException(JSON.stringify({ 
-        code: 'LOCKED_LESSONS_INCOMPLETE', 
-        message: assignmentWithLockState.lockReason 
+      throw new ForbiddenException(JSON.stringify({
+        code: 'LOCKED_LESSONS_INCOMPLETE',
+        message: assignmentWithLockState.lockReason
       }));
     }
 
@@ -676,7 +676,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     submission.status = status.toUpperCase() as any;
     submission.evaluatedAt = new Date();
     submission.evaluatedBy = { id: evaluatorId } as any;
-    
+
     if (questionScores) {
       submission.questionScores = questionScores;
     }
@@ -732,7 +732,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       const statuses = filters.status.split(',').map(s => s.trim().toLowerCase());
       const orConditions = [];
       const params: any = {};
-      
+
       if (statuses.includes('pending')) {
         orConditions.push("submission.status = 'SUBMITTED'");
       }
@@ -778,7 +778,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     for (const s of all) {
       if (!s.assignment || !s.trainee) continue;
       const assigner = await this.resolveAssignerForInstance(s.assignment, s.trainee.id);
-      
+
       // Inject assignedBy dynamically into the payload for the frontend (vital for Admins)
       (s as any).assignedBy = assigner;
 
@@ -956,7 +956,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     }
 
     const now = new Date();
-    
+
     let computedDeadline: Date | null = null;
     const { durationDays, durationHours, durationMinutes } = assignment;
     if ((durationDays || 0) > 0 || (durationHours || 0) > 0 || (durationMinutes || 0) > 0) {
@@ -1139,11 +1139,11 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   }
 
   async findAll(
-    currentUser?: any, 
+    currentUser?: any,
     filters?: { status?: string; type?: string; difficulty?: string; lockState?: string }
   ): Promise<AssignmentEntity[]> {
     const enriched = await this.getAllAssignmentsEnriched(currentUser);
-    
+
     if (!currentUser) return enriched;
 
     const isAdmin = this.isAdminUser(currentUser);
@@ -1174,7 +1174,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
           return false;
         });
       }
-      
+
       if (filters.difficulty) {
         const diffs = filters.difficulty.split(',').map(d => d.trim().toLowerCase());
         result = result.filter(a => diffs.includes(String(a.difficultyLevel || '').toLowerCase()));
@@ -1184,9 +1184,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         const statuses = filters.status.split(',').map(s => s.trim().toLowerCase());
         result = result.filter(a => {
           const aStatus = String((a as any).status || '').toLowerCase();
-          
+
           if (statuses.includes(aStatus)) return true;
-          
+
           if (statuses.includes('in progress') && (aStatus === 'started' || aStatus === 'in progress')) {
             return true;
           }
@@ -1194,17 +1194,17 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
           if (statuses.includes('needs improvement') || statuses.includes('approved but score < 35%')) {
             if (aStatus === 'rejected') return true;
             if (aStatus === 'approved' || aStatus === 'evaluated') {
-               const score = (a as any).score || 0;
-               const max = a.maxScore || 100;
-               if ((score / max) < 0.35) return true;
+              const score = (a as any).score || 0;
+              const max = a.maxScore || 100;
+              if ((score / max) < 0.35) return true;
             }
           }
 
           if (statuses.includes('approved')) {
             if (aStatus === 'approved' || aStatus === 'evaluated') {
-               // Usually approved means >= 35% if we want strict categories, 
-               // but we can just return true if it is evaluated.
-               return true;
+              // Usually approved means >= 35% if we want strict categories, 
+              // but we can just return true if it is evaluated.
+              return true;
             }
           }
 
@@ -1224,9 +1224,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     currentUser?: any,
   ): Promise<any[]> {
     if (!assignments.length) return [];
-    
+
     const roles = this.extractUserRoles(currentUser);
-    
+
     const isTrainer = !this.isAdminUser(currentUser) && roles.includes('trainer');
     const isTrainee = !this.isAdminUser(currentUser) && roles.includes('trainee');
     const userId = currentUser?.id || currentUser?.sub;
@@ -1300,7 +1300,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         else {
           const hasStarted = subs.some((s) => s.status === 'IN_PROGRESS');
           status = hasStarted ? 'started' : 'In Progress';
-          
+
           if (status === 'started') {
             const startedSub = subs.find((s) => s.status === 'IN_PROGRESS');
             if (startedSub?.deadline && new Date() > new Date(startedSub.deadline)) {
@@ -1337,12 +1337,12 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   }
 
   async findMyAssignments(
-    traineeId: string, 
+    traineeId: string,
     currentUser?: any,
     filters?: { status?: string; type?: string; difficulty?: string; lockState?: string }
   ): Promise<AssignmentEntity[]> {
     const userToPass = currentUser || { sub: traineeId, 'custom:role': '["trainee"]' };
-    
+
     // We fetch assignments but we can pre-filter them if `type` or `difficulty` is provided
     let all = await this.getAllAssignmentsEnriched(userToPass);
 
@@ -1389,7 +1389,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
           return false;
         });
       }
-      
+
       if (filters.difficulty) {
         const diffs = filters.difficulty.split(',').map(d => d.trim().toLowerCase());
         result = result.filter(a => diffs.includes(String(a.difficultyLevel || '').toLowerCase()));
@@ -1408,7 +1408,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         const statuses = filters.status.split(',').map(s => s.trim().toLowerCase());
         result = result.filter(a => {
           const aStatus = String((a as any).status || '').toLowerCase();
-          
+
           if (statuses.includes(aStatus)) {
             return true;
           }
@@ -1416,13 +1416,13 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
           if (statuses.includes('in progress') && (aStatus === 'started' || aStatus === 'in progress')) {
             return true;
           }
-          
+
           if (statuses.includes('approved but score < 35%') || statuses.includes('needs improvement')) {
             if (aStatus === 'rejected') return true;
             if (aStatus === 'approved' || aStatus === 'evaluated') {
-               const score = (a as any).score || 0;
-               const max = a.maxScore || 100;
-               if ((score / max) < 0.35) return true;
+              const score = (a as any).score || 0;
+              const max = a.maxScore || 100;
+              if ((score / max) < 0.35) return true;
             }
           }
 
@@ -1455,7 +1455,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
       const aDeadline = aSub?.deadline ? new Date(aSub.deadline).getTime() : Infinity;
       const bDeadline = bSub?.deadline ? new Date(bSub.deadline).getTime() : Infinity;
-      
+
       return aDeadline - bDeadline;
     });
   }
@@ -1542,13 +1542,13 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     const assignment = await this.repository.findOne({ where: { id: assignmentId } });
     if (!assignment) throw new NotFoundException('Assignment not found');
     const poolIds = assignment.dependsOnLessonIds || [];
-    
+
     let assignmentLessonPool = [];
     if (poolIds.length > 0) {
       const lessons = await this.datasource.query(`SELECT id, title FROM "Lesson" WHERE id = ANY($1)`, [poolIds]);
       assignmentLessonPool = lessons.map((l: any) => ({ lessonId: l.id, title: l.title }));
     }
-    
+
     const currentDeps = await this.questionLessonDepRepository.find({ where: { questionId }, relations: ['lesson'] });
     return {
       assignmentLessonPool,
@@ -1559,7 +1559,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   async setQuestionLessonDependencies(assignmentId: string, questionId: string, lessonIds: string[], requiresLessonGrounding: boolean) {
     const assignment = await this.repository.findOne({ where: { id: assignmentId } });
     if (!assignment) throw new NotFoundException('Assignment not found');
-    
+
     // Subset constraint validation
     const pool = new Set(assignment.dependsOnLessonIds || []);
     const invalid = lessonIds.filter(id => !pool.has(id));
@@ -1585,20 +1585,20 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     if (depsToSave.length > 0) {
       await this.questionLessonDepRepository.save(depsToSave);
     }
-    
+
     return { questionId, lessonIds, source: 'creator', requiresLessonGrounding };
   }
 
   async getQuestionsWithDependencies(assignmentId: string) {
     const assignment = await this.repository.findOne({ where: { id: assignmentId } });
     if (!assignment) throw new NotFoundException('Assignment not found');
-    
+
     const questions = assignment.questions || [];
     const deps = await this.questionLessonDepRepository.find({
       where: { questionId: In(questions.map((q: any) => q.id)) },
       relations: ['lesson']
     });
-    
+
     const depMap = deps.reduce((acc, d) => {
       if (!acc[d.questionId]) acc[d.questionId] = [];
       acc[d.questionId].push({ lessonId: (d.lesson as any)?.id, source: d.source });
@@ -1618,28 +1618,28 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   async validateAssignmentBeforePublish(assignmentId: string) {
     const assignment = await this.repository.findOne({ where: { id: assignmentId } });
     if (!assignment) throw new NotFoundException('Assignment not found');
-    
+
     const pool = new Set(assignment.dependsOnLessonIds || []);
     const questions = assignment.questions || [];
     const deps = await this.questionLessonDepRepository.find({
       where: { questionId: In(questions.map((q: any) => q.id)) },
       relations: ['lesson']
     });
-    
+
     const depMap = deps.reduce((acc, d) => {
       if (!acc[d.questionId]) acc[d.questionId] = [];
       acc[d.questionId].push((d.lesson as any)?.id);
       return acc;
     }, {} as Record<string, string[]>);
-    
+
     const errors = [];
     for (const question of questions) {
       const qDeps = depMap[question.id] || [];
       const hasDependency = qDeps.length > 0;
       const orphaned = qDeps.filter(id => !pool.has(id));
-      
+
       const requiresGrounding = question.requiresLessonGrounding !== false;
-      
+
       if (!hasDependency && requiresGrounding) {
         errors.push({
           questionId: question.id,
@@ -1651,33 +1651,33 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         errors.push({
           questionId: question.id,
           type: 'ORPHANED_DEPENDENCY',
-          message: `Question depends on lesson(s) no longer in this assignment's pool: ${orphaned.join(', ')}. Update its dependency.`,
+          message: `Question DEPENDS ON lesson(s) no longer in this assignment's pool: ${orphaned.join(', ')}. Update its dependency.`,
           invalidLessonIds: orphaned
         });
       }
     }
-    
+
     return { valid: errors.length === 0, errors };
   }
 
   async getMigrationReviewQueue(assignmentId: string) {
     const assignment = await this.repository.findOne({ where: { id: assignmentId } });
     if (!assignment) throw new NotFoundException('Assignment not found');
-    
+
     const questions = assignment.questions || [];
     const deps = await this.questionLessonDepRepository.find({
       where: { questionId: In(questions.map((q: any) => q.id)), source: 'backfill' },
       relations: ['lesson']
     });
-    
+
     const questionsNeedingReview = new Set(deps.map(d => d.questionId));
-    
+
     const depMap = deps.reduce((acc, d) => {
       if (!acc[d.questionId]) acc[d.questionId] = [];
       acc[d.questionId].push((d.lesson as any)?.id);
       return acc;
     }, {} as Record<string, string[]>);
-    
+
     const pendingReview = [];
     for (const qId of questionsNeedingReview) {
       const q = questions.find((q: any) => q.id === qId);
@@ -1689,7 +1689,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         });
       }
     }
-    
+
     return {
       pendingReview,
       totalPending: pendingReview.length,

@@ -92,7 +92,7 @@ export function validateLPDocument(doc: ParsedLPDocument): ValidationError[] {
           });
         }
       }
-      
+
       // Timer duration validation
       const d = assignment.timerDuration;
       if (!d || (d.days === 0 && d.hours === 0 && d.minutes === 0)) {
@@ -107,22 +107,22 @@ export function validateLPDocument(doc: ParsedLPDocument): ValidationError[] {
         for (let qi = 0; qi < assignment.questions.length; qi++) {
           const q = assignment.questions[qi];
           if (q.requiresLessonGrounding !== false) {
-             const deps = q.lessonDependencies || [];
-             if (deps.length === 0) {
-               errors.push({
-                 path: `${aPath}.questions[${qi}]`,
-                 message: `${modLabel} → ${aLabel} → Question ${qi + 1}: Missing dependency. Requires AI grounding but no dependent lessons selected.`
-               });
-             } else {
-               const pool = assignment.dependsOnLessonIds || [];
-               const invalid = deps.filter((dep: string) => !pool.includes(dep));
-               if (invalid.length > 0) {
-                 errors.push({
-                   path: `${aPath}.questions[${qi}]`,
-                   message: `${modLabel} → ${aLabel} → Question ${qi + 1}: Invalid dependency. Question depends on lessons not in the assignment's pool.`
-                 });
-               }
-             }
+            const deps = q.lessonDependencies || [];
+            if (deps.length === 0) {
+              errors.push({
+                path: `${aPath}.questions[${qi}]`,
+                message: `${modLabel} → ${aLabel} → Question ${qi + 1}: Missing dependency. Requires AI grounding but no dependent lessons selected.`
+              });
+            } else {
+              const pool = assignment.dependsOnLessonIds || [];
+              const invalid = deps.filter((dep: string) => !pool.includes(dep));
+              if (invalid.length > 0) {
+                errors.push({
+                  path: `${aPath}.questions[${qi}]`,
+                  message: `${modLabel} → ${aLabel} → Question ${qi + 1}: Invalid dependency. Question DEPENDS ON lessons not in the assignment's pool.`
+                });
+              }
+            }
           }
         }
       }
