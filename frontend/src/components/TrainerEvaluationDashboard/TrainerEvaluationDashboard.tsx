@@ -677,7 +677,10 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                           {assign.instructions && (
                             <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '12px' }}>
                               <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Instructions</div>
-                              <p style={{ fontSize: '13px', color: '#0c4a6e', margin: 0 }}>{assign.instructions}</p>
+                              <div 
+                                style={{ fontSize: '13px', color: '#0c4a6e', margin: 0 }} 
+                                dangerouslySetInnerHTML={{ __html: assign.instructions }} 
+                              />
                             </div>
                           )}
 

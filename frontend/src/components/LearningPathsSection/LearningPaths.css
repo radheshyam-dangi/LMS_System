@@ -201,9 +201,16 @@
 /* CARDS CAROUSEL GRID ENGINE */
 .learning-paths-grid-layout {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 350px), 1fr));
   gap: 32px;
   align-items: stretch;
+}
+
+@media (max-width: 639px) {
+  .learning-paths-grid-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
 }
 
 .learning-path-card-item {

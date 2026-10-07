@@ -381,4 +381,120 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
 
     return await this.findOne(pathId);
   }
+
+  /**
+   * 8. SYNC LEARNING PATH ASSIGNMENTS (For Updates)
+   * This is called by LpAuthoringService when a Learning Path is edited.
+   * It ensures that any NEW tasks are assigned to EXISTING trainees,
+   * without overwriting their started progress.
+   */
+  async syncPathAssignments(pathId: string, traineeId: string): Promise<void> {
+    const assignmentRepo = this.datasource.getRepository('Assignment');
+    const submissionRepo = this.datasource.getRepository('AssignmentSubmission');
+    
+    const allAssignmentsInPath = await assignmentRepo.find({
+      where: [
+        { learningPath: { id: pathId } },
+        { module: { learningPath: { id: pathId } } },
+        { lesson: { module: { learningPath: { id: pathId } } } }
+      ],
+      relations: ['lesson', 'lesson.module', 'module']
+    });
+
+    const userLessonProgressRepo = this.datasource.getRepository('UserLessonProgress');
+    const completedProgress = await userLessonProgressRepo.find({
+      where: { user: { id: traineeId }, isCompleted: true },
+      relations: ['lesson'],
+    });
+    const completedLessonIds = new Set(completedProgress.map(p => p.lesson?.id).filter(Boolean));
+
+    const now = new Date();
+    const submissionsToCreate = [];
+
+    for (const task of allAssignmentsInPath) {
+      // 1. Calculate lock state and deadline (just like assignTraineeToPath but considering already met prerequisites)
+      const hasLockConfig = (task as any).lockUntilLessonsComplete === true;
+      const deps = (task as any).dependsOnLessonIds || [];
+      const hasDepsConfigured = deps.length > 0;
+      let shouldBeLocked = hasLockConfig && hasDepsConfigured;
+
+      if (shouldBeLocked) {
+        const allDepsMet = deps.every((depId: string) => completedLessonIds.has(depId));
+        if (allDepsMet) {
+          shouldBeLocked = false;
+        }
+      }
+      
+      let lpAssignedAt: Date | null = now;
+      let taskUnlockedAt: Date | null = null;
+      let computedDeadline: Date | null = null;
+      
+      const totalDurationMinutes =
+        ((task as any).durationDays || 0) * 24 * 60 +
+        ((task as any).durationHours || 0) * 60 +
+        ((task as any).durationMinutes || 0) +
+        ((task as any).timerDuration || 0);
+
+      if (shouldBeLocked) {
+        lpAssignedAt = null;
+        taskUnlockedAt = null; 
+      } else {
+        taskUnlockedAt = now; 
+        if (totalDurationMinutes > 0 && (task as any).countdownStart !== 'onTraineeStart') {
+          computedDeadline = new Date(now.getTime());
+          const days = Math.floor(totalDurationMinutes / (24 * 60));
+          const hours = Math.floor((totalDurationMinutes % (24 * 60)) / 60);
+          const mins = totalDurationMinutes % 60;
+          if (days) computedDeadline.setDate(computedDeadline.getDate() + days);
+          if (hours) computedDeadline.setHours(computedDeadline.getHours() + hours);
+          if (mins) computedDeadline.setMinutes(computedDeadline.getMinutes() + mins);
+        }
+      }
+
+      // 2. Check if trainee already has a submission for this task
+      const existing = await submissionRepo.findOne({
+        where: { trainee: { id: traineeId }, assignment: { id: (task as any).id } }
+      });
+
+      if (!existing) {
+        // Missing! Create it so the Trainee can see and start the new task.
+        submissionsToCreate.push(submissionRepo.create({
+          assignment: { id: (task as any).id } as any,
+          trainee: { id: traineeId } as any,
+          status: shouldBeLocked ? 'LOCKED' : 'AVAILABLE',
+          lpAssignedAt: lpAssignedAt,
+          taskUnlockedAt: taskUnlockedAt,
+          deadline: computedDeadline
+        }));
+      } else {
+        // Existing! Update lock status and deadline ONLY IF they haven't started it yet.
+        if (existing.status === 'AVAILABLE' || existing.status === 'LOCKED') {
+          let updated = false;
+          
+          if (existing.status === 'LOCKED' && !shouldBeLocked) {
+            existing.status = 'AVAILABLE';
+            existing.taskUnlockedAt = now;
+            updated = true;
+          } else if (existing.status === 'AVAILABLE' && shouldBeLocked) {
+            existing.status = 'LOCKED';
+            existing.taskUnlockedAt = null;
+            updated = true;
+          }
+
+          if (existing.deadline?.getTime() !== computedDeadline?.getTime()) {
+            existing.deadline = computedDeadline;
+            updated = true;
+          }
+          
+          if (updated) {
+            await submissionRepo.save(existing);
+          }
+        }
+      }
+    }
+
+    if (submissionsToCreate.length > 0) {
+      await submissionRepo.save(submissionsToCreate);
+    }
+  }
 }

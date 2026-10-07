@@ -283,10 +283,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     return s && typeof s.score === 'number';
   });
   const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
-  const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
+  const totalMax = tasks.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
   // Module Progress from backend (computed-on-read, §2)
-  const progressPercent = stats?.completionPercent ?? 0;
+  const totalVisibleItems = totalLessons + totalAssignments;
+  const completedVisibleItems = Math.min(completedLessons, totalLessons) + Math.min(tasksSubmitted, totalAssignments);
+  const progressPercent = totalVisibleItems > 0 ? Math.round((completedVisibleItems / totalVisibleItems) * 100) : 0;
 
   const objectives: string[] =
     Array.isArray(moduleData?.objectives) && moduleData.objectives.length
@@ -406,8 +408,8 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   const statsCards = [
     { icon: '⏱️', label: 'Duration', value: moduleData.durationLabel || `${moduleData.durationWeeks || 2} weeks`, key: 'duration' },
     { icon: '📖', label: 'Lessons', value: `${Math.min(completedLessons, totalLessons)}/${totalLessons} done`, key: 'completedLessons' },
-    { icon: '🎯', label: 'Tasks', value: `${Math.min(tasksPassedCount, totalAssignments)}/${totalAssignments} passed`, key: 'tasksAccepted' },
-    { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0`, key: 'averageScore', tooltip: 'Average of all graded task scores in this module' },
+    { icon: '🎯', label: 'Tasks', value: `${Math.min(tasksSubmitted, totalAssignments)}/${totalAssignments} submitted`, key: 'tasksAccepted' },
+    { icon: '🏆', label: 'Avg. Score', value: tasks.length > 0 ? `${totalGained}/${totalMax}` : `0/0`, key: 'averageScore', tooltip: 'Total score gained out of total available in this module' },
   ];
 
   // Shared row renderer for Tasks + Assessments tabs (same UI as TraineeAssignmentsView)
@@ -445,10 +447,11 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
           padding: '14px 18px', border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff',
           opacity: displayStatus === 'Locked' ? 0.75 : 1, transition: 'box-shadow 0.15s',
+          flexWrap: 'wrap', // Allow wrapping on small screens
         }}
       >
         {/* LEFT: title + type tags */}
-        <div style={{ minWidth: 0, flex: '0 0 220px' }}>
+        <div style={{ minWidth: 200, flex: '1 1 240px' }}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
             <span
               style={{
@@ -475,7 +478,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
         </div>
 
         {/* CENTER: deadline / lock message */}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#64748b', gap: 6 }}>
+        <div style={{ flex: '1 1 150px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', fontSize: 12, color: '#64748b', gap: 6, flexWrap: 'wrap' }}>
           {isLockedByLessons ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
@@ -495,7 +498,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
         </div>
 
         {/* RIGHT: status badge + actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
           <span
             style={{
               fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
@@ -782,15 +785,30 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
 
         const maxPoints = assignment.maxScore || 100;
         const gainedPoints = submission.score || 0;
-        const questions =
-          assignment.questions?.length > 0 ? assignment.questions : assignment.mcqConfig?.questions || [];
+        let questions = assignment.questions?.length > 0 ? assignment.questions : (assignment.mcqConfig?.questions || []);
         const isMcq = assignment.assignmentType === 'MCQ';
+
+        // Legacy single-question MCQ fallback
+        if (questions.length === 0 && isMcq && assignment.mcqConfig?.options) {
+          questions = [{
+            questionText: assignment.instruction || assignment.title || 'Question',
+            options: assignment.mcqConfig.options,
+            points: assignment.maxScore || 100,
+            correctIndex: assignment.mcqConfig.correctIndex
+          }];
+        }
 
         let parsedAnswers: any = {};
         const rawText = submission.submissionText || '';
         try {
-          if (rawText.trim().startsWith('{')) parsedAnswers = JSON.parse(rawText);
-        } catch (e) { }
+          if (rawText.trim().startsWith('{')) {
+            parsedAnswers = JSON.parse(rawText);
+          }
+        } catch(e) {}
+
+        // Fallback for missing raw text in parsed JSON
+        const displayRawText = parsedAnswers.raw ? parsedAnswers.raw : 
+          (rawText.trim().startsWith('{') ? 'JSON Submission (See parsed answers)' : rawText);
 
         return createPortal(
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
@@ -827,7 +845,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                   </div>
                 )}
 
-                <h4 style={{ margin: '0 0 16px', fontSize: '15px', color: '#0f172a' }}>Answers &amp; Questions ({questions.length || 1})</h4>
+                <h4 style={{ margin: '0 0 16px', fontSize: '15px', color: '#0f172a' }}>Answers & Questions ({questions.length || 1})</h4>
 
                 {questions.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -851,19 +869,62 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                       }
 
                       const qPoints = q.maxPoints || q.points || 10;
+                      const qText = (q.text || q.questionText || q.question || '').replace(/\\n/g, '\n').replace(/\n$/, '').trim();
+                      const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ';
 
                       return (
                         <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                            <strong style={{ fontSize: '13px', color: '#0f172a', lineHeight: 1.5 }}>
-                              Q{idx + 1}: {q.text || q.questionText || q.question}
+                            <strong style={{ fontSize: '13px', color: '#0f172a', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                              Q{idx + 1}: {qText}
                             </strong>
                             <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 600, background: '#e0e7ff', padding: '2px 8px', borderRadius: '999px', flexShrink: 0 }}>{qPoints} pts</span>
                           </div>
-                          <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap' }}>
-                            <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Answer:</span>
-                            {userAnswer}
-                          </div>
+
+                          {isThisMcq && q.options && q.options.length > 0 ? (
+                            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <span style={{ fontWeight: 600, color: '#64748b', fontSize: '11px', textTransform: 'uppercase', marginBottom: '2px' }}>Options & Evaluation:</span>
+                              {q.options.map((opt: string, optIdx: number) => {
+                                const ansVal = ansObj[idx];
+                                const isSelected = Array.isArray(ansVal) ? ansVal.includes(optIdx) : ansVal === optIdx;
+                                const isCorrect = Array.isArray(q.correctIndex) ? q.correctIndex.includes(optIdx) : q.correctIndex === optIdx;
+                                
+                                let bg = '#f8fafc';
+                                let border = '1px solid #e2e8f0';
+                                let icon = '○';
+                                let textColor = '#334155';
+                                
+                                if (isSelected && isCorrect) {
+                                  bg = '#f0fdf4';
+                                  border = '1px solid #22c55e';
+                                  icon = '✓';
+                                  textColor = '#166534';
+                                } else if (isSelected && !isCorrect) {
+                                  bg = '#fef2f2';
+                                  border = '1px solid #ef4444';
+                                  icon = '✗';
+                                  textColor = '#991b1b';
+                                } else if (!isSelected && isCorrect) {
+                                  bg = '#f0fdf4';
+                                  border = '1px dashed #22c55e';
+                                  icon = '✓';
+                                  textColor = '#166534';
+                                }
+                                
+                                return (
+                                  <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: bg, border, borderRadius: '8px', fontSize: '13px', color: textColor, fontWeight: isSelected || isCorrect ? 600 : 400 }}>
+                                    <span style={{ fontSize: '14px', opacity: isSelected || isCorrect ? 1 : 0.4 }}>{icon}</span>
+                                    <span>{opt}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                              <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Answer:</span>
+                              {userAnswer}
+                            </div>
+                          )}
                         </div>
                       );
                     })}

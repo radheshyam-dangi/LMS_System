@@ -379,23 +379,83 @@ export class ProgressEntityService {
       }
     }
 
-    const lessonPct =
-      totalLessons > 0
-        ? Math.round((completedLessons / totalLessons) * 100)
-        : 0;
-    const resourcePct =
-      totalResources > 0
-        ? Math.round((visitedResources / totalResources) * 100)
-        : 100;
-    const taskPct =
-      scopedAssignments.length > 0
-        ? Math.round((tasksAccepted / scopedAssignments.length) * 100)
-        : 0;
-
-    const totalItems = totalLessons + totalResources + scopedAssignments.length;
-    const completedItems = completedLessons + visitedResources + tasksAccepted;
+    // Group all items by module
+    const moduleIds = new Set<string>();
     
-    let completionPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+    const lessonsByMod = new Map<string, any[]>();
+    lessonScope.forEach(l => {
+      const mid = l.module?.id;
+      if (mid) {
+        moduleIds.add(mid);
+        if (!lessonsByMod.has(mid)) lessonsByMod.set(mid, []);
+        lessonsByMod.get(mid)!.push(l);
+      }
+    });
+
+    const resourcesByMod = new Map<string, any[]>();
+    resources.forEach(r => {
+      const mid = r.module?.id || r.lesson?.module?.id;
+      if (mid) {
+        moduleIds.add(mid);
+        if (!resourcesByMod.has(mid)) resourcesByMod.set(mid, []);
+        resourcesByMod.get(mid)!.push(r);
+      }
+    });
+
+    const assignmentsByMod = new Map<string, any[]>();
+    scopedAssignments.forEach(a => {
+      const mid = a.module?.id || a.lesson?.module?.id;
+      if (mid) {
+        moduleIds.add(mid);
+        if (!assignmentsByMod.has(mid)) assignmentsByMod.set(mid, []);
+        assignmentsByMod.get(mid)!.push(a);
+      }
+    });
+
+    const completedLessonIdsSetLocal = new Set(completedRows.map((r) => r.lesson?.id).filter(Boolean));
+    const visitedResourceIdsSetLocal = new Set(visits.filter(v => resourceIds.has(v.resource?.id)).map(v => v.resource?.id));
+
+    let totalModuleProgress = 0;
+    let moduleCount = 0;
+
+    moduleIds.forEach(mid => {
+      const modLessons = lessonsByMod.get(mid) || [];
+      const modResources = resourcesByMod.get(mid) || [];
+      const modAssignments = assignmentsByMod.get(mid) || [];
+
+      const mTotalLessons = modLessons.length;
+      const mTotalResources = modResources.length;
+      const mTotalTasks = modAssignments.length;
+      
+      const mCompletedLessons = modLessons.filter(l => completedLessonIdsSetLocal.has(l.id)).length;
+      const mVisitedResources = modResources.filter(r => visitedResourceIdsSetLocal.has(r.id)).length;
+      
+      let mCompletedTasks = 0;
+      modAssignments.forEach(a => {
+        const sub = subByAssign.get(a.id);
+        if (sub && sub.status && sub.status.toUpperCase() !== 'AVAILABLE' && sub.status.toUpperCase() !== 'LOCKED') {
+          mCompletedTasks++;
+        }
+      });
+
+      const mTotalItems = mTotalLessons + mTotalResources + mTotalTasks;
+      if (mTotalItems > 0) {
+        moduleCount++;
+        const mCompletedItems = mCompletedLessons + mVisitedResources + mCompletedTasks;
+        totalModuleProgress += (mCompletedItems / mTotalItems) * 100;
+      }
+    });
+
+    let completionPercent = moduleCount > 0 ? Math.round(totalModuleProgress / moduleCount) : 0;
+    if (moduleCount === 0 && (totalLessons + totalResources + scopedAssignments.length) > 0) {
+      const totalCompleted = completedLessons + visitedResources + tasksAccepted;
+      const totalItems = totalLessons + totalResources + scopedAssignments.length;
+      completionPercent = Math.round((totalCompleted / totalItems) * 100);
+    }
+    const lessonPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+    const resourcePct = totalResources > 0 ? Math.round((visitedResources / totalResources) * 100) : 100;
+    const taskPct = scopedAssignments.length > 0 ? Math.round((tasksAccepted / scopedAssignments.length) * 100) : 0;
+    
     const completedLessonIds = completedRows
       .map((r) => r.lesson?.id)
       .filter(Boolean);
@@ -561,7 +621,7 @@ export class ProgressEntityService {
         if (a.dependsOnLessonIds && a.dependsOnLessonIds.length > 0) {
           return a.dependsOnLessonIds.some((lid: string) => modLessonIds.has(String(lid)));
         }
-        return true;
+        return false; // Don't include path-level assignments in a module unless they explicitly depend on its lessons
       });
     }
     

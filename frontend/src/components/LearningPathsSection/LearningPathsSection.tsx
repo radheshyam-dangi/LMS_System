@@ -254,10 +254,7 @@ export function LearningPathsSection({
   useEffect(() => {
     if (selectedPathForTrainees) {
       setIsLoadingLpProgress(true);
-      fetch(`http://localhost:3000/v1/trainer/learning-paths/${selectedPathForTrainees}/trainees-progress`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      })
-      .then(res => res.json())
+      learningPathService.fetchLearningPathTraineesProgress(selectedPathForTrainees, accessToken)
       .then(data => setLpTraineesProgress(data))
       .catch(err => console.error("Failed to fetch LP progress", err))
       .finally(() => setIsLoadingLpProgress(false));

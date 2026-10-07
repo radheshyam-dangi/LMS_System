@@ -327,22 +327,40 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken,
             ) : (
               <div style={{ width: '100%', height: '100%', minHeight: '200px' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius={windowWidth < 640 ? "50%" : "65%"} data={skillData}>
-                    <PolarGrid stroke="#e2e8f0" gridType="polygon" polarRadius={[20, 40, 60, 80, 100]} />
+                  <RadarChart 
+                    cx="50%" 
+                    cy="50%" 
+                    outerRadius={windowWidth < 640 ? "55%" : "70%"} 
+                    data={skillData}
+                    margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
+                  >
+                    <defs>
+                      <linearGradient id="colorPerformance2" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.05}/>
+                      </linearGradient>
+                    </defs>
+                    <PolarGrid stroke="#cbd5e1" strokeDasharray="3 3" gridType="polygon" polarRadius={[20, 40, 60, 80, 100]} />
                     <PolarAngleAxis
                       dataKey="name"
                       tick={({ x, y, payload, textAnchor }: any) => {
                         if (!payload.value || payload.value === ' ') return <g />;
                         // Truncate based on window width
-                        const maxLength = windowWidth < 640 ? 8 : (windowWidth < 1024 ? 12 : 15);
+                        const maxLength = windowWidth < 640 ? 10 : (windowWidth < 1024 ? 15 : 20);
                         const label = payload.value.length > maxLength ? payload.value.substring(0, maxLength) + '...' : payload.value;
+                        
+                        // Slightly push labels outward
+                        const radiusOffset = 5;
+                        const adjustedX = x + (textAnchor === 'start' ? radiusOffset : textAnchor === 'end' ? -radiusOffset : 0);
+                        const adjustedY = y + (y > 100 ? radiusOffset : -radiusOffset);
+
                         return (
-                          <g transform={`translate(${x},${y})`}>
+                          <g transform={`translate(${adjustedX},${adjustedY})`}>
                             <title>{payload.value}</title>
                             <text
                               x={0} y={0} dy={4}
                               textAnchor={textAnchor || "middle"}
-                              fill="#334155"
+                              fill="#1e293b"
                               fontSize={12}
                               fontWeight={600}
                               style={{ cursor: 'pointer' }}
@@ -356,22 +374,22 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken,
                     <PolarRadiusAxis
                       angle={30}
                       domain={[0, 100]}
-                      tickCount={windowWidth < 640 ? 3 : 6}
-                      tick={{ fontSize: windowWidth < 640 ? 9 : 11, fill: '#64748b', fontWeight: 700 }}
+                      tickCount={6}
+                      tick={{ fontSize: windowWidth < 640 ? 9 : 10, fill: '#94a3b8', fontWeight: 600 }}
                       axisLine={false}
                     />
                     <Radar 
                       name="Performance" 
                       dataKey="percent" 
                       stroke="#4f46e5" 
-                      fill="#4f46e5" 
-                      fillOpacity={0.25} 
-                      strokeWidth={3} 
-                      dot={{ r: 4, fill: '#4f46e5', strokeWidth: 0 }} 
-                      activeDot={{ r: 7, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2, cursor: 'pointer' }}
+                      fill="url(#colorPerformance2)" 
+                      strokeWidth={2.5} 
+                      dot={{ r: 3, fill: '#fff', stroke: '#4f46e5', strokeWidth: 2 }} 
+                      activeDot={{ r: 6, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2, cursor: 'pointer' }}
+                      animationDuration={1200}
                     />
                     <RechartsTooltip
-                      cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }}
+                      cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
                       content={({ active, payload }: any) => {
                         if (active && payload && payload.length) {
                           const item = payload[0].payload;

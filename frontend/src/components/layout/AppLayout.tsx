@@ -102,7 +102,7 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
     main: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
-      { name: 'Assignments', path: '/assignments', icon: ClipboardList },
+      { name: 'Evaluations', path: '/assignments', icon: ClipboardList },
     ],
     tools: [
       { name: 'Settings', path: '/settings', icon: Settings },

@@ -87,6 +87,24 @@ export function HomePage({ onLoginClick }: HomePageProps) {
           <p>Assign specialized tracks built explicitly from backend entity columns maps directly down to cohorts.</p>
         </div>
       </section>
+
+      {/* Footer Section */}
+      <footer className="home-footer">
+        <div className="home-footer-content">
+          <div className="footer-brand">
+            <span className="logo-spark">s</span>
+            <strong>SkillForge</strong>
+          </div>
+          <div className="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Contact Support</a>
+          </div>
+        </div>
+        <div className="footer-bottom">
+          &copy; {new Date().getFullYear()} SkillForge AI Platform. All rights reserved.
+        </div>
+      </footer>
     </div>
   );
 }

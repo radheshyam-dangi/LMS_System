@@ -25,6 +25,11 @@ export const learningPathService = {
     return response.data;
   },
 
+  fetchLearningPathTraineesProgress: async (pathId: string, token: string) => {
+    const response = await axios.get(`${API_BASE_URL}/trainer/learning-paths/${pathId}/trainees-progress`, getAuthHeaders(token));
+    return response.data;
+  },
+
   createPath: async (payload: any, token: string) => {
     const response = await axios.post(`${API_BASE_URL}/learningPaths`, payload, getAuthHeaders(token));
     return response.data;

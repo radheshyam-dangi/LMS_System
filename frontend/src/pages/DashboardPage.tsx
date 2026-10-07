@@ -26,7 +26,7 @@ import type { RoleName, SessionUser } from '../types/auth';
 import confetti from 'canvas-confetti';
 import { DashboardCharts } from '../components/DashboardCharts/DashboardCharts';
 import { InteractiveTraineeProgress } from '../components/DashboardCharts/InteractiveTraineeProgress';
-import { TraineeHeroCard, UpcomingDeadlinesWidget, RecentFeedbackWidget } from '../components/TraineeDashboardWidgets/TraineeDashboardWidgets';
+import { TraineeHeroCard } from '../components/TraineeDashboardWidgets/TraineeDashboardWidgets';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 const truncateLabel = (name: string, maxLen = 14) => {
@@ -929,11 +929,11 @@ export function DashboardPage({
 
         {/* Hero Card */}
         {!isTrainerDrillDown && (
-          <TraineeHeroCard 
-            isLoading={isLoadingMetrics} 
-            hasProgress={(progressPercent > 0 || (dbData.activityTimestamps?.length ?? 0) > 0)} 
-            lastAccessedTitle={currentPathTitle} 
-            pathId={traineePath?.id} 
+          <TraineeHeroCard
+            isLoading={isLoadingMetrics}
+            hasProgress={(progressPercent > 0 || (dbData.activityTimestamps?.length ?? 0) > 0)}
+            lastAccessedTitle={currentPathTitle}
+            pathId={traineePath?.id}
           />
         )}
 
@@ -981,19 +981,7 @@ export function DashboardPage({
           />
         </section>
 
-        {/* Row 2.5: Trainee Dashboard Widgets */}
-        {!isTrainerDrillDown && (
-          <div className="db-widgets-row">
-            <UpcomingDeadlinesWidget 
-              isLoading={isLoadingMetrics} 
-              assignments={[]} // Mocked data array, real implementation would hook up to assignmentService or similar 
-            />
-            <RecentFeedbackWidget 
-              isLoading={isLoadingMetrics} 
-              feedback={mySubmissions.filter(s => s.status === 'GRADED' || s.evaluation)} 
-            />
-          </div>
-        )}
+
 
         {/* Row 3: Two columns */}
         <section className="db-layout-split">
@@ -1039,8 +1027,20 @@ export function DashboardPage({
             <div style={{ flex: 1, display: 'flex', gap: '16px', alignItems: 'center', justifyContent: 'center', marginTop: '24px' }}>
               <div style={{ width: '100%', height: '100%', minHeight: '360px' }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart cx="50%" cy="50%" outerRadius={typeof window !== 'undefined' && window.innerWidth < 640 ? "55%" : "75%"} data={skillData}>
-                    <PolarGrid stroke="#e2e8f0" gridType="polygon" polarRadius={[20, 40, 60, 80, 100]} />
+                  <RadarChart
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={typeof window !== 'undefined' && window.innerWidth < 640 ? "55%" : "70%"}
+                    data={skillData}
+                    margin={{ top: 20, right: 30, bottom: 20, left: 30 }}
+                  >
+                    <defs>
+                      <linearGradient id="colorPerformance" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <PolarGrid stroke="#cbd5e1" strokeDasharray="3 3" gridType="polygon" polarRadius={[20, 40, 60, 80, 100]} />
                     <PolarAngleAxis
                       dataKey="name"
                       tick={({ x, y, payload, textAnchor }: any) => {
@@ -1050,14 +1050,19 @@ export function DashboardPage({
                         const midpoint = Math.ceil(words.length / 2);
                         const line1 = words.length > 1 ? words.slice(0, midpoint).join(' ') : words[0];
                         const line2 = words.length > 1 ? words.slice(midpoint).join(' ') : '';
-                        
+
+                        // Slightly push labels outward so they don't overlap the grid
+                        const radiusOffset = 5;
+                        const adjustedX = x + (textAnchor === 'start' ? radiusOffset : textAnchor === 'end' ? -radiusOffset : 0);
+                        const adjustedY = y + (y > 150 ? radiusOffset : -radiusOffset);
+
                         return (
-                          <g transform={`translate(${x},${y})`}>
+                          <g transform={`translate(${adjustedX},${adjustedY})`}>
                             <title>{payload.value}</title>
                             <text
                               x={0} y={0} dy={0}
                               textAnchor={textAnchor || "middle"}
-                              fill="#334155"
+                              fill="#1e293b"
                               fontSize={12}
                               fontWeight={600}
                               style={{ cursor: 'pointer' }}
@@ -1073,21 +1078,21 @@ export function DashboardPage({
                       angle={30}
                       domain={[0, 100]}
                       tickCount={6}
-                      tick={{ fontSize: 11, fill: '#64748b', fontWeight: 700 }}
+                      tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 600 }}
                       axisLine={false}
                     />
                     <Radar
                       name="Performance"
                       dataKey="percent"
                       stroke="#4f46e5"
-                      fill="#4f46e5"
-                      fillOpacity={0.25}
-                      strokeWidth={3}
-                      dot={{ r: 4, fill: '#4f46e5', strokeWidth: 0 }}
-                      activeDot={{ r: 7, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2, cursor: 'pointer' }}
+                      fill="url(#colorPerformance)"
+                      strokeWidth={2.5}
+                      dot={{ r: 3, fill: '#fff', stroke: '#4f46e5', strokeWidth: 2 }}
+                      activeDot={{ r: 6, fill: '#4f46e5', stroke: '#fff', strokeWidth: 2, cursor: 'pointer' }}
+                      animationDuration={1200}
                     />
                     <RechartsTooltip
-                      cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 3' }}
+                      cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '4 4' }}
                       content={({ active, payload }: any) => {
                         if (active && payload && payload.length) {
                           const item = payload[0].payload;
@@ -1149,11 +1154,11 @@ export function DashboardPage({
                   <RechartsTooltip
                     cursor={{ fill: '#f8fafc' }}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                    itemStyle={{ fontSize: '13px', fontWeight: 600, color: '#4f46e5' }}
+                    itemStyle={{ fontSize: '13px', fontWeight: 650, color: '#4f46e5' }}
                     labelStyle={{ fontSize: '12px', color: '#64748b', marginBottom: '8px' }}
                     formatter={(value: any) => [`${fmt(Number(value))}%`, 'Completion Percentage']}
                   />
-                  <Bar dataKey="percent" name="Completion Percentage (%)" fill="#4f46e5" radius={[6, 6, 0, 0]} maxBarSize={60} />
+                  <Bar dataKey="percent" name="Completion Percentage (%)" fill="#4f46e5" radius={[6, 6, 0, 0]} maxBarSize={70} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

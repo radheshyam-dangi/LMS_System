@@ -1,7 +1,6 @@
 .assignment-chat-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.4);
   z-index: 9999;
   display: flex;
   justify-content: flex-end;
@@ -12,12 +11,11 @@
 
 .assignment-chat-overlay.open {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .assignment-chat-drawer {
   width: 100%;
-  max-width: 450px;
+  max-width: var(--chat-panel-width, 420px);
   background: #fff;
   height: 100%;
   transform: translateX(100%);
@@ -25,6 +23,7 @@
   display: flex;
   flex-direction: column;
   box-shadow: -4px 0 24px rgba(0,0,0,0.1);
+  pointer-events: auto; /* Chat drawer captures events */
 }
 
 .assignment-chat-drawer.open {
@@ -305,3 +304,4 @@
     transform: translateY(0);
   }
 }
+@media (max-width: 768px) { .assignment-chat-overlay { background: rgba(15, 23, 42, 0.4); } }

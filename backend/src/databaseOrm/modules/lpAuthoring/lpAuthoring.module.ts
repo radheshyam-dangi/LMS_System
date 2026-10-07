@@ -10,6 +10,7 @@ import { ResourceEntity } from '../../entities/resource.entity';
 import { LpDraftEntity } from '../../entities/lpDraft.entity';
 import { AuthModule } from '../../auth/auth.module';
 import { AiEvaluationModule } from '../aiEvaluation/aiEvaluation.module';
+import { LearningPathModule } from '../learningPath/learningPath.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AiEvaluationModule } from '../aiEvaluation/aiEvaluation.module';
     ]),
     AuthModule,
     forwardRef(() => AiEvaluationModule),
+    forwardRef(() => LearningPathModule),
   ],
   controllers: [LpAuthoringController],
   providers: [LpAuthoringService],

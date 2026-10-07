@@ -423,12 +423,14 @@ export function ModulesManagementSection({
       return s && typeof s.score === 'number';
     });
     const totalGained = tasksScored.reduce((sum: number, t: any) => sum + Number(subByAssignment.get(t.id)?.score || 0), 0);
-    const totalMax = tasksScored.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
+    const totalMax = tasks.reduce((sum: number, t: any) => sum + Number(t.maxScore || 100), 0);
 
     const visitedResourcesCount = moduleStats?.visitedResources ?? resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
 
     // Module progress from backend (computed-on-read, §2 — single source of truth)
-    const progressPercent = moduleStats?.completionPercent ?? 0;
+    const totalVisibleItems = lessons.length + tasks.length;
+    const completedVisibleItems = Math.min(completedLessons, lessons.length) + Math.min(tasksSubmitted, tasks.length);
+    const progressPercent = totalVisibleItems > 0 ? Math.round((completedVisibleItems / totalVisibleItems) * 100) : 0;
 
     const rawObj = openModuleData?.objectives;
     const rawKeyPoints = Array.isArray(openModuleData?.keyPoints)
@@ -641,7 +643,7 @@ export function ModulesManagementSection({
               { icon: '⏱️', label: 'Duration', value: openModuleData.durationLabel || `${openModuleData.durationWeeks || 2} weeks` },
               { icon: '📖', label: 'Lessons', value: isTrainee ? `${completedLessons}/${lessons.length} done` : `${lessons.length} total` },
               { icon: '🎯', label: 'Tasks', value: isTrainee ? `${tasksSubmitted}/${tasks.length} submitted` : `${tasks.length} assigned` },
-              { icon: '🏆', label: 'Avg. Score', value: tasksScored.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
+              { icon: '🏆', label: 'Avg. Score', value: tasks.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
             ].map((m) => (
               <div key={m.label} style={{
                 background: 'rgba(255, 255, 255, 0.95)',

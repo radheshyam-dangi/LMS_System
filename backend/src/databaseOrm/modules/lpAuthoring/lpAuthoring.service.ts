@@ -26,6 +26,8 @@ import { UserEntity } from '../../entities/user.entity';
 import { LpDraftEntity } from '../../entities/lpDraft.entity';
 import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
 import { ContentExtractionService } from '../aiEvaluation/contentExtraction.service';
+import { LearningPathEntityService } from '../learningPath/learningPath.service';
+import { forwardRef, Inject } from '@nestjs/common';
 
 @Injectable()
 export class LpAuthoringService {
@@ -41,6 +43,8 @@ export class LpAuthoringService {
   constructor(
     private readonly datasource: DataSource,
     private readonly contentExtraction: ContentExtractionService,
+    @Inject(forwardRef(() => LearningPathEntityService))
+    private readonly LearningPathEntityService: LearningPathEntityService,
   ) {
     this.lpRepo = this.datasource.getRepository(LearningPathEntity);
     this.moduleRepo = this.datasource.getRepository(ModuleEntity);
@@ -420,6 +424,7 @@ export class LpAuthoringService {
       }
 
       savedLP.duration = totalLpDays > 0 ? `${Math.ceil(totalLpDays / 7)} weeks` : '0 weeks';
+      delete (savedLP as any).modules; // Prevent TypeORM from cascading the old state of relations and reverting our updates
       await manager.save(LearningPathEntity, savedLP);
 
       return savedLP;
@@ -431,6 +436,18 @@ export class LpAuthoringService {
 
       for (const lesson of lessons) {
         this.contentExtraction.extractLessonContentAsync(lesson.id);
+      }
+
+      // 🌟 Fix: Re-run trainee assignment fan-out so new assignments get submissions for enrolled trainees
+      // And update deadlines/lock statuses for existing incomplete submissions.
+      if (savedLP.assignedToTraineeIds?.length > 0) {
+        for (const traineeId of savedLP.assignedToTraineeIds) {
+          try {
+            await this.LearningPathEntityService.syncPathAssignments(savedLP.id, traineeId);
+          } catch (err) {
+            this.logger.error(`Failed to sync updated tasks for trainee ${traineeId} in LP ${savedLP.id}`, err);
+          }
+        }
       }
 
       this.logger.log(

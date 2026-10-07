@@ -1,11 +1,10 @@
 import axios from 'axios';
 
-const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-const defaultApiUrl = isLocalhost 
-  ? 'http://localhost:3000'
-  : 'https://h54dv5nh.aue.devtunnels.ms:3000';
 
-export const API_BASE_URL = (import.meta.env.VITE_API_URL ?? defaultApiUrl) + '/v1';
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/v1';
+
+axios.defaults.headers.common['X-Tunnel-Skip-AntiPhishing-Page'] = 'true';
+axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
 
 axios.interceptors.response.use(
   (response) => response,
@@ -28,6 +27,7 @@ axios.interceptors.response.use(
         );
         
         if (data.accessToken) {
+          console.log('New Access Token:', data.accessToken);
           localStorage.setItem('skillforge_token', data.accessToken);
           window.dispatchEvent(new CustomEvent('token_refreshed', { detail: data.accessToken }));
           // If the failed request used an Authorization header, update it

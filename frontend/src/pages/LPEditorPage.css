@@ -1,0 +1,124 @@
+/* ==========================================
+   LP EDITOR RESPONSIVE HEADER
+   ========================================== */
+
+.lp-editor-header {
+  padding: 12px 24px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 60;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  gap: 12px;
+}
+
+.lp-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.lp-header-back-btn {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.lp-header-back-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.lp-header-divider {
+  width: 1px;
+  height: 22px;
+  background: #e2e8f0;
+}
+
+.lp-header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lp-studio-badge {
+  background: linear-gradient(135deg, #e0e7ff, #ede9fe);
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lp-header-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.lp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lp-status-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 3px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.lp-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+@media (max-width: 639px) {
+  .lp-editor-header {
+    padding: 12px 16px;
+    flex-wrap: wrap;
+  }
+  .lp-header-left {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .lp-header-divider {
+    display: none;
+  }
+  .lp-header-title-group {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 4px;
+  }
+  .lp-header-right {
+    width: 100%;
+    justify-content: center;
+    margin-top: 8px;
+  }
+}

@@ -42,9 +42,7 @@ export class EvaluationWorkerService {
     this.isProcessing = true;
 
     try {
-      console.log("poll evaluation jobs called")
-
-      const pendingJobs = await this.jobRepo.createQueryBuilder('job')
+       const pendingJobs = await this.jobRepo.createQueryBuilder('job')
         .leftJoinAndSelect('job.submission', 'submission')
         .leftJoinAndSelect('submission.assignment', 'assignment')
         .leftJoinAndSelect('assignment.createdBy', 'createdBy')
@@ -55,8 +53,6 @@ export class EvaluationWorkerService {
         .orderBy('job.createdAt', 'ASC')
         .take(5)
         .getMany();
-
-      console.log("pending jobs::", pendingJobs)
 
       for (const job of pendingJobs) {
         await this.processSubmission(job.id, job.submission?.id || (job as any).submissionId);

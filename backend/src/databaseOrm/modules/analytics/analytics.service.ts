@@ -2264,22 +2264,8 @@ pathPerformance,
     let pathsWithProgress = 0;
 
     for (const p of paths) {
-      const pMods = modules.filter(m => m.learningPath?.id === p.id);
-      let pTotalMods = pMods.length;
-      let pCompletedMods = 0;
-
-      for (const m of pMods) {
-        const mLessons = m.lessons || [];
-        if (mLessons.length === 0) {
-           pCompletedMods++;
-        } else {
-           const mLessonIds = mLessons.map((l: any) => l.id);
-           const mCompletedCount = progressRows.filter(pr => mLessonIds.includes(pr.lesson?.id) && pr.isCompleted).length;
-           if (mCompletedCount === mLessons.length) pCompletedMods++;
-        }
-      }
-
-      const pProgress = pTotalMods > 0 ? Math.round((pCompletedMods / pTotalMods) * 100) : 0;
+      const stats = await this.progressService.statsForUser(traineeId, p.id);
+      const pProgress = stats.completionPercent || 0;
       learningPaths.push({
         lpId: p.id,
         lpName: p.title,

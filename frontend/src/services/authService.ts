@@ -1,49 +1,32 @@
+import axios from 'axios';
 import { API_BASE_URL } from '../api';
 import type { InviteUserPayload, LoginResponse } from '../types/auth';
 
-const jsonHeaders = {
-  'Content-Type': 'application/json',
-};
-
-const getErrorMessage = async (response: Response, fallback: string) => {
-  try {
-    const result = await response.json();
-    return result.message || fallback;
-  } catch {
-    return fallback;
-  }
-};
-
 export const login = async (email: string, password: string): Promise<LoginResponse> => {
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: jsonHeaders,
-    body: JSON.stringify({ email, password }),
-  });
-
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response, 'Login failed'));
+  try {
+    const response = await axios.post<LoginResponse>(`${API_BASE_URL}/auth/login`, {
+      email,
+      password,
+    }, {
+      withCredentials: true,
+    });
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Login failed');
   }
-
-  return response.json();
 };
 
 export const sendInvitation = async (payload: InviteUserPayload, accessToken: string) => {
-  const response = await fetch(`${API_BASE_URL}/email/send`, {
-    method: 'POST',
-    headers: {
-      ...jsonHeaders,
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response, 'Unable to send invitation'));
+  try {
+    const response = await axios.post(`${API_BASE_URL}/email/send`, payload, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Unable to send invitation');
   }
-
-  return response.json();
 };
 
 export const completeSignup = async (
@@ -51,15 +34,13 @@ export const completeSignup = async (
   newPassword: string,
   retypePassword: string,
 ) => {
-  const response = await fetch(`${API_BASE_URL}/auth/complete-signup?token=${token}`, {
-    method: 'POST',
-    headers: jsonHeaders,
-    body: JSON.stringify({ newPassword, retypePassword }),
-  });
-
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response, 'Failed to complete account setup'));
+  try {
+    const response = await axios.post(`${API_BASE_URL}/auth/complete-signup?token=${token}`, {
+      newPassword,
+      retypePassword,
+    });
+    return response.data;
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || 'Failed to complete account setup');
   }
-
-  return response.json();
 };

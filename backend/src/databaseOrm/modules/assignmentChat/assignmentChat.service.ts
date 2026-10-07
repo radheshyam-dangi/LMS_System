@@ -87,7 +87,7 @@ export class AssignmentChatService {
       }
 
       // cap at 2
-      targetQuestionIds = targetQuestionIds.slice(0, 2);
+      targetQuestionIds = Array.from(new Set(targetQuestionIds)).slice(0, 2);
 
       // 3. Build context per question
       const contexts: any[] = [];
@@ -476,6 +476,7 @@ ${JSON.stringify(contexts)}
          // Return fallback
          return contexts.map(c => ({
             questionId: c.questionId,
+            questionNumber: c.questionNumber,
             content: "I'm currently unable to generate a response. Please try again later.",
             lessonIds: [],
             suggestedLessons: [],

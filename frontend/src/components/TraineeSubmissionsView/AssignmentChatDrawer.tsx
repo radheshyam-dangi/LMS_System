@@ -94,7 +94,7 @@ export function AssignmentChatDrawer({ assignmentId, assignmentTitle, accessToke
           <div className="chat-structured-response">
             {parsed.map((ans: any, idx: number) => {
               const qObj = questions.find(q => q.id === ans.questionId || String(questions.indexOf(q)) === ans.questionId);
-              const qNum = qObj ? questions.indexOf(qObj) + 1 : '?';
+              const qNum = qObj ? questions.indexOf(qObj) + 1 : (ans.questionNumber || '?');
 
               return (
                 <div key={idx} className="chat-answer-block">

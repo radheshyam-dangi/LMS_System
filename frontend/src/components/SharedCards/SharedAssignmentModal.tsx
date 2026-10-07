@@ -226,10 +226,20 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
   }
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)', padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }} onClick={handleCloseRequest}>
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', zIndex: 1000, backdropFilter: 'blur(4px)', padding: '24px' }} onClick={handleCloseRequest}>
       <div 
         ref={containerRef}
-        style={{ width: '100%', maxWidth: 720, height: '90dvh', maxHeight: 900, overflowY: 'auto', background: '#fff', borderRadius: 24, display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '0 25px 80px rgba(0,0,0,0.2)' }} 
+        style={{ 
+          '--chat-panel-width': '420px',
+          width: '100%', 
+          maxWidth: isChatDrawerOpen ? 'calc(100vw - var(--chat-panel-width) - 48px)' : 720, 
+          height: '90dvh', maxHeight: 900, overflowY: 'hidden', 
+          background: '#fff', borderRadius: 24, display: 'flex', flexDirection: 'column', position: 'relative', 
+          boxShadow: '0 25px 80px rgba(0,0,0,0.2)',
+          margin: 'auto',
+          marginRight: isChatDrawerOpen ? 'calc(var(--chat-panel-width) + 24px)' : 'auto',
+          transition: 'max-width 0.3s ease, margin-right 0.3s ease'
+        } as React.CSSProperties} 
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header (Sticky) */}
@@ -262,10 +272,11 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div style={{ padding: '32px 24px', flex: 1 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
             
             {/* Step 1: Instructions */}
-            <div style={{ display: step === 'instructions' ? 'block' : 'none' }}>
+            <div style={{ display: step === 'instructions' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+                <div style={{ padding: '32px 24px', flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
                     <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f0f9ff', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>📖</div>
                     <div>
@@ -282,7 +293,8 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                     </a>
                 )}
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #e2e8f0', paddingTop: 24 }}>
+                </div>
+                <div style={{ padding: '24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', background: '#fff' }}>
                     <button 
                         type="button" 
                         onClick={handleStartTask} 
@@ -295,7 +307,8 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
             </div>
 
             {/* Step 2: Questions & Submit */}
-            <div style={{ display: step === 'questions' ? 'block' : 'none' }}>
+            <div style={{ display: step === 'questions' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+                <div style={{ padding: '32px 24px', flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
                     <button type="button" onClick={() => setStep('instructions')} style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 14, fontWeight: 600, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
                         ← Back to Instructions
@@ -303,7 +316,7 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                     {hasUnsavedChanges && <span style={{ fontSize: 12, color: '#059669', display: 'flex', alignItems: 'center', gap: 4 }}><Save size={14} /> Draft saved locally</span>}
                 </div>
                 
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+                <form id="assignment-form" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                     
                     {questionsArray.length > 0 ? (
                       questionsArray.map((q: any, idx: number) => {
@@ -441,17 +454,19 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                         />
                     </div>
                     
-                    {/* Submit Actions */}
-                    <div style={{ position: 'sticky', bottom: 0, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)', padding: '24px 0', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 16 }}>
-                        <button type="button" onClick={handleCloseRequest} style={{ padding: '14px 24px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', transition: 'background 0.2s' }}>
-                            Cancel
-                        </button>
-                        <button type="submit" disabled={isSubmitting || isOverdue} style={{ padding: '14px 32px', background: isOverdue ? '#94a3b8' : 'linear-gradient(135deg, #4f46e5, #4338ca)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: isOverdue || isSubmitting ? 'not-allowed' : 'pointer', boxShadow: isOverdue ? 'none' : '0 4px 12px rgba(79,70,229,0.3)', opacity: isSubmitting ? 0.7 : 1 }}>
-                            {isSubmitting ? 'Submitting...' : isOverdue ? 'Deadline Passed' : 'Submit for Evaluation'}
-                        </button>
-                    </div>
-
                 </form>
+              </div>
+
+              {/* Submit Actions */}
+              <div style={{ padding: '24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: 12, background: '#fff' }}>
+                  <button type="button" onClick={handleCloseRequest} style={{ padding: '14px 24px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: 'pointer', transition: 'background 0.2s' }}>
+                      Cancel
+                  </button>
+                  <button form="assignment-form" type="submit" disabled={isSubmitting || isOverdue} style={{ padding: '14px 32px', background: isOverdue ? '#94a3b8' : 'linear-gradient(135deg, #4f46e5, #4338ca)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: isOverdue || isSubmitting ? 'not-allowed' : 'pointer', boxShadow: isOverdue ? 'none' : '0 4px 12px rgba(79,70,229,0.3)', opacity: isSubmitting ? 0.7 : 1 }}>
+                      {isSubmitting ? 'Submitting...' : isOverdue ? 'Deadline Passed' : 'Submit for Evaluation'}
+                  </button>
+              </div>
+
             </div>
         </div>
 
@@ -479,15 +494,16 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
             </div>
         )}
 
-        {/* AI Chat Drawer */}
-        <AssignmentChatDrawer questions={task.questions || task.mcqConfig?.questions || []}
-          assignmentId={task.id}
-          assignmentTitle={task.title}
-          accessToken={accessToken}
-          onClose={() => setIsChatDrawerOpen(false)}
-          isOpen={isChatDrawerOpen}
-        />
       </div>
+      
+      {/* AI Chat Drawer */}
+      <AssignmentChatDrawer questions={task.questions || task.mcqConfig?.questions || []}
+        assignmentId={task.id}
+        assignmentTitle={task.title}
+        accessToken={accessToken}
+        onClose={() => setIsChatDrawerOpen(false)}
+        isOpen={isChatDrawerOpen}
+      />
     </div>,
     document.body
   );
