@@ -457,6 +457,7 @@ export function DashboardPage({
     totalMaxScore?: number;
     totalGainedScore?: number;
     skillGrowth?: number;
+    learningPaths?: any[];
   }>({
     totalUsers: 0,
     totalTrainers: 0,
@@ -510,6 +511,7 @@ export function DashboardPage({
   }, [charts.moduleCompletion, selectedLpTitle]);
 
   const [completionGrowth, setCompletionGrowth] = useState(0);
+  const [lpProgressSummary, setLpProgressSummary] = useState<Record<string, any>>({});
 
   const isTrainerDrillDown = activeSection === 'TrainerTraineeDetail';
   const targetTraineeId = isTrainerDrillDown ? window.location.pathname.split('/').pop() : undefined;
@@ -536,7 +538,7 @@ export function DashboardPage({
       setIsLoadingMetrics(true);
       try {
         const fetchRole = isTrainerDrillDown ? 'Trainee' : activeRole;
-        const [analytics, usersList, pathsList, pendingSubs, mySubs, myProgress] = await Promise.all([
+        const [analytics, usersList, pathsList, pendingSubs, mySubs, myProgress, summary] = await Promise.all([
           (isTrainer
             ? analyticsService.fetchTrainerDashboardSummary(accessToken, currentUser.id)
             : analyticsService.fetchDashboard(accessToken, fetchRole, targetTraineeId, scopedToTrainerId)
@@ -551,9 +553,12 @@ export function DashboardPage({
             completionPercent: 0,
             averageScore: 0,
           })),
+          progressService.fetchPathProgressSummary(accessToken).catch(() => ({})),
         ]);
 
         if (!isMounted) return;
+
+        setLpProgressSummary(summary || {});
 
         setProgressStats(myProgress);
         if (analytics?.charts) setCharts(analytics.charts);
@@ -650,6 +655,7 @@ export function DashboardPage({
           totalMaxScore: analytics?.totalMaxScore ?? 0,
           totalGainedScore: analytics?.totalGainedScore ?? 0,
           skillGrowth: analytics?.skillGrowth ?? 0,
+          learningPaths: pathsList || [],
         });
 
         setPendingSubmissions(pendingSubs || analytics?.recentActivity || []);
@@ -902,6 +908,19 @@ export function DashboardPage({
       : (dbData.activeEnrollments === 0 || !dbData.activeEnrollments)
         ? [{ name: 'No data', count: 0, percent: 0 }]
         : [{ name: 'No skills configured', count: 0, percent: 0 }];
+    
+    // Override radar chart percentage to exactly match the real-time LP lesson completion percentage
+    if (isTrainee && Object.keys(lpProgressSummary).length > 0 && dbData.learningPaths) {
+      skillData = skillData.map(skill => {
+        if (skill.name === ' ' || skill.name === 'No data' || skill.name === 'No skills configured') return skill;
+        const matchingLp = dbData.learningPaths?.find((p: any) => p.title === skill.name);
+        if (matchingLp && lpProgressSummary[matchingLp.id]) {
+          return { ...skill, percent: lpProgressSummary[matchingLp.id].userProgressPercent ?? 0 };
+        }
+        return skill;
+      });
+    }
+
     if (skillData.length > 0 && skillData.length < 3 && !skillData.some((s: any) => s.name === 'No data')) {
       while (skillData.length < 3) {
         skillData.push({ name: ' ', count: 0, percent: 0 });

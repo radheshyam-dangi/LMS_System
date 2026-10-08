@@ -22,7 +22,6 @@ import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
 import { getNotificationRoute } from '../../utils/notificationUtils';
-import { GlobalSearchBar } from './GlobalSearchBar';
 
 const CustomRoleSwitcher = ({ effectiveRole, availableRoles, onRoleChange }: any) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -317,8 +316,6 @@ export function AppLayout({
             <h2 className="topbar-title">{activeSection}</h2>
           </div>
           <div className="topbar-actions">
-            <GlobalSearchBar activeRole={effectiveRole} />
-
             {showRoleSwitcher && (
               <CustomRoleSwitcher
                 effectiveRole={effectiveRole}

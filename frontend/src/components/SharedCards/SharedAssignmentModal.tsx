@@ -230,6 +230,30 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
 
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', zIndex: 1000, backdropFilter: 'blur(4px)', padding: '24px' }} onClick={handleCloseRequest}>
+      <style>{`
+        .mcq-option-text .ProseMirror {
+          min-height: auto !important;
+          padding: 0 !important;
+          box-shadow: none !important;
+          background: transparent !important;
+          border: none !important;
+          outline: none !important;
+          line-height: 1.5 !important;
+          font-size: 15px !important;
+        }
+        .mcq-option-text .ProseMirror > p {
+          margin-bottom: 0 !important;
+          color: inherit !important;
+        }
+        .mcq-option-label {
+          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        }
+        .mcq-option-label:hover {
+          border-color: #bae6fd !important;
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+        }
+      `}</style>
       <div 
         ref={containerRef}
         style={{ 
@@ -261,13 +285,15 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                 </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => setIsChatDrawerOpen(true)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', padding: '8px 14px', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s' }}
-                >
-                  <Bot size={16} /> Ask AI
-                </button>
+                {step === 'questions' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsChatDrawerOpen(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', padding: '8px 14px', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s' }}
+                  >
+                    <Bot size={16} /> Ask AI
+                  </button>
+                )}
                 <button type="button" onClick={handleCloseRequest} style={{ border: 'none', background: '#f1f5f9', borderRadius: '10px', width: 36, height: 36, cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}>
                     <X size={20} />
                 </button>
@@ -328,7 +354,7 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                         const previousEvaluation = qScores[qId] || qScores[idx];
                         const prevAnsVal = prevAnswersParsed[idx] ?? prevAnswersParsed[String(idx)];
                         const hasPrevAnswer = isResubmit && prevAnsVal !== undefined && prevAnsVal !== '';
-                        const isMcq = (q.type || q.questionType || '').toUpperCase() === 'MCQ' || (task.assignmentType === 'MCQ' && hasOptions);
+                        const isMcq = (q.type || q.questionType || '').toUpperCase() === 'MCQ' || task.assignmentType === 'MCQ';
 
                         return (
                           <div key={idx} style={{ padding: 24, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16 }}>
@@ -381,7 +407,7 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                                             : mcqAnswers[idx] === oi;
                                       
                                       return (
-                                        <label key={oi} style={{ fontSize: 15, display: 'flex', gap: 16, alignItems: 'center', cursor: 'pointer', padding: '14px 16px', borderRadius: 12, background: isChecked ? '#eff6ff' : '#fff', border: `2px solid ${isChecked ? '#3b82f6' : '#e2e8f0'}`, transition: 'all 0.2s' }}>
+                                        <label key={oi} className="mcq-option-label" style={{ fontSize: 15, display: 'flex', gap: 16, alignItems: 'center', cursor: 'pointer', padding: '16px 20px', borderRadius: 12, background: isChecked ? '#f0f9ff' : '#fff', border: `2px solid ${isChecked ? '#0ea5e9' : '#e2e8f0'}`, boxShadow: isChecked ? '0 4px 12px rgba(14, 165, 233, 0.15)' : '0 2px 4px rgba(0,0,0,0.02)' }}>
                                           <input
                                             type={q.allowMultipleCorrect ? "checkbox" : "radio"}
                                             name={`q-${idx}`}
@@ -400,10 +426,10 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                                                 setMcqAnswers(prev => ({ ...prev, [idx]: oi }));
                                               }
                                             }}
-                                            style={{ width: 18, height: 18, accentColor: '#3b82f6', cursor: 'pointer' }}
+                                            style={{ width: 20, height: 20, accentColor: '#0ea5e9', cursor: 'pointer' }}
                                           />
-                                          <div style={{ flex: 1, color: isChecked ? '#1e3a8a' : '#334155', fontWeight: isChecked ? 600 : 400 }}>
-                                            <RichText content={opt || `Option ${oi + 1}`} emptyStateText={`Option ${oi + 1}`} />
+                                          <div style={{ flex: 1, color: isChecked ? '#0369a1' : '#334155', fontWeight: isChecked ? 600 : 400 }}>
+                                            <RichText className="mcq-option-text" content={opt || `Option ${oi + 1}`} emptyStateText={`Option ${oi + 1}`} />
                                           </div>
                                         </label>
                                     );
@@ -426,36 +452,44 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                         )
                       })
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        <label style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Your Submission</label>
-                        <textarea
-                          required
-                          rows={10}
-                          value={submissionText}
-                          onChange={(e) => setSubmissionText(e.target.value)}
-                          placeholder="Write your comprehensive submission here..."
-                          style={{ width: '100%', padding: 20, borderRadius: 16, border: '2px solid #e2e8f0', fontSize: 15, fontFamily: 'inherit', resize: 'vertical', outline: 'none', transition: 'border-color 0.2s', lineHeight: 1.6 }}
-                          onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
-                          onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
-                        />
-                      </div>
-                    )}
-
-                    <div style={{ background: '#f8fafc', padding: 20, borderRadius: 16, border: '1px solid #e2e8f0' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
-                            🔗 Attachment URL <span style={{ fontSize: 13, color: '#64748b', fontWeight: 400 }}>(Optional)</span>
-                        </label>
-                        <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b' }}>Link to your GitHub repo, Google Drive folder, or external workspace.</p>
-                        <input
-                            type="url"
-                            placeholder="https://..."
-                            value={attachmentUrl}
-                            onChange={(e) => setAttachmentUrl(e.target.value)}
-                            style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #e2e8f0', fontSize: 15, outline: 'none', transition: 'border-color 0.2s' }}
+                      task.assignmentType === 'MCQ' ? (
+                        <div style={{ padding: 24, textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: 16, border: '1px solid #e2e8f0' }}>
+                          No questions available for this assignment.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          <label style={{ fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Your Submission</label>
+                          <textarea
+                            required
+                            rows={10}
+                            value={submissionText}
+                            onChange={(e) => setSubmissionText(e.target.value)}
+                            placeholder="Write your comprehensive submission here..."
+                            style={{ width: '100%', padding: 20, borderRadius: 16, border: '2px solid #e2e8f0', fontSize: 15, fontFamily: 'inherit', resize: 'vertical', outline: 'none', transition: 'border-color 0.2s', lineHeight: 1.6 }}
                             onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
                             onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
-                        />
-                    </div>
+                          />
+                        </div>
+                      )
+                    )}
+
+                    {task.assignmentType !== 'MCQ' && (
+                      <div style={{ background: '#f8fafc', padding: 20, borderRadius: 16, border: '1px solid #e2e8f0' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>
+                              🔗 Attachment URL <span style={{ fontSize: 13, color: '#64748b', fontWeight: 400 }}>(Optional)</span>
+                          </label>
+                          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b' }}>Link to your GitHub repo, Google Drive folder, or external workspace.</p>
+                          <input
+                              type="url"
+                              placeholder="https://..."
+                              value={attachmentUrl}
+                              onChange={(e) => setAttachmentUrl(e.target.value)}
+                              style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '2px solid #e2e8f0', fontSize: 15, outline: 'none', transition: 'border-color 0.2s' }}
+                              onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
+                              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                          />
+                      </div>
+                    )}
                     
                 </form>
               </div>

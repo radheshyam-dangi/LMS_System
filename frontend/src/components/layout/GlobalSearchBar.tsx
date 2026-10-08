@@ -97,7 +97,7 @@ export function GlobalSearchBar({ activeRole }: GlobalSearchBarProps) {
         const res = await searchService.globalSearch(debouncedQuery, accessToken, activeRole);
         if (isMounted && !abortController.signal.aborted) {
           setResults(res.results);
-          setIsLoading(false);
+          // setIsLoading(false);
           setSelectedIndex(-1); // reset selection
         }
       } catch (error: any) {
@@ -108,8 +108,8 @@ export function GlobalSearchBar({ activeRole }: GlobalSearchBarProps) {
     };
 
     fetchSearch();
-    return () => { 
-      isMounted = false; 
+    return () => {
+      isMounted = false;
       abortController.abort();
     };
   }, [debouncedQuery, accessToken, activeRole]);
@@ -139,7 +139,7 @@ export function GlobalSearchBar({ activeRole }: GlobalSearchBarProps) {
       const rect = containerRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
       const spaceAbove = rect.top;
-      
+
       if (spaceBelow < 400 && spaceAbove > spaceBelow) {
         setDropdownPos({ top: 'auto', bottom: 'calc(100% + 8px)' });
       } else {
@@ -175,13 +175,14 @@ export function GlobalSearchBar({ activeRole }: GlobalSearchBarProps) {
     setQuery('');
     setDebouncedQuery('');
     inputRef.current?.blur();
-    
+
     let navUrl = result.url;
-    // Ensure assignments open the specific item via id parameter
-    if (result.type === 'assignment' && !navUrl.includes('id=')) {
+
+    // Ensure assignments and learning paths open the specific item via id parameter
+    if ((result.type === 'assignment' || result.type === 'learning_path') && !navUrl.includes('id=')) {
       navUrl = navUrl.includes('?') ? `${navUrl}&id=${result.id}` : `${navUrl}?id=${result.id}`;
     }
-    
+
     // Navigate directly
     navigate(navUrl);
   };
@@ -222,7 +223,7 @@ export function GlobalSearchBar({ activeRole }: GlobalSearchBarProps) {
         }}
         onFocus={() => setIsOpen(true)}
         onKeyDown={handleInputKeyDown}
-        style={{ 
+        style={{
           width: '100%',
           outline: 'none',
           transition: 'box-shadow 0.2s',
@@ -265,10 +266,10 @@ export function GlobalSearchBar({ activeRole }: GlobalSearchBarProps) {
               No results for "{query}"
             </div>
           ) : flatResults.length === 0 && debouncedQuery.trim().length < 1 ? (
-             <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
+            <div style={{ padding: '24px', textAlign: 'center', color: '#64748b', fontSize: '13px' }}>
               <Search size={20} style={{ margin: '0 auto 8px', color: '#cbd5e1' }} />
               Type to start searching...
-             </div>
+            </div>
           ) : (
             <>
               {Object.entries(groupedResults).map(([groupName, items]) => (

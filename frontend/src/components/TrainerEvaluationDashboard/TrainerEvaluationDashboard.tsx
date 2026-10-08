@@ -146,7 +146,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           if (category === 'evaluationMode') return true;
           const selectedValues = selectedValuesStr.split(',').map(s => normalize(s));
           if (selectedValues.length === 0) return true;
-          
+
           if (category === 'status') {
             const status = normalize(assignment.status || 'pending');
             if (selectedValues.includes('pending')) {
@@ -192,7 +192,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Approved: 0, Rejected: 0, 'Needs Improvement': 0 };
     roleFilteredAssignments.forEach((a: any) => {
       let st = (a.status || 'Pending').toLowerCase();
-      
+
       if (st === 'accepted' || st === 'approved' || st === 'evaluated') {
         counts['Approved'] = (counts['Approved'] || 0) + 1;
       } else if (st === 'needs_improvement') {
@@ -229,7 +229,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   const closeViewEditModals = () => { setExpandedAssignmentId(null); setEditAssignment(null); clearIdParam(); };
 
   // ─── Evaluation handlers ───────────────────────────────────────────────
-    const handleOpenReview = async (sub: any) => {
+  const handleOpenReview = async (sub: any) => {
     setSelectedSub(sub);
     setEvalScore(sub.aiEvaluationResult?.totalScore ?? (sub.assignment?.maxScore || 100));
     setEvalFeedback(sub.aiEvaluationResult?.overallRemark || '');
@@ -409,12 +409,12 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 placeholder="Search assignments or tasks..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  padding: '12px 16px 12px 40px', 
-                  borderRadius: '8px', 
-                  border: '1px solid #e2e8f0', 
-                  fontSize: '14px', 
+                style={{
+                  width: '100%',
+                  padding: '12px 16px 12px 40px',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  fontSize: '14px',
                   outline: 'none',
                   boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
                   transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
@@ -501,7 +501,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                       borderRadius: '99px', fontSize: '12px', fontWeight: 600
                     }}>
                       <span>Viewing: {title}</span>
-                      <button 
+                      <button
                         onClick={() => {
                           const newFilters = { ...localFiltersState };
                           delete newFilters.id;
@@ -519,7 +519,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 let categoryLabel = key;
                 if (key === 'type') categoryLabel = 'Type';
                 if (key === 'difficulty') categoryLabel = 'Difficulty';
-                
+
                 const filterOptions: Record<string, { label: string, value: string }[]> = {
                   difficulty: [
                     { label: 'Basic', value: 'basic' },
@@ -531,7 +531,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                     { label: 'External', value: 'external' }
                   ]
                 };
-                
+
                 return value.split(',').map(v => {
                   const opt = filterOptions[key]?.find(o => String(o.value).toLowerCase() === String(v).toLowerCase().trim());
                   const valLabel = opt ? opt.label : v;
@@ -542,7 +542,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                       borderRadius: '99px', fontSize: '12px', fontWeight: 600
                     }}>
                       <span>{categoryLabel}: {valLabel}</span>
-                      <button 
+                      <button
                         onClick={() => {
                           const currentVals = value.split(',');
                           const newVals = currentVals.filter(val => val !== v);
@@ -577,16 +577,15 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           ) : filteredAssignments.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
               <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>
-                {localFiltersState.difficulty ? `No assignments available at the ${
-                  localFiltersState.difficulty.split(',').map(d => [
-                    { label: 'Basic', value: 'basic' },
-                    { label: 'Medium', value: 'medium' },
-                    { label: 'Hard', value: 'hard' }
-                  ].find(o => String(o.value).toLowerCase() === String(d).toLowerCase().trim())?.label || d).join(', ')
-                } level.` : 'No assignments match these filters'}
+                {localFiltersState.difficulty ? `No assignments available at the ${localFiltersState.difficulty.split(',').map(d => [
+                  { label: 'Basic', value: 'basic' },
+                  { label: 'Medium', value: 'medium' },
+                  { label: 'Hard', value: 'hard' }
+                ].find(o => String(o.value).toLowerCase() === String(d).toLowerCase().trim())?.label || d).join(', ')
+                  } level.` : 'No assignments match these filters'}
               </h3>
               <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px' }}>Try adjusting or clearing your filters to see more assignments.</p>
-              <button 
+              <button
                 onClick={() => setSearchParams({})}
                 style={{ padding: '8px 16px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontWeight: 600, cursor: 'pointer' }}
               >
@@ -609,7 +608,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 // If it's pending, let's use the 'Submitted' yellow color as it means pending evaluation
                 const colorKey = displayStatus === 'Pending' ? 'Submitted' : displayStatus;
                 const sc = STATUS_COLORS[colorKey] || STATUS_COLORS.Pending;
-                
+
                 const pc = PRIORITY_COLORS[assign.priority || 'Medium'] || PRIORITY_COLORS.Medium;
                 let traineeName = 'Unassigned';
                 if (assign.trainee || assign.assignedTo) {
@@ -741,9 +740,9 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                           {assign.instructions && (
                             <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '12px' }}>
                               <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Instructions</div>
-                              <div 
-                                style={{ fontSize: '13px', color: '#0c4a6e', margin: 0 }} 
-                                dangerouslySetInnerHTML={{ __html: assign.instructions }} 
+                              <div
+                                style={{ fontSize: '13px', color: '#0c4a6e', margin: 0 }}
+                                dangerouslySetInnerHTML={{ __html: assign.instructions }}
                               />
                             </div>
                           )}
@@ -839,7 +838,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                             <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 400, marginLeft: '8px' }}>({sub.trainee?.email})</span>
                           </div>
                           <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px' }}>
-                            Submitted: <strong className="text-truncate" style={{ display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom' }}>"{sub.assignment?.title}"</strong><br/>
+                            Submitted: <strong className="text-truncate" style={{ display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom' }}>"{sub.assignment?.title}"</strong><br />
                             Max Score: {sub.assignment?.maxScore || 100} pts
                           </div>
                           <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
@@ -950,7 +949,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                             )}
                           </div>
                         )}
-                        
+
                         {!activeMode && aiEvaluated.length === 0 && manualPending.length === 0 && (
                           <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#475569', fontSize: '14px' }}>
                             All caught up! No pending evaluations.
@@ -968,7 +967,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
       {/* ═══ EVALUATION MODAL ═══ */}
       {selectedSub && (
-        <SubmissionDetailView 
+        <SubmissionDetailView
           submission={selectedSub}
           accessToken={accessToken}
           isAdminView={isAdminView}

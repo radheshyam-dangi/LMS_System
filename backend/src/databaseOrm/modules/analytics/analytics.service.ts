@@ -951,8 +951,6 @@ export class AnalyticsEntityService {
           : matchesUserAndStatus;
       });
 
-      console.log(`[DEBUG] userId: ${userId}, traineeEvaluatedSubs length: ${traineeEvaluatedSubs.length}`);
-
       traineeEvaluatedSubs.forEach(s => {
         const aId = s.assignment?.id;
         if (aId) {
@@ -968,7 +966,6 @@ export class AnalyticsEntityService {
       const gradedItems = Array.from(bestScoreByAssignment.values());
       traineeTotalGainedScore = gradedItems.reduce((acc, val) => acc + val.score, 0);
       traineeTotalMaxScore = gradedItems.reduce((acc, val) => acc + val.max, 0);
-      console.log(`[DEBUG] gained: ${traineeTotalGainedScore}, max: ${traineeTotalMaxScore}`);
       
       averageScore = traineeTotalMaxScore > 0 
           ? Math.round((traineeTotalGainedScore / traineeTotalMaxScore) * 100) 

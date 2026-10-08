@@ -58,7 +58,7 @@ export class SearchService {
     if (role === 'Trainer') {
       lpQuery = lpQuery.andWhere('lp.createdBy = :userId', { userId: user.id });
     } else if (role === 'Trainee') {
-      lpQuery = lpQuery.andWhere(`:userId = ANY(lp.assignedToTraineeIds)`, { userId: user.id });
+      lpQuery = lpQuery.andWhere(`lp.assignedToTraineeIds @> :userIdArray`, { userIdArray: JSON.stringify([user.id]) });
     }
 
     const paths = await lpQuery.take(5).getMany();
@@ -83,7 +83,7 @@ export class SearchService {
       moduleQuery = moduleQuery.andWhere('m.createdBy = :userId', { userId: user.id });
     } else if (role === 'Trainee') {
       // Find modules in paths assigned to trainee
-      moduleQuery = moduleQuery.andWhere(`:userId = ANY(lp.assignedToTraineeIds)`, { userId: user.id });
+      moduleQuery = moduleQuery.andWhere(`lp.assignedToTraineeIds @> :userIdArray`, { userIdArray: JSON.stringify([user.id]) });
     }
 
     const modules = await moduleQuery.take(5).getMany();
@@ -110,7 +110,7 @@ export class SearchService {
       // Basic check: if it's external, check assignedToTraineeIds
       // Otherwise, assume Trainee assignments view handles deep permission checks.
       // For global search, we will restrict to assignments created by someone or assigned to the trainee
-      asgQuery = asgQuery.andWhere(`(:userId = ANY(a.assignedToTraineeIds) OR a.isExternal = false)`, { userId: user.id });
+      asgQuery = asgQuery.andWhere(`(a.assignedToTraineeIds @> :userIdArray OR a.isExternal = false)`, { userIdArray: JSON.stringify([user.id]) });
     }
 
     const assignments = await asgQuery.take(5).getMany();

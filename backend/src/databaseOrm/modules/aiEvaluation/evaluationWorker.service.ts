@@ -297,7 +297,7 @@ Return ONLY valid JSON matching this exact shape:
     
     // clamp score
     parsed.score = Math.min(Math.max(Number(parsed.score) || 0, 0), question.maxPoints);
-    return parsed;
+    return parsed;  
   }
 
   private async routeResults(submission: AssignmentSubmissionEntity, assignment: AssignmentEntity, questionScores: any[], hasError: boolean) {

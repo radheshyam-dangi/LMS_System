@@ -31,7 +31,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
-  
+
   const localFiltersState = useMemo(() => {
     const filters: Record<string, string> = {};
     searchParams.forEach((value, key) => {
@@ -44,9 +44,9 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const [submitTarget, setSubmitTarget] = useState<any | null>(null);
   const [viewDetailsTarget, setViewDetailsTarget] = useState<any | null>(null);
   const lastOpenedIdRef = useRef<string | null>(null);
-  
-  
-  
+
+
+
   const [instructionsOpen, setInstructionsOpen] = useState(true);
 
   const clearIdParam = () => {
@@ -89,11 +89,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         const sub = submissionByAssignment.get(targetAssignment.id);
         const status = sub?.status;
         const rawStatus = String(status || 'AVAILABLE').toUpperCase();
-        
+
         if (rawStatus === 'EVALUATED' || rawStatus === 'APPROVED' || rawStatus === 'REJECTED' || rawStatus === 'NEEDS_IMPROVEMENT') {
-           setViewDetailsTarget({ assignment: targetAssignment, submission: sub });
+          setViewDetailsTarget({ assignment: targetAssignment, submission: sub });
         } else {
-           setSubmitTarget(targetAssignment);
+          setSubmitTarget(targetAssignment);
         }
       }
     }
@@ -129,12 +129,12 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           if (category === 'evaluationMode') return true; // Handled separately
           const selectedValues = selectedValuesStr.split(',').map(s => normalize(s));
           if (selectedValues.length === 0) return true;
-          
+
           if (category === 'status') {
             const sub = submissionByAssignment.get(assignment.id);
             let status = normalize(sub?.status || 'pending');
             if (assignment.isLocked) status = 'locked';
-            
+
             if (selectedValues.includes('pending')) {
               if (status !== 'submitted' && status !== 'approved' && status !== 'evaluated' && status !== 'rejected' && status !== 'ai_evaluated_pending_review' && status !== 'pending_manual_review' && status !== 'needs_improvement') {
                 return true;
@@ -199,7 +199,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     }
   ];
 
-    if (loading) {
+  if (loading) {
     return <div style={{ padding: 24, color: '#64748b' }}>Loading your assignments...</div>;
   }
 
@@ -237,12 +237,12 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             placeholder="Search assignments or tasks..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            style={{ 
-              width: '100%', 
-              padding: '12px 16px 12px 40px', 
-              borderRadius: '8px', 
-              border: '1px solid #e2e8f0', 
-              fontSize: '14px', 
+            style={{
+              width: '100%',
+              padding: '12px 16px 12px 40px',
+              borderRadius: '8px',
+              border: '1px solid #e2e8f0',
+              fontSize: '14px',
               outline: 'none',
               boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
               transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
@@ -292,7 +292,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
           {Object.entries(localFiltersState).map(([key, value]) => {
             if (!value || key === 'evaluationMode') return null;
-            
+
             if (key === 'id') {
               const targetAssign = assignments.find(a => a.id === value);
               let title = targetAssign?.title;
@@ -307,7 +307,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   borderRadius: '99px', fontSize: '12px', fontWeight: 600
                 }}>
                   <span>Viewing: {title}</span>
-                  <button 
+                  <button
                     onClick={() => {
                       const newFilters = { ...localFiltersState };
                       delete newFilters.id;
@@ -333,7 +333,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   borderRadius: '99px', fontSize: '12px', fontWeight: 600
                 }}>
                   <span>{label}: {valLabel}</span>
-                  <button 
+                  <button
                     onClick={() => {
                       const currentVals = value.split(',');
                       const newVals = currentVals.filter(val => val !== v);
@@ -366,12 +366,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       {filtered.length === 0 && !loading && (
         <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>
-            {localFiltersState.difficulty ? `No assignments available at the ${
-              localFiltersState.difficulty.split(',').map(d => filterCategories.find(c => c.id === 'difficulty')?.options.find(o => String(o.value).toLowerCase() === String(d).toLowerCase().trim())?.label || d).join(', ')
-            } level.` : 'No assignments match these filters'}
+            {localFiltersState.difficulty ? `No assignments available at the ${localFiltersState.difficulty.split(',').map(d => filterCategories.find(c => c.id === 'difficulty')?.options.find(o => String(o.value).toLowerCase() === String(d).toLowerCase().trim())?.label || d).join(', ')
+              } level.` : 'No assignments match these filters'}
           </h3>
           <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px' }}>Try adjusting or clearing your filters to see more assignments.</p>
-          <button 
+          <button
             onClick={() => setSearchParams({})}
             style={{ padding: '8px 16px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontWeight: 600, cursor: 'pointer' }}
           >
@@ -385,26 +384,26 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           const getCardData = (a: any) => {
             const sub = submissionByAssignment.get(a.id);
             let rawStatus = (sub?.status || 'Pending').toUpperCase();
-            
+
             if (a.isLocked) {
               rawStatus = 'LOCKED';
             }
 
             const deadlineDate = a.computedDeadline ? new Date(a.computedDeadline) : null;
             const now = new Date();
-            
+
             let displayStatus = 'Pending';
             let isOverdue = false;
             let priority = 2; // PENDING
             let isBelowCutoff = false;
-            
+
             if (rawStatus === 'LOCKED') {
               displayStatus = 'Locked';
               priority = 6;
             } else if (rawStatus === 'APPROVED' || rawStatus === 'EVALUATED') {
               const maxScore = a.maxScore || 100;
               isBelowCutoff = (typeof sub?.score === 'number') && (sub.score / maxScore) * 100 < 35;
-              
+
               if (isBelowCutoff) {
                 displayStatus = 'Approved'; // Remains "Approved" but styled differently
                 priority = 1;
@@ -445,9 +444,9 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 priority = 5;
               }
             }
-            
-            const isExpired = sub?.deadline 
-              ? new Date(sub.deadline).getTime() < now.getTime() 
+
+            const isExpired = sub?.deadline
+              ? new Date(sub.deadline).getTime() < now.getTime()
               : (deadlineDate ? now > deadlineDate : false);
 
             return {
@@ -466,33 +465,33 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           };
 
           const enrichedCards = filtered.map(getCardData);
-          
+
           enrichedCards.sort((cardA, cardB) => {
             if (cardA.priority !== cardB.priority) {
               return cardA.priority - cardB.priority;
             }
-            
+
             if (cardA.priority === 1 || cardA.priority === 2) {
               if (!cardA.deadlineDate && !cardB.deadlineDate) return 0;
               if (!cardA.deadlineDate) return 1;
               if (!cardB.deadlineDate) return -1;
               return cardA.deadlineDate.getTime() - cardB.deadlineDate.getTime();
             }
-            
+
             if (cardA.priority === 3) {
               if (!cardA.submittedAt && !cardB.submittedAt) return 0;
               if (!cardA.submittedAt) return 1;
               if (!cardB.submittedAt) return -1;
               return cardB.submittedAt.getTime() - cardA.submittedAt.getTime();
             }
-            
+
             if (cardA.priority === 4) {
               if (!cardA.evaluatedAt && !cardB.evaluatedAt) return 0;
               if (!cardA.evaluatedAt) return 1;
               if (!cardB.evaluatedAt) return -1;
               return cardB.evaluatedAt.getTime() - cardA.evaluatedAt.getTime();
             }
-            
+
             return 0;
           });
 
@@ -518,28 +517,28 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             // Subtitle tag
             const subtypeLabel = a.module?.title || a.lesson?.module?.title || 'Module task';
 
-              const handleRowClick = () => {
-                if (displayStatus === 'Locked') {
-                  const pathId = a.learningPath?.id || a.learningPathId || a.module?.learningPath?.id || a.module?.learningPathId || a.lesson?.module?.learningPath?.id || a.lesson?.module?.learningPathId;
-                  const moduleId = a.module?.id || a.moduleId || a.lesson?.module?.id || a.lesson?.moduleId;
-                  if (moduleId) {
-                    if (pathId) {
-                      navigate(`/learning-paths/${pathId}/modules/${moduleId}`, { state: { activeTab: 'Tasks' } });
-                    } else {
-                      navigate(`/modules/${moduleId}`, { state: { activeTab: 'Tasks' } });
-                    }
-                  } else if (pathId) {
-                    navigate(`/modules`, { state: { pathId, pathName: a.learningPath?.title || 'Learning Path', activeTab: 'Tasks' } });
+            const handleRowClick = () => {
+              if (displayStatus === 'Locked') {
+                const pathId = a.learningPath?.id || a.learningPathId || a.module?.learningPath?.id || a.module?.learningPathId || a.lesson?.module?.learningPath?.id || a.lesson?.module?.learningPathId;
+                const moduleId = a.module?.id || a.moduleId || a.lesson?.module?.id || a.lesson?.moduleId;
+                if (moduleId) {
+                  if (pathId) {
+                    navigate(`/learning-paths/${pathId}/modules/${moduleId}`, { state: { activeTab: 'Tasks' } });
+                  } else {
+                    navigate(`/modules/${moduleId}`, { state: { activeTab: 'Tasks' } });
                   }
+                } else if (pathId) {
+                  navigate(`/modules`, { state: { pathId, pathName: a.learningPath?.title || 'Learning Path', activeTab: 'Tasks' } });
                 }
-              };
+              }
+            };
 
-              return (
-                <div
-                  key={a.id}
-                  className="hover-card-anim"
-                  title={displayStatus === 'Locked' ? a.lockReason || 'Locked task. Click to view prerequisites.' : ''}
-                  onClick={handleRowClick}
+            return (
+              <div
+                key={a.id}
+                className="hover-card-anim"
+                title={displayStatus === 'Locked' ? a.lockReason || 'Locked task. Click to view prerequisites.' : ''}
+                onClick={handleRowClick}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -590,7 +589,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 <div style={{ flex: '0 0 240px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', fontSize: 12, color: '#64748b', gap: 6, flexWrap: 'wrap' }}>
                   {isLockedByLessons ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                       Unlocks after prerequisite lessons
                     </span>
                   ) : showDeadline && (sub || a.computedDeadline) ? (
@@ -689,13 +688,13 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                                   prefilledMcq = parsed.answers || {};
                                   prefilledSubj = parsed.textAnswers || {};
                                 }
-                              } catch(e) {}
+                              } catch (e) { }
                             }
 
-                            
-                            
-                            
-                            
+
+
+
+
                           }}
                           style={{
                             padding: '8px 16px',
@@ -727,16 +726,16 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         )}
       </div>
 
-            {submitTarget && (
+      {submitTarget && (
         <SharedAssignmentModal
           task={submitTarget}
           submission={submissionByAssignment.get(submitTarget.id)}
           accessToken={accessToken}
           onClose={() => { setSubmitTarget(null); clearIdParam(); }}
           onSuccess={() => {
-              loadData();
-              refreshNotifications();
-              clearIdParam();
+            loadData();
+            refreshNotifications();
+            clearIdParam();
           }}
         />
       )}
@@ -744,14 +743,14 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       {/* View Details Modal for Approved Assignments */}
       {viewDetailsTarget && (() => {
         const { assignment, submission } = viewDetailsTarget;
-        const traineeName = currentUser?.firstName 
+        const traineeName = currentUser?.firstName
           ? `${currentUser.firstName} ${currentUser.lastName || ''}`.trim()
           : currentUser?.name || 'Trainee';
-          
+
         const assignerName = assignment.createdBy?.firstName
           ? `${assignment.createdBy.firstName} ${assignment.createdBy.lastName || ''}`.trim()
           : assignment.createdBy?.name || 'Trainer';
-          
+
         const evaluatorName = submission.evaluatedBy?.firstName
           ? `${submission.evaluatedBy.firstName} ${submission.evaluatedBy.lastName || ''}`.trim()
           : submission.evaluatedBy?.name || 'Trainer';
@@ -776,12 +775,12 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           if (rawText.trim().startsWith('{')) {
             parsedAnswers = JSON.parse(rawText);
           }
-        } catch(e) {}
+        } catch (e) { }
 
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, backdropFilter: 'blur(4px)' }}>
             <div style={{ background: '#fff', width: '700px', borderRadius: '20px', maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.22)' }}>
-              
+
               <div style={{ padding: '22px 26px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>📄 Evaluation Details: {assignment.title}</h3>
@@ -810,13 +809,13 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 )}
 
                 <h4 style={{ margin: '0 0 16px', fontSize: '15px', color: '#0f172a' }}>Answers & Questions ({questions.length || 1})</h4>
-                
+
                 {questions.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {questions.map((q: any, idx: number) => {
                       const ansObj = parsedAnswers.answers || parsedAnswers || {};
                       const textAnsObj = parsedAnswers.textAnswers || parsedAnswers || {};
-                      
+
                       let userAnswer = '';
                       if (isMcq) {
                         const optIdx = ansObj[idx];
@@ -825,7 +824,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                         const extractedAns = textAnsObj[idx] || ansObj[idx] || parsedAnswers[idx];
                         userAnswer = (extractedAns && typeof extractedAns === 'string') ? extractedAns : (parsedAnswers.raw ? parsedAnswers.raw : rawText) || 'No answer provided';
                       }
-                      
+
                       const qPoints = q.maxPoints || q.points || 10;
                       const qText = (q.questionText || q.text || q.question || '').replace(/\\n/g, '\n').replace(/\n$/, '').trim();
                       const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ';
@@ -844,12 +843,12 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                                 const ansVal = ansObj[idx];
                                 const isSelected = Array.isArray(ansVal) ? ansVal.includes(optIdx) : ansVal === optIdx;
                                 const isCorrect = Array.isArray(q.correctIndex) ? q.correctIndex.includes(optIdx) : q.correctIndex === optIdx;
-                                
+
                                 let bg = '#f8fafc';
                                 let border = '1px solid #e2e8f0';
                                 let icon = '○';
                                 let textColor = '#334155';
-                                
+
                                 if (isSelected && isCorrect) {
                                   bg = '#f0fdf4';
                                   border = '1px solid #22c55e';
@@ -866,7 +865,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                                   icon = '✓';
                                   textColor = '#166534';
                                 }
-                                
+
                                 return (
                                   <div key={optIdx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: bg, border, borderRadius: '8px', fontSize: '13px', color: textColor, fontWeight: isSelected || isCorrect ? 600 : 400 }}>
                                     <span style={{ fontSize: '14px', opacity: isSelected || isCorrect ? 1 : 0.4 }}>{icon}</span>
@@ -887,11 +886,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   </div>
                 ) : (
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                     <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap' }}>
-                        <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Submission:</span>
-                        {parsedAnswers.raw ? parsedAnswers.raw : 
-                         (rawText.trim().startsWith('{') ? 'JSON Submission (See parsed answers)' : rawText)}
-                     </div>
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                      <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Submission:</span>
+                      {parsedAnswers.raw ? parsedAnswers.raw :
+                        (rawText.trim().startsWith('{') ? 'JSON Submission (See parsed answers)' : rawText)}
+                    </div>
                   </div>
                 )}
               </div>
