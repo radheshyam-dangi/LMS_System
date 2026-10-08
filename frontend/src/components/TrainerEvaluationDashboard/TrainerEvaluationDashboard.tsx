@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { assignmentService } from '../../services/assignmentService';
 import { learningPathService } from '../../services/learningPathService';
 import { userService } from '../../services/userService';
 import { Plus, CheckCircle, Clock, Search, ExternalLink, X, MessageSquare, Save, Users, AlertCircle, PlayCircle, Eye, Edit2, Archive, Link as LinkIcon, Filter } from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
+import { useToast } from '../../context/ToastContext';
 import { useSearch } from '../../context/SearchContext';
 import { useSearchParams } from 'react-router-dom';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
@@ -44,6 +45,7 @@ const formatDuration = (d?: number, h?: number, m?: number) => {
 
 export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSection, activeRole }: TrainerEvaluationDashboardProps) {
   const { refresh: refreshNotifications, markRelatedRead } = useNotifications();
+  const toast = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -71,6 +73,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   // ─── View / Edit Modal State ───────────────────────────────────────────
   const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
   const [editAssignment, setEditAssignment] = useState<any | null>(null);
+  const lastOpenedIdRef = useRef<string | null>(null);
 
   // ─── Active main tab ───────────────────────────────────────────────────
   const currentTab = (activeSection === 'Evaluations' || window.location.pathname.includes('/evaluations')) ? 'evaluations' : 'assignments';
@@ -126,6 +129,15 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
       });
     }
 
+    if (localFiltersState.id) {
+      // It could be an assignment ID or a submission ID. Check both.
+      result = result.filter((a: any) => {
+        if (a.id === localFiltersState.id) return true;
+        // Check if any pending submission for this assignment matches the ID
+        const matchingSub = pendingSubmissions.find((s: any) => s.id === localFiltersState.id && (s.assignment?.id === a.id || s.assignmentId === a.id));
+        return !!matchingSub;
+      });
+    }
     const normalize = (v: any) => String(v ?? '').trim().toLowerCase();
 
     if (Object.keys(localFiltersState).length > 0) {
@@ -159,7 +171,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
 
     return result;
-  }, [roleFilteredAssignments, searchQuery, localFiltersState]);
+  }, [roleFilteredAssignments, searchQuery, localFiltersState, pendingSubmissions]);
 
   const getActiveFilterCount = (filters: Record<string, string>, excludeKeys: string[] = []) => {
     return Object.entries(filters).reduce((count, [key, value]) => {
@@ -207,7 +219,14 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
   // ─── Modal Handlers ──────────────────────────────────────────────
   const handleViewAssignment = (assign: any) => { setExpandedAssignmentId(assign.id); };
-  const closeViewEditModals = () => { setExpandedAssignmentId(null); setEditAssignment(null); };
+  const clearIdParam = () => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    newParams.delete('id');
+    setSearchParams(newParams);
+    lastOpenedIdRef.current = null;
+  };
+
+  const closeViewEditModals = () => { setExpandedAssignmentId(null); setEditAssignment(null); clearIdParam(); };
 
   // ─── Evaluation handlers ───────────────────────────────────────────────
     const handleOpenReview = async (sub: any) => {
@@ -224,11 +243,28 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
   };
 
+  useEffect(() => {
+    const idToOpen = searchParams.get('id');
+    if (idToOpen && idToOpen !== lastOpenedIdRef.current && (pendingSubmissions.length > 0 || assignments.length > 0)) {
+      const targetSub = pendingSubmissions.find((s: any) => s.id === idToOpen || s.assignment?.id === idToOpen);
+      if (targetSub) {
+        lastOpenedIdRef.current = idToOpen;
+        handleOpenReview(targetSub);
+        return;
+      }
+      const targetAssign = assignments.find((a: any) => a.id === idToOpen);
+      if (targetAssign) {
+        lastOpenedIdRef.current = idToOpen;
+        handleViewAssignment(targetAssign);
+      }
+    }
+  }, [pendingSubmissions, assignments, searchParams]);
+
   const handleEvaluate = async (status: 'Approved' | 'Rejected') => {
     // This unused handler has been kept for compatibility if called from elsewhere.
     // Real logic is handled in SubmissionDetailView component itself now.
     if (status === 'Rejected' && !evalFeedback.trim()) {
-      alert('Feedback is mandatory when rejecting a submission.');
+      toast.warning('Feedback is mandatory when rejecting a submission.');
       return;
     }
     setIsEvaluating(true);
@@ -242,7 +278,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
       await loadAll();
       await refreshNotifications();
     } catch (err: any) {
-      alert(err.response?.data?.message || err.message || 'Evaluation failed.');
+      toast.error(err.response?.data?.message || err.message || 'Evaluation failed.');
     } finally {
       setIsEvaluating(false);
     }
@@ -450,9 +486,37 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
               {Object.entries(localFiltersState).map(([key, value]) => {
                 if (!value || key === 'status' || key === 'evaluationMode') return null;
+
+                if (key === 'id') {
+                  const targetAssign = assignments.find(a => a.id === value);
+                  let title = targetAssign?.title;
+                  if (!title) {
+                    const targetSub = pendingSubmissions.find(s => s.id === value);
+                    title = targetSub?.assignment?.title || 'Specific Assignment';
+                  }
+                  return (
+                    <div key={`id-${value}`} style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5',
+                      borderRadius: '99px', fontSize: '12px', fontWeight: 600
+                    }}>
+                      <span>Viewing: {title}</span>
+                      <button 
+                        onClick={() => {
+                          const newFilters = { ...localFiltersState };
+                          delete newFilters.id;
+                          setSearchParams(newFilters);
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex' }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  );
+                }
+
                 // Map category labels manually since filterCategories is hardcoded in the panel component above
                 let categoryLabel = key;
-                if (key === 'status') categoryLabel = 'Status';
                 if (key === 'type') categoryLabel = 'Type';
                 if (key === 'difficulty') categoryLabel = 'Difficulty';
                 
@@ -908,9 +972,10 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           submission={selectedSub}
           accessToken={accessToken}
           isAdminView={isAdminView}
-          onClose={() => setSelectedSub(null)}
+          onClose={() => { setSelectedSub(null); clearIdParam(); }}
           onEvaluated={() => {
             setSelectedSub(null);
+            clearIdParam();
             loadAll();
             refreshNotifications();
           }}

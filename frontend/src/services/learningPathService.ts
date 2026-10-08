@@ -46,7 +46,7 @@ export const learningPathService = {
   },
 
   // ASSIGN TRAINEE ENDPOINT
-assignTraineeToPath: async (
+  assignTraineeToPath: async (
     pathId: string, 
     traineeIds: string | string[], 
     token: string
@@ -54,23 +54,15 @@ assignTraineeToPath: async (
     // Standardize to an array
     const idsArray = Array.isArray(traineeIds) ? traineeIds : [traineeIds];
 
-    const response = await fetch(`${API_BASE_URL}/learningPaths/${pathId}/assign`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
+    const response = await axios.post(
+      `${API_BASE_URL}/learningPaths/${pathId}/assign`,
+      {
         traineeIds: idsArray,
         traineeId: idsArray[0] // Included for backwards compatibility with single-id backend handlers
-      }),
-    });
+      },
+      getAuthHeaders(token)
+    );
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || 'Failed to assign trainees.');
-    }
-
-    return await response.json();
+    return response.data;
   },
 };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { assignmentService } from '../../services/assignmentService';
+import { useToast } from '../../context/ToastContext';
 
 interface SubmissionDetailViewProps {
   submission: any;
@@ -187,6 +188,7 @@ export function SubmissionDetailView({
 
   const [evalFeedback, setEvalFeedback] = useState<string>(submission.feedback || '');
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const toast = useToast();
 
   // Sync overall score when question scores are graded
   useEffect(() => {
@@ -222,12 +224,12 @@ export function SubmissionDetailView({
 
   const handleEvaluate = async (actionStatus: 'Approved' | 'Rejected') => {
     if (actionStatus === 'Rejected' && !evalFeedback.trim()) {
-      alert('A reason/feedback is required to reject a submission.');
+      toast.warning('A reason/feedback is required to reject a submission.');
       return;
     }
 
     if (actionStatus === 'Approved' && (evalScore === '' || evalScore == null)) {
-      alert('Score is required when approving a submission.');
+      toast.warning('Score is required when approving a submission.');
       return;
     }
 
@@ -243,10 +245,11 @@ export function SubmissionDetailView({
         },
         accessToken
       );
+      toast.success('Assignment evaluated successfully!');
       onEvaluated();
     } catch (err: any) {
       console.error('Failed to evaluate:', err);
-      alert(err.response?.data?.message || err.message || 'Failed to evaluate submission.');
+      toast.error(err.response?.data?.message || err.message || 'Failed to evaluate submission.');
     } finally {
       setIsEvaluating(false);
     }

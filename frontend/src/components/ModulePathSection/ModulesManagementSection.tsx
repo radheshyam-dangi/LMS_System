@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { learningPathService } from "../../services/learningPathService";
 import { curriculumService } from "../../services/curriculumService";
 import { progressService } from "../../services/lmsApi";
 import { assignmentService } from "../../services/assignmentService";
 import { useNotifications } from "../../context/NotificationContext";
+import { useToast } from "../../context/ToastContext";
 import { DeadlineDisplay } from "../DeadlineDisplay";
 import { ExpandableDescription } from "../ExpandableDescription/ExpandableDescription";
 import { LessonCard } from "../SharedCards/LessonCard";
@@ -35,9 +36,11 @@ export function ModulesManagementSection({
   onBack,
 }: ModulesProps) {
   const { moduleId: urlModuleId } = useParams<{ moduleId?: string }>();
+  const location = useLocation();
   const isTrainerOrAdmin = userRole === 'Admin' || userRole === 'Trainer';
   const isTrainee = userRole === 'Trainee';
   const { refresh: refreshNotifications } = useNotifications();
+  const toast = useToast();
 
   // ── List-level state ──────────────────────────────────────────────────────
   const [allPaths, setAllPaths] = useState<any[]>([]);
@@ -58,7 +61,7 @@ export function ModulesManagementSection({
   const [mySubs, setMySubs] = useState<any[]>([]);
 
   // ── Detail-view tab ───────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'Lessons' | 'Tasks' | 'Resources' | 'Assessments'>('Lessons');
+  const [activeTab, setActiveTab] = useState<'Lessons' | 'Tasks' | 'Resources' | 'Assessments'>((location.state as any)?.activeTab || 'Lessons');
 
   // ── New Module modal ──────────────────────────────────────────────────────
   const [showNewModuleModal, setShowNewModuleModal] = useState(false);
@@ -151,7 +154,7 @@ export function ModulesManagementSection({
     setOpenModuleId(moduleId);
     setModuleLoading(true);
     if (!preserveTab) {
-      setActiveTab('Lessons');
+      setActiveTab((location.state as any)?.activeTab || 'Lessons');
     }
     try {
       const [mod, subs, modStats] = await Promise.all([
@@ -164,6 +167,10 @@ export function ModulesManagementSection({
           : Promise.resolve(null),
       ]);
       setOpenModuleData(mod);
+      const modPathId = mod?.learningPathId || mod?.learningPath?.id;
+      if (modPathId && modPathId !== selectedPathId) {
+        setSelectedPathId(modPathId);
+      }
       setMySubs(Array.isArray(subs) ? subs : []);
       setModuleStats(modStats);
     } catch {
@@ -238,14 +245,14 @@ export function ModulesManagementSection({
       await progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { });
       await refreshNotifications();
     } catch (err: any) {
-      alert(err?.message || 'Could not mark lesson as watched.');
+      toast.error(err?.message || 'Could not mark lesson as watched.');
     }
   };
 
   // ── Create module ─────────────────────────────────────────────────────────
   const handleCreateModule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!moduleTitle.trim()) { alert('Module title is required.'); return; }
+    if (!moduleTitle.trim()) { toast.warning('Module title is required.'); return; }
     setIsCreating(true);
     try {
       const resources = moduleResourceUrl.trim()
@@ -275,7 +282,7 @@ export function ModulesManagementSection({
       const data = await curriculumService.fetchModulesByPath(selectedPathId, accessToken);
       setModules(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      alert(err.message || 'Failed to create module.');
+      toast.error(err.message || 'Failed to create module.');
     } finally {
       setIsCreating(false);
     }
@@ -294,7 +301,7 @@ export function ModulesManagementSection({
       });
       await loadAssignments();
     } catch (err: any) {
-      alert(err.message || 'Failed to start task');
+      toast.error(err.message || 'Failed to start task');
     }
   };
 
@@ -309,7 +316,7 @@ export function ModulesManagementSection({
       setSubmitTask(null);
       await loadAssignments();
     } catch (err: any) {
-      alert(err.message || 'Failed to restart task');
+      toast.error(err.message || 'Failed to restart task');
     }
   };
 
@@ -326,12 +333,12 @@ export function ModulesManagementSection({
       text = JSON.stringify({ answers: subjectiveAnswers });
       const hasMeaningfulAnswers = Object.values(subjectiveAnswers).some(val => val.trim().length > 0);
       if (!hasMeaningfulAnswers) {
-        alert('Please answer at least one question before submitting.');
+        toast.warning('Please answer at least one question before submitting.');
         return;
       }
     }
     if (!text.trim() || text === '{"answers":{}}') {
-      alert('Please provide a submission before submitting.');
+      toast.warning('Please provide a submission before submitting.');
       return;
     }
     setIsSubmitting(true);
@@ -341,8 +348,9 @@ export function ModulesManagementSection({
       setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); setAttachmentUrl('');
       if (openModuleId) await openModule(openModuleId);
       await refreshNotifications();
+      toast.success('Assignment submitted successfully!');
     } catch (err: any) {
-      alert(err?.response?.data?.message || err.message || 'Submit failed.');
+      toast.error(err?.response?.data?.message || err.message || 'Submit failed.');
     } finally {
       setIsSubmitting(false);
     }
@@ -446,7 +454,7 @@ export function ModulesManagementSection({
           : [
             `Master the core concepts and principles of ${openModuleData.title || 'this module'}`,
             `Complete all guided lessons and practical coursework`,
-            `Submit assessments to validate practical knowledge and understanding`,
+~            `Submit assessments to validate practical knowledge and understanding`,
             `Demonstrate proficiency across key competency metrics`,
           ];
 
@@ -779,7 +787,7 @@ export function ModulesManagementSection({
                         if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { });
                       }}
                       onMarkWatched={markLessonWatched}
-                      onClickLocked={() => lesson.isLocked && alert(lesson.lockReason)}
+                      onClickLocked={() => lesson.isLocked && toast.warning(lesson.lockReason)}
                     />
                   </div>
                 );
@@ -813,7 +821,7 @@ export function ModulesManagementSection({
                       isLocked={task.isLocked}
                       lockReason={task.lockReason}
                       isTrainee={isTrainee}
-                      onClickLocked={(r) => alert(r || 'Locked')}
+                      onClickLocked={(r) => toast.warning(r || 'Locked')}
                       onAttempt={(t) => { setSubmitTask(t); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
                     />
                   );

@@ -115,9 +115,9 @@ export class SearchService {
 
     const assignments = await asgQuery.take(5).getMany();
     assignments.forEach((a) => {
-      let url = '/assignments';
+      let url = `/assignments?id=${a.id}`;
       if (role === 'Trainer' || role === 'Admin') {
-        url = `/assignments?status=pending`; // As per Assignment routing
+        url = `/assignments?id=${a.id}&status=pending`; // As per Assignment routing
       }
       
       results.push({

@@ -48,7 +48,7 @@ export const TraineeHeroCard = ({ isLoading, hasProgress, lastAccessedTitle, pat
   );
 };
 
-import { Countdown } from '../SharedCards/Countdown';
+
 
 // ---------------------------------------------------------
 // UpcomingDeadlinesWidget
@@ -77,10 +77,7 @@ export const UpcomingDeadlinesWidget = ({ isLoading, assignments }: { isLoading:
               <div className="db-widget-item-content">
                 <div className="db-widget-item-title" title={a.title}>{a.title}</div>
                 <div className="db-widget-item-meta" style={{ display: 'flex', gap: '8px' }}>
-                  <span>Due: {new Date(a.dueDate).toLocaleDateString(undefined, { timeZoneName: 'short' })}</span>
-                  <span style={{ color: '#475569' }}>
-                    <Countdown deadline={a.dueDate} />
-                  </span>
+                  <span>Due: {new Date(a.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
                 </div>
               </div>
               <div className="db-widget-item-action">

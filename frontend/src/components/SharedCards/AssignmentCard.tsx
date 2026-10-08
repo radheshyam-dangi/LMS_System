@@ -56,15 +56,15 @@ export const AssignmentCard: React.FC<Props> = ({
         border: '1px solid #e2e8f0',
         borderRadius: 8,
         display: 'flex',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        gap: 12,
+        gap: 16,
         opacity: isLocked || status === 'LOCKED' ? 0.5 : 1,
         cursor: isLocked || status === 'LOCKED' ? 'not-allowed' : 'default',
         transition: isLocked || status === 'LOCKED' ? 'none' : 'all 0.15s ease-in-out',
+        flexWrap: 'wrap'
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 240px', minWidth: 200 }}>
         {isLocked || status === 'LOCKED' ? (
           <div style={{ color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Lock size={16} />
@@ -80,9 +80,11 @@ export const AssignmentCard: React.FC<Props> = ({
         </div>
       </div>
       
-      <DeadlineDisplay task={task} submission={submission} />
+      <div style={{ flex: '0 0 240px', display: 'flex', justifyContent: 'flex-start' }}>
+        <DeadlineDisplay task={task} submission={submission} />
+      </div>
       
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, pointerEvents: isLocked || status === 'LOCKED' ? 'none' : 'auto' }}>
+      <div style={{ flex: '0 0 240px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, pointerEvents: isLocked || status === 'LOCKED' ? 'none' : 'auto' }}>
         <span
           style={{
             fontSize: 11,

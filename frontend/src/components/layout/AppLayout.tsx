@@ -21,6 +21,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
+import { getNotificationRoute } from '../../utils/notificationUtils';
 import { GlobalSearchBar } from './GlobalSearchBar';
 
 const CustomRoleSwitcher = ({ effectiveRole, availableRoles, onRoleChange }: any) => {
@@ -182,12 +183,6 @@ export function AppLayout({
 
   const navigation = navigationByRole[effectiveRole] || navigationByRole.Trainee;
   const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
-  const userSubtitle =
-    effectiveRole === 'Trainer'
-      ? 'Senior Trainer'
-      : effectiveRole === 'Trainee'
-        ? 'Junior Engineer'
-        : 'Platform Administrator';
 
   const isCurrentPath = (path: string) => {
     if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
@@ -305,7 +300,6 @@ export function AppLayout({
             >
               {displayName}
             </strong>
-            <span style={{ fontSize: '11px', color: '#64748b' }}>{userSubtitle}</span>
           </div>
         </div>
       </aside>
@@ -437,7 +431,7 @@ export function AppLayout({
                       title={n.message || n.title}
                       onClick={() => {
                         void markAsRead(n.id);
-                        if (n.link) navigate(n.link);
+                        navigate(getNotificationRoute(n, effectiveRole));
                         setPanelOpen(false);
                       }}
                       style={{
@@ -520,7 +514,7 @@ export function AppLayout({
                     <button
                       type="button"
                       onClick={() => {
-                        navigate('/dashboard?section=Notifications');
+                        navigate('/notifications');
                         setPanelOpen(false);
                       }}
                       style={{

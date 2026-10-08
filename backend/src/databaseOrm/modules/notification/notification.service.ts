@@ -13,7 +13,24 @@ export type CreateNotificationDto = {
   link?: string;
   relatedEntityType?: string;
   relatedEntityId?: string;
+  recipientRole?: string;
 };
+
+function getRecipientRoleForType(type: NotificationType): string {
+  switch (type) {
+    case 'learning_path_assigned':
+    case 'assignment_assigned':
+    case 'evaluation_completed':
+      return 'trainee';
+    case 'submission_pending':
+    case 'ai_evaluation_ready':
+    case 'ai_evaluation_failed':
+      return 'trainer';
+    case 'general':
+    default:
+      return 'trainee';
+  }
+}
 
 @Injectable()
 export class NotificationService {
@@ -24,8 +41,10 @@ export class NotificationService {
   }
 
   async create(dto: CreateNotificationDto): Promise<NotificationEntity> {
+    const recipientRole = dto.recipientRole || getRecipientRoleForType(dto.type);
     const row = this.repository.create({
       userId: dto.userId,
+      recipientRole,
       type: dto.type,
       title: dto.title,
       message: dto.message ?? null,
@@ -44,6 +63,7 @@ export class NotificationService {
     const rows = dtos.map((dto) =>
       this.repository.create({
         userId: dto.userId,
+        recipientRole: dto.recipientRole || getRecipientRoleForType(dto.type),
         type: dto.type,
         title: dto.title,
         message: dto.message ?? null,
@@ -58,24 +78,28 @@ export class NotificationService {
 
   async findForUser(
     userId: string,
+    activeRole: string,
     unreadOnly = false,
   ): Promise<NotificationEntity[]> {
+    const role = activeRole.toLowerCase();
     return await this.repository.find({
-      where: unreadOnly ? { userId, isRead: false } : { userId },
+      where: unreadOnly ? { userId, recipientRole: role, isRead: false } : { userId, recipientRole: role },
       order: { createdAt: 'DESC' },
       take: 50,
     });
   }
 
-  async countUnread(userId: string): Promise<number> {
+  async countUnread(userId: string, activeRole: string): Promise<number> {
+    const role = activeRole.toLowerCase();
     return await this.repository.count({
-      where: { userId, isRead: false },
+      where: { userId, recipientRole: role, isRead: false },
     });
   }
 
-  async markAsRead(id: string, userId: string): Promise<NotificationEntity> {
+  async markAsRead(id: string, userId: string, activeRole: string): Promise<NotificationEntity> {
+    const role = activeRole.toLowerCase();
     const note = await this.repository.findOne({
-      where: { id, userId },
+      where: { id, userId, recipientRole: role },
     });
     if (!note) throw new NotFoundException('Notification not found.');
     if (!note.isRead) {
@@ -86,9 +110,10 @@ export class NotificationService {
     return note;
   }
 
-  async markAllAsRead(userId: string): Promise<number> {
+  async markAllAsRead(userId: string, activeRole: string): Promise<number> {
+    const role = activeRole.toLowerCase();
     const result = await this.repository.update(
-      { userId, isRead: false },
+      { userId, recipientRole: role, isRead: false },
       { isRead: true, readAt: new Date() },
     );
     return result.affected ?? 0;
@@ -100,13 +125,16 @@ export class NotificationService {
    */
   async markByTypes(
     userId: string,
+    activeRole: string,
     types: NotificationType[],
     relatedEntityId?: string,
   ): Promise<number> {
     if (!types.length) return 0;
+    const role = activeRole.toLowerCase();
 
     const where: any = {
       userId,
+      recipientRole: role,
       isRead: false,
       type: In(types),
     };
@@ -123,12 +151,15 @@ export class NotificationService {
 
   async markByRelatedEntity(
     userId: string,
+    activeRole: string,
     relatedEntityType: string,
     relatedEntityId: string,
   ): Promise<number> {
+    const role = activeRole.toLowerCase();
     const result = await this.repository.update(
       {
         userId,
+        recipientRole: role,
         isRead: false,
         relatedEntityType,
         relatedEntityId,
@@ -143,11 +174,13 @@ export class NotificationService {
    * then create a new one. Prevents notification duplication on resubmission cycles.
    */
   async supersede(dto: CreateNotificationDto): Promise<NotificationEntity> {
+    const recipientRole = dto.recipientRole || getRecipientRoleForType(dto.type);
     // Mark existing unread notifications for this entity as read
     if (dto.relatedEntityType && dto.relatedEntityId) {
       await this.repository.update(
         {
           userId: dto.userId,
+          recipientRole,
           isRead: false,
           relatedEntityType: dto.relatedEntityType,
           relatedEntityId: dto.relatedEntityId,
@@ -158,9 +191,10 @@ export class NotificationService {
     return await this.create(dto);
   }
 
-  async deleteNotification(id: string, userId: string): Promise<boolean> {
+  async deleteNotification(id: string, userId: string, activeRole: string): Promise<boolean> {
+    const role = activeRole.toLowerCase();
     const note = await this.repository.findOne({
-      where: { id, userId },
+      where: { id, userId, recipientRole: role },
     });
     if (!note) throw new NotFoundException('Notification not found.');
     await this.repository.remove(note);

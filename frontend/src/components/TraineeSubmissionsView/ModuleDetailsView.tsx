@@ -5,6 +5,7 @@ import { assignmentService } from '../../services/assignmentService';
 import { DeadlineDisplay } from '../DeadlineDisplay';
 import { progressService } from '../../services/lmsApi';
 import { useNotifications } from '../../context/NotificationContext';
+import { useToast } from '../../context/ToastContext';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { LessonCard } from '../SharedCards/LessonCard';
 import { isLessonUnlocked, isAssignmentUnlocked } from '../../shared/lockLogic';
@@ -92,6 +93,7 @@ const getCardData = (a: any, sub: any, isLocked: boolean) => {
 export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: Props) {
   const isTrainee = userRole === 'Trainee';
   const { refresh: refreshNotifications } = useNotifications();
+  const toast = useToast();
   const [moduleData, setModuleData] = useState<any | null>(null);
   const [stats, setStats] = useState<any | null>(null);
   const [mySubs, setMySubs] = useState<any[]>([]);
@@ -214,7 +216,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
       setMySubs(Array.isArray(subs) ? subs : []);
     } catch (err: any) {
       console.error(err);
-      alert(err?.message || 'Failed to load module details.');
+      toast.error(err?.message || 'Failed to load module details.');
     } finally {
       setLoading(false);
     }
@@ -305,7 +307,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
       await load();
       await refreshNotifications();
     } catch (err: any) {
-      alert(err?.message || 'Could not mark lesson as watched.');
+      toast.error(err?.message || 'Could not mark lesson as watched.');
     }
   };
 
@@ -351,7 +353,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     if (!finalText.trim()) finalText = 'Task completed & submitted';
 
     if (!submitTask) {
-      alert('Please select an assignment to submit.');
+      toast.warning('Please select an assignment to submit.');
       return;
     }
 
@@ -369,10 +371,10 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
       closeSubmitModal();
       await load();
       await refreshNotifications();
-      alert('Submitted for evaluation.');
+      toast.success('Assignment submitted for evaluation!');
     } catch (err: any) {
       console.error(err);
-      alert(err?.response?.data?.message || err?.message || 'Submission failed.');
+      toast.error(err?.response?.data?.message || err?.message || 'Submission failed.');
     } finally {
       setIsSubmitting(false);
     }
@@ -478,7 +480,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
         </div>
 
         {/* CENTER: deadline / lock message */}
-        <div style={{ flex: '1 1 150px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', fontSize: 12, color: '#64748b', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ flex: '0 0 240px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', fontSize: 12, color: '#64748b', gap: 6, flexWrap: 'wrap' }}>
           {isLockedByLessons ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
@@ -534,7 +536,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                         await assignmentService.startAssignment(task.id, accessToken);
                         await load();
                       } catch (err: any) {
-                        alert(err?.response?.data?.message || err.message || 'Could not start assignment');
+                        toast.error(err?.response?.data?.message || err.message || 'Could not start assignment');
                       }
                     }}
                     style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
@@ -711,7 +713,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                   resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
                   onVisitResource={(res) => res.id && progressService.visitResource(res.id, accessToken).catch(() => { })}
                   onMarkWatched={() => markLessonWatched(lesson.id)}
-                  onClickLocked={() => alert('Complete the previous lesson to unlock this lesson.')}
+                  onClickLocked={() => toast.warning('Complete the previous lesson to unlock this lesson.')}
                 />
               );
             })}

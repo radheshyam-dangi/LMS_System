@@ -1,10 +1,11 @@
 import axios from 'axios';
 import { API_BASE_URL } from '../api';
 
-const auth = (token: string) => ({
+const auth = (token: string, role: string) => ({
   headers: {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
+    'x-active-role': role,
   },
 });
 
@@ -30,10 +31,10 @@ export type AppNotification = {
 };
 
 export const notificationService = {
-  fetchNotifications: async (token: string, unreadOnly = false) => {
+  fetchNotifications: async (token: string, role: string, unreadOnly = false) => {
     const { data } = await axios.get(
       `${API_BASE_URL}/notifications${unreadOnly ? '?unreadOnly=true' : ''}`,
-      auth(token),
+      auth(token, role),
     );
     return {
       items: (Array.isArray(data?.items) ? data.items : []) as AppNotification[],
@@ -41,30 +42,31 @@ export const notificationService = {
     };
   },
 
-  fetchUnreadCount: async (token: string) => {
-    const { data } = await axios.get(`${API_BASE_URL}/notifications/unread-count`, auth(token));
+  fetchUnreadCount: async (token: string, role: string) => {
+    const { data } = await axios.get(`${API_BASE_URL}/notifications/unread-count`, auth(token, role));
     return Number(data?.count ?? 0);
   },
 
-  markAsRead: async (id: string, token: string) => {
-    const { data } = await axios.put(`${API_BASE_URL}/notifications/${id}/read`, {}, auth(token));
+  markAsRead: async (id: string, token: string, role: string) => {
+    const { data } = await axios.put(`${API_BASE_URL}/notifications/${id}/read`, {}, auth(token, role));
     return data;
   },
 
-  deleteNotification: async (id: string, token: string) => {
-    const { data } = await axios.delete(`${API_BASE_URL}/notifications/${id}`, auth(token));
+  deleteNotification: async (id: string, token: string, role: string) => {
+    const { data } = await axios.delete(`${API_BASE_URL}/notifications/${id}`, auth(token, role));
     return data;
   },
 
   markByTypes: async (
     token: string,
+    role: string,
     types: NotificationType[],
     relatedEntityId?: string,
   ) => {
     const { data } = await axios.post(
       `${API_BASE_URL}/notifications/mark-read`,
       { types, relatedEntityId },
-      auth(token),
+      auth(token, role),
     );
     return {
       affected: Number(data?.affected ?? 0),
@@ -74,13 +76,14 @@ export const notificationService = {
 
   markByRelatedEntity: async (
     token: string,
+    role: string,
     relatedEntityType: string,
     relatedEntityId: string,
   ) => {
     const { data } = await axios.post(
       `${API_BASE_URL}/notifications/mark-read`,
       { relatedEntityType, relatedEntityId },
-      auth(token),
+      auth(token, role),
     );
     return {
       affected: Number(data?.affected ?? 0),
@@ -88,11 +91,11 @@ export const notificationService = {
     };
   },
 
-  markAllRead: async (token: string) => {
+  markAllRead: async (token: string, role: string) => {
     const { data } = await axios.post(
       `${API_BASE_URL}/notifications/mark-all-read`,
       {},
-      auth(token),
+      auth(token, role),
     );
     return Number(data?.affected ?? 0);
   },

@@ -687,6 +687,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     if (this.notificationService) {
       await this.notificationService.markByRelatedEntity(
         evaluatorId,
+        'trainer',
         'submission',
         submissionId,
       );

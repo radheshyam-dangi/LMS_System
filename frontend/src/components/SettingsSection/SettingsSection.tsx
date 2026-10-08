@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { SessionUser, RoleName } from '../../types/auth';
 import { userService } from '../../services/userService';
+import { useToast } from '../../context/ToastContext';
 import './SettingsSection.css';
 
 type SettingsSectionProps = {
@@ -12,6 +13,7 @@ type SettingsSectionProps = {
 type Panel = 'profile' | 'notifications' | 'security';
 
 export function SettingsSection({ currentUser, activeRole, accessToken }: SettingsSectionProps) {
+  const toast = useToast();
   const [panel, setPanel] = useState<Panel>('profile');
 
   // --- Profile State ---
@@ -114,6 +116,7 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
         
         window.dispatchEvent(new CustomEvent('user_updated', { detail: updatedUser }));
       }
+      toast.success('Profile updated successfully!');
       setProfileSuccess(true);
       setTimeout(() => setProfileSuccess(false), 3000);
     } catch (err: any) {
@@ -129,6 +132,7 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
     // Simulate API call to save preferences
     await new Promise(r => setTimeout(r, 600));
     setSavingNotifs(false);
+    toast.success('Notification preferences updated!');
     setNotifsSuccess(true);
     setTimeout(() => setNotifsSuccess(false), 3000);
   };
@@ -150,6 +154,7 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
     // Simulate API call
     await new Promise(r => setTimeout(r, 800));
     setSavingSecurity(false);
+    toast.success('Password updated successfully!');
     setSecuritySuccess(true);
     setCurrentPassword('');
     setNewPassword('');

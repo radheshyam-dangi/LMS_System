@@ -6,12 +6,22 @@ import { DashboardPage } from './pages/DashboardPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './components/auth/LoginPage';
 import LPEditorPage from './pages/LPEditorPage';
+import { NotificationsPage } from './pages/NotificationsPage';
 import { NotificationProvider, useNotifications } from './context/NotificationContext';
+import { ToastProvider } from './context/ToastContext';
 import type { LoginResponse, RoleName, SessionUser } from './types/auth';
 import { normalizeUser, userFromToken } from './utils/auth';
 import './App.css';
 
 const TOKEN_KEY = 'skillforge_access_token';
+
+const ROLE_DASHBOARDS: Record<string, string> = {
+  Admin: '/users',
+  Trainer: '/dashboard',
+  Trainee: '/dashboard',
+};
+
+const getRoleDashboard = (role: string) => ROLE_DASHBOARDS[role] || '/dashboard';
 
 function ProtectedShell({
   section,
@@ -55,6 +65,63 @@ function ProtectedShell({
         currentUser={currentUser}
       />
     </AppLayout>
+  );
+}
+
+function ProtectedLayout({
+  section,
+  currentUser,
+  accessToken,
+  activeRole,
+  onLogout,
+  onRoleChange,
+}: {
+  section: string;
+  currentUser: SessionUser | null;
+  accessToken: string;
+  activeRole: RoleName;
+  onLogout: () => void;
+  onRoleChange: (role: RoleName) => void;
+}) {
+  const location = useLocation();
+
+  if (!currentUser || !accessToken) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Role-based route guard
+  const traineeBlocked = ['Users', 'Evaluations', 'Analytics', 'Progress'];
+  if (activeRole === 'Trainee' && traineeBlocked.includes(section)) {
+    return <Navigate to={getRoleDashboard(activeRole)} replace />;
+  }
+  const adminBlocked = [
+    'Dashboard',
+    'Learning Paths',
+    'Module Details',
+    'Modules',
+    'Assignments',
+    'Evaluations',
+    'Progress',
+  ];
+  if (activeRole === 'Admin' && adminBlocked.includes(section)) {
+    return <Navigate to={getRoleDashboard(activeRole)} replace />;
+  }
+  if (activeRole !== 'Admin' && section === 'Users') {
+    return <Navigate to={getRoleDashboard(activeRole)} replace />;
+  }
+  if (activeRole === 'Trainer' && section === 'Progress') {
+    return <Navigate to={getRoleDashboard(activeRole)} replace />;
+  }
+
+  return (
+    <ProtectedShell
+      section={section}
+      accessToken={accessToken}
+      activeRole={activeRole}
+      currentUser={currentUser}
+      onLogout={onLogout}
+      onRoleChange={onRoleChange}
+    />
   );
 }
 
@@ -145,7 +212,7 @@ function App() {
         
     setActiveRole(startRole);
     localStorage.setItem('skillforge_active_role', startRole);
-    navigate('/dashboard', { replace: true });
+    navigate(getRoleDashboard(startRole), { replace: true });
   };
 
   const handleLogout = () => {
@@ -160,11 +227,15 @@ function App() {
   };
 
   const handleRoleChange = (role: RoleName) => {
-    if (!currentUser) return;
+    if (!currentUser || !accessToken) {
+      navigate('/login', { replace: true });
+      return;
+    }
     const roles = currentUser.roles?.length ? currentUser.roles : [currentUser.primaryRole];
     if (roles.includes(role)) {
       setActiveRole(role);
       localStorage.setItem('skillforge_active_role', role);
+      navigate(getRoleDashboard(role), { replace: true });
     }
   };
 
@@ -172,48 +243,15 @@ function App() {
     return <main className="loading-shell">Loading SkillForge...</main>;
   }
 
-  const ProtectedLayout = ({ section }: { section: string }) => {
-    if (!currentUser || !accessToken) {
-      return <Navigate to="/login" state={{ from: location }} replace />;
-    }
-
-    // Role-based route guard
-    const traineeBlocked = ['Users', 'Evaluations', 'Analytics', 'Progress'];
-    if (activeRole === 'Trainee' && traineeBlocked.includes(section)) {
-      return <Navigate to="/dashboard" replace />;
-    }
-    const adminBlocked = ['Dashboard', 'Learning Paths', 'Module Details', 'Modules', 'Assignments', 'Evaluations', 'Progress'];
-    if (activeRole === 'Admin' && adminBlocked.includes(section)) {
-      return <Navigate to="/users" replace />;
-    }
-    if (activeRole !== 'Admin' && section === 'Users') {
-      return <Navigate to="/dashboard" replace />;
-    }
-    if (activeRole === 'Trainer' && section === 'Progress') {
-      return <Navigate to="/dashboard" replace />;
-    }
-
-    return (
-      <NotificationProvider accessToken={accessToken}>
-        <ProtectedShell
-          section={section}
-          accessToken={accessToken}
-          activeRole={activeRole}
-          currentUser={currentUser}
-          onLogout={handleLogout}
-          onRoleChange={handleRoleChange}
-        />
-      </NotificationProvider>
-    );
-  };
-
   return (
-    <Routes>
+    <ToastProvider>
+    <NotificationProvider accessToken={accessToken} activeRole={activeRole}>
+      <Routes>
       <Route
         path="/"
         element={
           currentUser && accessToken ? (
-            <Navigate to={activeRole === 'Admin' ? "/users" : "/dashboard"} replace />
+            <Navigate to={getRoleDashboard(activeRole)} replace />
           ) : (
             <HomePage onLoginClick={() => navigate('/login')} />
           )
@@ -223,7 +261,7 @@ function App() {
         path="/login"
         element={
           currentUser && accessToken ? (
-            <Navigate to={activeRole === 'Admin' ? "/users" : "/dashboard"} replace />
+            <Navigate to={getRoleDashboard(activeRole)} replace />
           ) : (
             <LoginPage onBackHome={() => navigate('/')} onLogin={handleLogin} />
           )
@@ -234,26 +272,28 @@ function App() {
         element={<SetPasswordForm onSuccess={() => navigate('/login')} />}
       />
 
-      <Route path="/dashboard" element={<ProtectedLayout section="Dashboard" />} />
-      <Route path="/trainer/trainees/:traineeId" element={<ProtectedLayout section="TrainerTraineeDetail" />} />
-      <Route path="/learning-paths" element={<ProtectedLayout section="Learning Paths" />} />
+      <Route path="/dashboard" element={<ProtectedLayout section="Dashboard" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/trainer/trainees/:traineeId" element={<ProtectedLayout section="TrainerTraineeDetail" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-paths" element={<ProtectedLayout section="Learning Paths" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/learning-paths/new" element={ currentUser && accessToken && activeRole !== 'Trainee' ? <LPEditorPage /> : <Navigate to="/dashboard" replace /> } />
       <Route path="/learning-paths/:pathId/edit" element={ currentUser && accessToken && activeRole !== 'Trainee' ? <LPEditorPage /> : <Navigate to="/dashboard" replace /> } />
-      <Route path="/learning-paths/:pathId" element={<ProtectedLayout section="Learning Paths" />} />
-      <Route path="/modules" element={<ProtectedLayout section="Modules" />} />
-      <Route path="/modules/:moduleId" element={<ProtectedLayout section="Module Details" />} />
-      <Route path="/learning-paths/:pathId/modules/:moduleId" element={<ProtectedLayout section="Module Details" />} />
-      <Route path="/assignments" element={<ProtectedLayout section="Assignments" />} />
+      <Route path="/learning-paths/:pathId" element={<ProtectedLayout section="Learning Paths" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/modules" element={<ProtectedLayout section="Modules" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/modules/:moduleId" element={<ProtectedLayout section="Module Details" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-paths/:pathId/modules/:moduleId" element={<ProtectedLayout section="Module Details" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/assignments" element={<ProtectedLayout section="Assignments" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/trainer/assignments" element={<Navigate to="/assignments" replace />} />
       <Route path="/evaluations" element={<Navigate to="/assignments?status=pending" replace />} />
-      <Route path="/users" element={<ProtectedLayout section="Users" />} />
-      <Route path="/progress" element={<ProtectedLayout section="Progress" />} />
-      <Route path="/analytics" element={<ProtectedLayout section="Analytics" />} />
-      <Route path="/settings" element={<ProtectedLayout section="Settings" />} />
+      <Route path="/users" element={<ProtectedLayout section="Users" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/progress" element={<ProtectedLayout section="Progress" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/analytics" element={<ProtectedLayout section="Analytics" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/settings" element={<ProtectedLayout section="Settings" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/notifications" element={currentUser && accessToken ? <NotificationsPage activeRole={activeRole} /> : <Navigate to="/login" replace />} />
 
-
-      <Route path="*" element={<Navigate to={activeRole === 'Admin' ? "/users" : "/dashboard"} replace />} />
+      <Route path="*" element={<Navigate to={getRoleDashboard(activeRole)} replace />} />
     </Routes>
+    </NotificationProvider>
+    </ToastProvider>
   );
 }
 

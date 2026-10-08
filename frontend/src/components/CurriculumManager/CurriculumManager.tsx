@@ -3,6 +3,7 @@ import { curriculumService } from '../../services/curriculumService';
 import { learningPathService } from '../../services/learningPathService';
 import { userService } from '../../services/userService';
 import { useNavigate } from 'react-router-dom';
+import { useToast } from '../../context/ToastContext';
 import { RichText } from '../common/RichText';
 import { RichTextEditor } from '../common/RichTextEditor';
 import DOMPurify from 'dompurify';
@@ -142,6 +143,7 @@ export function CurriculumManager({
 
   // 👁️ Inspector State & Navigation Stack
   const [inspectItem, setInspectItem] = useState<InspectItem | null>(null);
+  const toast = useToast();
   const [inspectorHistory, setInspectorHistory] = useState<InspectItem[]>([]);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
@@ -425,7 +427,7 @@ export function CurriculumManager({
         );
       } else if (activeModal === 'LESSON') {
         if (!targetModuleId) {
-          alert('Module ID missing. Please select a module.');
+          toast.warning('Module ID missing. Please select a module.');
           setIsSubmitting(false);
           return;
         }
@@ -456,13 +458,13 @@ export function CurriculumManager({
         const isExternal = formAssignmentType === 'External';
 
         if (!isExternal && !targetLessonId && (!targetModuleId || targetModuleId === '')) {
-          alert('Please select a Target Module for this assignment.');
+          toast.warning('Please select a Target Module for this assignment.');
           setIsSubmitting(false);
           return;
         }
 
         if (isExternal && !formAssignedTraineeId) {
-          alert('Select a trainee for an external assignment.');
+          toast.warning('Select a trainee for an external assignment.');
           setIsSubmitting(false);
           return;
         }
@@ -516,7 +518,7 @@ export function CurriculumManager({
       await loadCurriculum();
     } catch (err: any) {
       const msg = err.response?.data?.message || err.message || 'Operation failed.';
-      alert(`Error: ${msg}`);
+      toast.error(`Error: ${msg}`);
     } finally {
       setIsSubmitting(false);
     }

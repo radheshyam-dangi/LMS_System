@@ -381,7 +381,8 @@ export function DashboardPage({
   const [showInviteModal, setShowInviteModal] = useState(false);
   useScrollLock(showInviteModal);
   const location = useLocation();
-  const [selectedPathId, setSelectedPathId] = useState<string | null>((location.state as any)?.pathId || null);
+  const { pathId: urlPathId } = useParams<{ pathId?: string }>();
+  const [selectedPathId, setSelectedPathId] = useState<string | null>(urlPathId || (location.state as any)?.pathId || null);
   const [selectedPathTitle, setSelectedPathTitle] = useState<string>((location.state as any)?.pathName || '');
   const [selectedLpTitle, setSelectedLpTitle] = useState<string | null>(null);
   const [heatmapRange, setHeatmapRange] = useState<number>(() => {
@@ -410,8 +411,10 @@ export function DashboardPage({
     if (state?.pathId) {
       setSelectedPathId(state.pathId);
       setSelectedPathTitle(state.pathName || '');
+    } else {
+      setSelectedPathId(urlPathId || null);
     }
-  }, [location.state]);
+  }, [location.state, urlPathId]);
 
 
 
@@ -784,6 +787,7 @@ export function DashboardPage({
           />
         ) : (
           <LearningPathsSection
+            highlightPathId={selectedPathId}
             currentUser={{
               id: currentUser?.id ?? 'trainee-99',
               name: currentUser?.firstName ?? 'User',
@@ -805,7 +809,6 @@ export function DashboardPage({
     );
   }
   if (activeSection === 'Modules' || activeSection === 'Module Details') {
-    const { pathId: urlPathId } = useParams<{ pathId?: string }>();
     const pathId = location.state?.pathId || urlPathId || selectedPathId || traineePath?.id || '';
     const pathTitle = location.state?.pathName || selectedPathTitle || traineePath?.title || 'All Modules';
 

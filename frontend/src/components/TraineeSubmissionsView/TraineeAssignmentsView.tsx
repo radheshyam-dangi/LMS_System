@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { assignmentService } from '../../services/assignmentService';
 import { useNotifications } from '../../context/NotificationContext';
+import { useToast } from '../../context/ToastContext';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { DeadlineDisplay } from '../DeadlineDisplay';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
@@ -23,6 +24,7 @@ type Props = {
  */
 export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }: Props) {
   const { refresh: refreshNotifications } = useNotifications();
+  const toast = useToast();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -41,12 +43,18 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const [searchQuery, setSearchQuery] = useState('');
   const [submitTarget, setSubmitTarget] = useState<any | null>(null);
   const [viewDetailsTarget, setViewDetailsTarget] = useState<any | null>(null);
-  
-  
+  const lastOpenedIdRef = useRef<string | null>(null);
   
   
   
   const [instructionsOpen, setInstructionsOpen] = useState(true);
+
+  const clearIdParam = () => {
+    const newParams = new URLSearchParams(searchParams.toString());
+    newParams.delete('id');
+    setSearchParams(newParams);
+    lastOpenedIdRef.current = null;
+  };
 
   useScrollLock(!!submitTarget || !!viewDetailsTarget);
 
@@ -68,9 +76,28 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     loadData();
   }, [loadData]);
 
-  const submissionByAssignment = new Map(
-    submissions.map((s) => [s.assignment?.id || s.assignmentId, s]),
-  );
+  const submissionByAssignment = useMemo(() => new Map(
+    submissions.map((s) => [s.assignment?.id || s.assignmentId, s])
+  ), [submissions]);
+
+  useEffect(() => {
+    const idToOpen = searchParams.get('id');
+    if (idToOpen && idToOpen !== lastOpenedIdRef.current && assignments.length > 0) {
+      const targetAssignment = assignments.find(a => a.id === idToOpen);
+      if (targetAssignment) {
+        lastOpenedIdRef.current = idToOpen;
+        const sub = submissionByAssignment.get(targetAssignment.id);
+        const status = sub?.status;
+        const rawStatus = String(status || 'AVAILABLE').toUpperCase();
+        
+        if (rawStatus === 'EVALUATED' || rawStatus === 'APPROVED' || rawStatus === 'REJECTED' || rawStatus === 'NEEDS_IMPROVEMENT') {
+           setViewDetailsTarget({ assignment: targetAssignment, submission: sub });
+        } else {
+           setSubmitTarget(targetAssignment);
+        }
+      }
+    }
+  }, [assignments, searchParams, submissionByAssignment]);
 
   const filtered = React.useMemo(() => {
     let result = assignments;
@@ -82,7 +109,17 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         return titleMatch || descMatch;
       });
     }
-    
+
+    if (localFiltersState.id) {
+      // It could be an assignment ID or a submission ID. Check both.
+      result = result.filter(a => {
+        if (a.id === localFiltersState.id) return true;
+        const sub = submissionByAssignment.get(a.id);
+        if (sub && sub.id === localFiltersState.id) return true;
+        return false;
+      });
+    }
+
     // Apply filters from localFiltersState
     const normalize = (v: any) => String(v ?? '').trim().toLowerCase();
 
@@ -255,6 +292,35 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
           {Object.entries(localFiltersState).map(([key, value]) => {
             if (!value || key === 'evaluationMode') return null;
+            
+            if (key === 'id') {
+              const targetAssign = assignments.find(a => a.id === value);
+              let title = targetAssign?.title;
+              if (!title) {
+                const targetSub = submissions.find(s => s.id === value);
+                title = targetSub?.assignment?.title || 'Specific Assignment';
+              }
+              return (
+                <div key={`id-${value}`} style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5',
+                  borderRadius: '99px', fontSize: '12px', fontWeight: 600
+                }}>
+                  <span>Viewing: {title}</span>
+                  <button 
+                    onClick={() => {
+                      const newFilters = { ...localFiltersState };
+                      delete newFilters.id;
+                      setSearchParams(newFilters);
+                    }}
+                    style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex' }}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              );
+            }
+
             const category = filterCategories.find(c => c.id === key);
             const label = category ? category.label : key;
             return value.split(',').map(v => {
@@ -452,27 +518,45 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             // Subtitle tag
             const subtypeLabel = a.module?.title || a.lesson?.module?.title || 'Module task';
 
-            return (
-              <div
-                key={a.id}
-                className={displayStatus === 'Locked' ? 'locked-item interactive-lock' : ''}
-                title={displayStatus === 'Locked' ? a.lockReason || 'Locked task' : ''}
+              const handleRowClick = () => {
+                if (displayStatus === 'Locked') {
+                  const pathId = a.learningPath?.id || a.learningPathId || a.module?.learningPath?.id || a.module?.learningPathId || a.lesson?.module?.learningPath?.id || a.lesson?.module?.learningPathId;
+                  const moduleId = a.module?.id || a.moduleId || a.lesson?.module?.id || a.lesson?.moduleId;
+                  if (moduleId) {
+                    if (pathId) {
+                      navigate(`/learning-paths/${pathId}/modules/${moduleId}`, { state: { activeTab: 'Tasks' } });
+                    } else {
+                      navigate(`/modules/${moduleId}`, { state: { activeTab: 'Tasks' } });
+                    }
+                  } else if (pathId) {
+                    navigate(`/modules`, { state: { pathId, pathName: a.learningPath?.title || 'Learning Path', activeTab: 'Tasks' } });
+                  }
+                }
+              };
+
+              return (
+                <div
+                  key={a.id}
+                  className="hover-card-anim"
+                  title={displayStatus === 'Locked' ? a.lockReason || 'Locked task. Click to view prerequisites.' : ''}
+                  onClick={handleRowClick}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   gap: 16,
                   padding: '14px 18px',
-                  border: '1px solid #e2e8f0',
+                  border: displayStatus === 'Locked' ? '1px solid #e2e8f0' : '1px solid #e2e8f0',
                   borderRadius: 12,
-                  background: '#fff',
+                  background: displayStatus === 'Locked' ? '#f8fafc' : '#fff',
                   opacity: displayStatus === 'Locked' ? 0.75 : 1,
-                  transition: 'box-shadow 0.15s',
+                  transition: 'transform 0.2s, box-shadow 0.15s',
+                  cursor: displayStatus === 'Locked' ? 'pointer' : 'default',
                   flexWrap: 'wrap', // Allow wrapping on small screens
                 }}
               >
                 {/* LEFT: Assignment title + type tags */}
-                <div style={{ minWidth: 200, flex: '1 1 240px' }}>
+                <div style={{ flex: '1 1 240px', minWidth: 240 }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
                     <span
                       style={{
@@ -503,7 +587,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 </div>
 
                 {/* CENTER: Deadline / countdown OR lock message */}
-                <div style={{ flex: '1 1 150px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', fontSize: 12, color: '#64748b', gap: 6, flexWrap: 'wrap' }}>
+                <div style={{ flex: '0 0 240px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', fontSize: 12, color: '#64748b', gap: 6, flexWrap: 'wrap' }}>
                   {isLockedByLessons ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -523,7 +607,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 </div>
 
                 {/* RIGHT: Status badge + action buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap' }}>
+                <div style={{ flex: '0 0 240px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
                   <span
                     style={{
                       fontSize: 11,
@@ -571,7 +655,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                               await assignmentService.startAssignment(a.id, accessToken);
                               await loadData();
                             } catch (err: any) {
-                              alert(err?.response?.data?.message || err.message || 'Could not start assignment');
+                              toast.error(err?.response?.data?.message || err.message || 'Could not start assignment');
                             }
                           }}
                           style={{
@@ -648,10 +732,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           task={submitTarget}
           submission={submissionByAssignment.get(submitTarget.id)}
           accessToken={accessToken}
-          onClose={() => setSubmitTarget(null)}
+          onClose={() => { setSubmitTarget(null); clearIdParam(); }}
           onSuccess={() => {
               loadData();
               refreshNotifications();
+              clearIdParam();
           }}
         />
       )}
@@ -702,7 +787,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 800, color: '#0f172a' }}>📄 Evaluation Details: {assignment.title}</h3>
                   <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>Score: {gainedPoints} / {maxPoints} pts</p>
                 </div>
-                <button onClick={() => setViewDetailsTarget(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', width: '32px', height: '32px', cursor: 'pointer', fontSize: '18px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                <button onClick={() => { setViewDetailsTarget(null); clearIdParam(); }} style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', width: '32px', height: '32px', cursor: 'pointer', fontSize: '18px', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
               </div>
 
               <div style={{ padding: '22px 26px', overflowY: 'auto', flex: 1 }}>

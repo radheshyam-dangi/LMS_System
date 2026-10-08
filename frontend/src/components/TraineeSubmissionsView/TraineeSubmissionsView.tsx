@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { curriculumService } from '../../services/curriculumService';
+import { useToast } from '../../context/ToastContext';
 
 interface TraineeSubmissionsViewProps {
   accessToken: string;
@@ -9,6 +10,7 @@ interface TraineeSubmissionsViewProps {
 export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmissionsViewProps) {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const toast = useToast();
 
   // Resubmission Modal State
   const [resubmitTask, setResubmitTask] = useState<any | null>(null);
@@ -130,7 +132,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
     }
 
     if (!payloadText.trim() || payloadText === '{"answers":{}}') {
-      alert('Please fill in your revised response before submitting.');
+      toast.warning('Please fill in your revised response before submitting.');
       return;
     }
 
@@ -148,7 +150,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
       setResubmitTask(null);
       await fetchMySubmissions();
     } catch (err: any) {
-      alert(err.message || 'Resubmission failed.');
+      toast.error(err.message || 'Resubmission failed.');
     } finally {
       setIsSubmitting(false);
     }
@@ -345,7 +347,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
                 </span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deadline Countdown</span>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deadline</span>
                 <span style={{ fontSize: '14px', color: resubmitTask.deadline && new Date(resubmitTask.deadline).getTime() < Date.now() ? '#b91c1c' : '#0f172a', fontWeight: 600 }}>
                   {resubmitTask.deadline ? (() => {
                      const dl = new Date(resubmitTask.deadline);

@@ -25,6 +25,9 @@ export class NotificationEntity extends BaseEntity {
   @Column({ type: 'varchar', length: 64 })
   type: NotificationType;
 
+  @Column({ type: 'varchar', length: 64, name: 'recipient_role', default: 'trainee' })
+  recipientRole: string;
+
   @Column({ type: 'varchar', length: 255 })
   title: string;
 

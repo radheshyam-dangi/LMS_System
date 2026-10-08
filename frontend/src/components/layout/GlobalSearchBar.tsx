@@ -176,8 +176,14 @@ export function GlobalSearchBar({ activeRole }: GlobalSearchBarProps) {
     setDebouncedQuery('');
     inputRef.current?.blur();
     
+    let navUrl = result.url;
+    // Ensure assignments open the specific item via id parameter
+    if (result.type === 'assignment' && !navUrl.includes('id=')) {
+      navUrl = navUrl.includes('?') ? `${navUrl}&id=${result.id}` : `${navUrl}?id=${result.id}`;
+    }
+    
     // Navigate directly
-    navigate(result.url);
+    navigate(navUrl);
   };
 
   const highlightMatch = (text: string, highlight: string) => {

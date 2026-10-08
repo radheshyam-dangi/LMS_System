@@ -7,6 +7,7 @@ import { resolveAssignmentInstructions } from '../../utils/assignmentInstruction
 import { DeadlineDisplay } from '../DeadlineDisplay';
 import { renderMultilineText } from '../../utils/textUtils';
 import { AssignmentInstructionsGate } from '../common/AssignmentInstructionsGate';
+import { useToast } from '../../context/ToastContext';
 
 interface TraineeCurriculumViewProps {
   learningPathId: string;
@@ -58,6 +59,7 @@ export function TraineeCurriculumView({
 }: TraineeCurriculumViewProps) {
   const [modules, setModules] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const toast = useToast();
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
 
   // Task modal state
@@ -81,7 +83,7 @@ export function TraineeCurriculumView({
       setModules(mods);
       setExpandedModules(new Set(mods.map((m: any) => m.id)));
     } catch (err: any) {
-      alert(err.message || 'Failed to load learning track details.');
+      toast.error(err.message || 'Failed to load learning track details.');
     } finally {
       setIsLoading(false);
     }
@@ -142,7 +144,7 @@ export function TraineeCurriculumView({
     }
 
     if (!payloadText.trim()) {
-      alert('Please answer the question(s) before submitting.');
+      toast.warning('Please answer the question(s) before submitting.');
       return;
     }
 
@@ -155,7 +157,7 @@ export function TraineeCurriculumView({
       setActiveTask(null);
       await loadCurriculumTree();
     } catch (err: any) {
-      alert(err.message || 'Submission failed.');
+      toast.error(err.message || 'Submission failed.');
     } finally {
       setIsSubmitting(false);
     }

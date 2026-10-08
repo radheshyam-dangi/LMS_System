@@ -101,20 +101,24 @@ export class AssignmentController {
   async openSubmissionForEvaluation(
     @Param('id') submissionId: string,
     @GetUser() currentUser: any,
+    @Headers('x-active-role') activeRole?: string,
   ) {
     const userId = currentUser?.id || currentUser?.sub;
+    const role = activeRole || 'trainer';
     const affected = await this.notificationService.markByRelatedEntity(
       userId,
+      role,
       'submission',
       submissionId,
     );
     // Also clear generic evaluation-queue notifications if linked by type only
     await this.notificationService.markByTypes(
       userId,
+      role,
       ['submission_pending'],
       submissionId,
     );
-    const unreadCount = await this.notificationService.countUnread(userId);
+    const unreadCount = await this.notificationService.countUnread(userId, role);
     return { affected, unreadCount };
   }
 

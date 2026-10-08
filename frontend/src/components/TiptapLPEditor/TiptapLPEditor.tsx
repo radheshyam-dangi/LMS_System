@@ -16,6 +16,7 @@ import { SlashCommands, getSuggestionItems, renderSlashCommandList } from './sla
 import { parseLPDocument } from './parseLPDocument';
 import { validateLPDocument, type ValidationError } from './validateLPDocument';
 import { lpAuthoringService } from '../../services/lpAuthoringService';
+import { useToast } from '../../context/ToastContext';
 
 import {
   ModuleNode,
@@ -322,6 +323,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
 }) => {
   const token = localStorage.getItem('skillforge_access_token');
   const navigate = useNavigate();
+  const toast = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -474,7 +476,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
     setIsSubmitting(true);
     try {
       const result = await lpAuthoringService.submitLPDocument(parsed, token);
-      alert(`Success! Created Learning Path: ${result.title}`);
+      toast.success(`Success! Created Learning Path: ${result.title}`);
       
       // Navigate to the newly created LP
       if (onClose) {

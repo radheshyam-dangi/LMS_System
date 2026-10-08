@@ -9,6 +9,7 @@ import { AssignmentChatDrawer } from '../TraineeSubmissionsView/AssignmentChatDr
 import { renderMultilineText } from '../../utils/textUtils';
 import { curriculumService } from '../../services/curriculumService';
 import { assignmentService } from '../../services/assignmentService';
+import { useToast } from '../../context/ToastContext';
 
 interface SharedAssignmentModalProps {
   task: any;
@@ -27,6 +28,7 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
 }) => {
   const [step, setStep] = useState<'instructions' | 'questions'>('instructions');
   const [submissionText, setSubmissionText] = useState('');
+  const toast = useToast();
   const [subjectiveAnswers, setSubjectiveAnswers] = useState<{ [key: number]: string }>({});
   const [mcqAnswers, setMcqAnswers] = useState<{ [key: number]: number | number[] }>({});
   const [attachmentUrl, setAttachmentUrl] = useState('');
@@ -126,7 +128,7 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
         await assignmentService.startAssignment(task.id, accessToken);
         // We do not reload the page, but let the user proceed to questions
       } catch (err: any) {
-        alert(err?.response?.data?.message || err.message || 'Could not start assignment');
+        toast.error(err?.response?.data?.message || err.message || 'Could not start assignment');
         return;
       }
     }
@@ -181,10 +183,11 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
       );
       
       clearDraft();
+      toast.success('Assignment submitted successfully!');
       onSuccess();
       onClose();
     } catch (err: any) {
-      alert(err?.response?.data?.message || err.message || 'Failed to submit assignment');
+      toast.error(err?.response?.data?.message || err.message || 'Failed to submit assignment');
     } finally {
       setIsSubmitting(false); // Fix: was true
     }

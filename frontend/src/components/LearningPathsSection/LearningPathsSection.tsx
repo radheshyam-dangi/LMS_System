@@ -7,6 +7,7 @@ import { learningPathService } from "../../services/learningPathService";
 import { userService } from "../../services/userService";
 import { progressService } from "../../services/lmsApi";
 import { useNotifications } from "../../context/NotificationContext";
+import { useToast } from "../../context/ToastContext";
 import { useScrollLock } from "../../hooks/useScrollLock";
 import type {
   RoleName,
@@ -24,6 +25,7 @@ interface LearningPathsSectionProps {
   accessToken: string;
   onNavigateToModules: (pathId: string, pathName: string, traineeId?: string) => void;
   onBackToAllPaths?: () => void;
+  highlightPathId?: string | null;
 }
 
 interface TraineeUser {
@@ -160,8 +162,10 @@ export function LearningPathsSection({
   currentUser,
   accessToken,
   onNavigateToModules,
+  highlightPathId,
 }: LearningPathsSectionProps) {
   const navigate = useNavigate();
+  const toast = useToast();
   const [paths, setPaths] = useState<LearningPath[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -327,7 +331,7 @@ export function LearningPathsSection({
 
       setAllTrainees(eligibleTrainees);
     } catch (err: any) {
-      alert("Could not fetch eligible trainees.");
+      toast.error("Could not fetch eligible trainees.");
     } finally {
       setIsLoadingTrainees(false);
     }
@@ -371,8 +375,9 @@ export function LearningPathsSection({
 
       setIsAssignModalOpen(false);
       await refreshNotifications();
+      toast.success('Learning path assigned successfully!');
     } catch (err: any) {
-      alert(err.message ?? "Failed to assign trainees.");
+      toast.error(err.message ?? "Failed to assign trainees.");
     } finally {
       setIsSubmitting(false);
     }
@@ -404,12 +409,18 @@ export function LearningPathsSection({
       await learningPathService.deletePath(path.id, accessToken);
       setPaths((prev) => prev.filter((p) => p.id !== path.id));
     } catch (err: any) {
-      alert(err.message ?? "Failed to delete Learning Path.");
+      toast.error(err.message ?? "Failed to delete Learning Path.");
     }
   };
 
   const filteredPaths = useMemo(() => {
-    return paths.filter((path) => {
+    let result = paths;
+
+    if (highlightPathId) {
+      result = result.filter(path => path.id === highlightPathId);
+    }
+
+    return result.filter((path) => {
       if (isTrainee && !path.assignedToTraineeIds?.includes(currentUser.id))
         return false;
 
