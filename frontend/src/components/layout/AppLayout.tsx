@@ -22,7 +22,6 @@ import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
 import { getNotificationRoute } from '../../utils/notificationUtils';
-import { GlobalSearchBar } from './GlobalSearchBar';
 
 const CustomRoleSwitcher = ({ effectiveRole, availableRoles, onRoleChange }: any) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -317,8 +316,6 @@ export function AppLayout({
             <h2 className="topbar-title">{activeSection}</h2>
           </div>
           <div className="topbar-actions">
-            <GlobalSearchBar activeRole={effectiveRole} />
-
             {showRoleSwitcher && (
               <CustomRoleSwitcher
                 effectiveRole={effectiveRole}
@@ -539,7 +536,19 @@ export function AppLayout({
               )}
             </div>
 
-            <div className="topbar-user-badge" title={displayName}>
+            <div
+              className="topbar-user-badge hover-effect focus-ring"
+              title={`${displayName} - Click to open Settings`}
+              onClick={() => navigate('/settings')}
+              style={{ cursor: 'pointer' }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  navigate('/settings');
+                }
+              }}
+            >
               <div className="avatar" style={{ padding: (user as any).avatarUrl ? 0 : undefined, overflow: 'hidden' }}>
                 {(user as any).avatarUrl ? (
                   <img src={(user as any).avatarUrl} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />

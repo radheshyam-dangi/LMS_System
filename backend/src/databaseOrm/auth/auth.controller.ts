@@ -82,4 +82,18 @@ export class AuthController {
     }
     return this.authService.registerInvitedUser(token, dto.newPassword);
   }
+
+  @Post('change-password')
+  async changePassword(
+    @Body() body: { userId: string; currentPassword: string; newPassword: string },
+  ) {
+    if (!body?.userId || !body?.currentPassword || !body?.newPassword) {
+      throw new BadRequestException('User ID, current password, and new password are required');
+    }
+    return await this.authService.changePassword(
+      body.userId,
+      body.currentPassword,
+      body.newPassword,
+    );
+  }
 }

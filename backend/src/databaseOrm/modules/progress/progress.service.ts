@@ -10,6 +10,7 @@ import { AssignmentEntityService } from '../assignment/assignment.service';
 import { AssignmentEntity } from '../../entities/assignment.entity';
 import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
+import { ModuleEntity } from '../../entities/module.entity';
 
 @Injectable()
 export class ProgressEntityService {
@@ -20,6 +21,7 @@ export class ProgressEntityService {
   private assignmentRepository: Repository<AssignmentEntity>;
   private submissionRepository: Repository<AssignmentSubmissionEntity>;
   private pathRepository: Repository<LearningPathEntity>;
+  private moduleRepository: Repository<ModuleEntity>;
 
   constructor(
     private readonly datasource: DataSource,
@@ -37,6 +39,7 @@ export class ProgressEntityService {
       AssignmentSubmissionEntity,
     );
     this.pathRepository = this.datasource.getRepository(LearningPathEntity);
+    this.moduleRepository = this.datasource.getRepository(ModuleEntity);
   }
 
   async completeLesson(userId: string, lessonId: string) {
@@ -438,19 +441,30 @@ export class ProgressEntityService {
         }
       });
 
-      const mTotalItems = mTotalLessons + mTotalResources + mTotalTasks;
+      const mTotalItems = mTotalLessons + mTotalTasks;
       if (mTotalItems > 0) {
         moduleCount++;
-        const mCompletedItems = mCompletedLessons + mVisitedResources + mCompletedTasks;
+        const mCompletedItems = mCompletedLessons + mCompletedTasks;
         totalModuleProgress += (mCompletedItems / mTotalItems) * 100;
       }
     });
 
-    let completionPercent = moduleCount > 0 ? Math.round(totalModuleProgress / moduleCount) : 0;
-    if (moduleCount === 0 && (totalLessons + totalResources + scopedAssignments.length) > 0) {
-      const totalCompleted = completedLessons + visitedResources + tasksAccepted;
-      const totalItems = totalLessons + totalResources + scopedAssignments.length;
-      completionPercent = Math.round((totalCompleted / totalItems) * 100);
+    let completionPercent = 0;
+    if (learningPathId) {
+      completionPercent = await this.getLPProgress(userId, learningPathId);
+    } else if (enrolledPathIds.size > 0) {
+      let sumLpProgress = 0;
+      for (const pId of enrolledPathIds) {
+        sumLpProgress += await this.getLPProgress(userId, pId);
+      }
+      completionPercent = Math.round(sumLpProgress / enrolledPathIds.size);
+    } else {
+      completionPercent = moduleCount > 0 ? Math.round(totalModuleProgress / moduleCount) : 0;
+      if (moduleCount === 0 && (totalLessons + totalResources + scopedAssignments.length) > 0) {
+        const totalCompleted = completedLessons + visitedResources + tasksAccepted;
+        const totalItems = totalLessons + totalResources + scopedAssignments.length;
+        completionPercent = Math.round((totalCompleted / totalItems) * 100);
+      }
     }
     const lessonPct = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
     const resourcePct = totalResources > 0 ? Math.round((visitedResources / totalResources) * 100) : 100;
@@ -548,13 +562,49 @@ export class ProgressEntityService {
 
   /**
    * Calculates dynamic real-time progress for a specific Learning Path.
-   * Progress % = simple average of its modules' completion percentages.
+   * LP Progress (%) = (sum of all module completion percentages in LP) / (total number of modules in LP)
+   * Example: 2 modules in LP, one is 25%, other is 25% -> LP progress = (25 + 25) / 2 = 50 / 2 = 25%
    */
   async getLPProgress(userId: string, learningPathId: string): Promise<number> {
-    if (!userId || !learningPathId) return 0;
+    const details = await this.getLPProgressDetails(userId, learningPathId);
+    return details.lpProgress;
+  }
 
-    const stats = await this.statsForUser(userId, learningPathId);
-    return stats.completionPercent;
+  async getLPProgressDetails(userId: string, learningPathId: string): Promise<{
+    lpProgress: number;
+    totalModules: number;
+    moduleProgressMap: Record<string, number>;
+  }> {
+    if (!userId || !learningPathId) {
+      return { lpProgress: 0, totalModules: 0, moduleProgressMap: {} };
+    }
+
+    const modules = await this.moduleRepository.find({
+      where: { learningPath: { id: learningPathId } },
+      select: ['id'],
+      order: { createdAt: 'ASC' },
+    });
+
+    if (!modules || modules.length === 0) {
+      return { lpProgress: 0, totalModules: 0, moduleProgressMap: {} };
+    }
+
+    let totalModuleProgress = 0;
+    const moduleProgressMap: Record<string, number> = {};
+
+    for (const mod of modules) {
+      const modProgress = await this.getModuleProgress(userId, mod.id);
+      const modPercent = modProgress.completionPercent || 0;
+      moduleProgressMap[mod.id] = modPercent;
+      totalModuleProgress += modPercent;
+    }
+
+    const lpProgress = Math.min(100, Math.round(totalModuleProgress / modules.length));
+    return {
+      lpProgress,
+      totalModules: modules.length,
+      moduleProgressMap,
+    };
   }
 
   /**
@@ -672,21 +722,14 @@ export class ProgressEntityService {
       });
     }
 
-    // Completed tasks (submitted/accepted/evaluated)
+    // Completed tasks (any submitted/evaluated/reviewed submission)
     let completedTasks = 0;
     if (assignmentIds.length > 0) {
       completedTasks = await this.submissionRepository.count({
         where: {
           trainee: { id: userId },
           assignment: { id: In(assignmentIds) },
-          status: In([
-            'Submitted', 'SUBMITTED', 'submitted',
-            'Under Review', 'UNDER REVIEW', 'under review',
-            'Approved', 'APPROVED', 'approved',
-            'Needs Revision', 'NEEDS REVISION', 'needs revision',
-            'Accepted', 'ACCEPTED', 'accepted',
-            'Evaluated', 'EVALUATED', 'evaluated'
-          ]),
+          status: Not(In(['AVAILABLE', 'LOCKED'])),
         } as any,
       });
     }
@@ -719,16 +762,16 @@ export class ProgressEntityService {
         : 0;
     }
 
-    // 3. Pooled Item Counts Calculation
-    const totalItems = totalLessons + totalResources + totalTasks;
+    // 3. Module Progress Calculation: ((total task completed + total lesson completed) / (total lesson + task)) * 100
+    const totalItems = totalLessons + totalTasks;
     let finalProgress = 0;
     if (totalItems > 0) {
-      const totalCompleted = completedLessons + completedResources + completedTasks;
+      const totalCompleted = completedLessons + completedTasks;
       finalProgress = (totalCompleted / totalItems) * 100;
     }
     
     return {
-      completionPercent: Math.round(finalProgress),
+      completionPercent: Math.min(100, Math.round(finalProgress)),
       completedLessons,
       totalLessons,
       visitedResources: completedResources,
@@ -756,6 +799,8 @@ export class ProgressEntityService {
         userProgressPercent: number;
         cohortProgressPercent: number;
         enrolledCount: number;
+        totalModules: number;
+        moduleProgresses: Record<string, number>;
         totalLessons: number;
         totalAssignments: number;
         totalResources: number;
@@ -770,8 +815,9 @@ export class ProgressEntityService {
       
       const pathId = path.id;
       
-      // Calculate logged-in user's progress using the shared function
-      const userProgressPercent = await this.getLPProgress(currentUserId, pathId);
+      // Calculate logged-in user's LP progress and module breakdown
+      const lpDetails = await this.getLPProgressDetails(currentUserId, pathId);
+      const userProgressPercent = lpDetails.lpProgress;
       
       const enrolledTraineeIds = path.assignedToTraineeIds || [];
       
@@ -788,16 +834,14 @@ export class ProgressEntityService {
         }));
         cohortProgressPercent = Math.round(sum / enrolledTraineeIds.length);
       }
-
-      // We still need to return total items for UI display (optional, depending on if UI uses them)
-      // To get total items, we would ideally fetch the modules, but let's just return 0 to simplify
-      // since the UI relies primarily on the percentage. If needed, we can query it.
       
       result[pathId] = {
         userProgressPercent,
         cohortProgressPercent,
         enrolledCount: enrolledTraineeIds.length,
-        totalLessons: 0, // Simplified: the UI mainly uses the percent for LP cards
+        totalModules: lpDetails.totalModules,
+        moduleProgresses: lpDetails.moduleProgressMap,
+        totalLessons: 0,
         totalAssignments: 0,
         totalResources: 0,
         traineeProgressMap,

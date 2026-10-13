@@ -41,68 +41,123 @@ export const AssignmentCard: React.FC<Props> = ({
   const maxScore = (task as any).maxScore || 100;
   const isBelowCutoff = status.toUpperCase() === 'APPROVED' && typeof submission?.score === 'number' && (submission.score / maxScore) * 100 < 35;
   
-  let displayStatus = status.toLowerCase() === 'approved' ? 'Approved' : status === 'NEEDS_IMPROVEMENT' ? 'Needs Improvement' : status === 'EVALUATING' ? 'Evaluating' : (isLocked ? 'Locked' : status);
+  const rawStatus = (submission?.status || 'Pending').trim();
+  let displayStatus = 'Pending';
+  if (isLocked || rawStatus.toUpperCase() === 'LOCKED') {
+    displayStatus = 'Locked';
+  } else if (rawStatus.toLowerCase() === 'approved') {
+    displayStatus = 'Approved';
+  } else if (rawStatus.toUpperCase() === 'NEEDS_IMPROVEMENT' || rawStatus.toLowerCase() === 'needs_improvement') {
+    displayStatus = 'Needs Improvement';
+  } else if (rawStatus.toLowerCase() === 'evaluating') {
+    displayStatus = 'Evaluating';
+  } else if (rawStatus === 'ai_evaluated_pending_review' || rawStatus === 'pending_manual_review') {
+    displayStatus = 'Under Review';
+  } else if (rawStatus.toUpperCase() === 'AVAILABLE') {
+    displayStatus = 'Available';
+  } else if (rawStatus.toUpperCase() === 'SUBMITTED' || rawStatus.toLowerCase() === 'submitted') {
+    displayStatus = 'Submitted';
+  } else if (rawStatus.toUpperCase() === 'REJECTED' || rawStatus.toLowerCase() === 'rejected') {
+    displayStatus = 'Rejected';
+  } else {
+    displayStatus = rawStatus.replace(/_/g, ' ');
+    displayStatus = displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1);
+  }
+
   if (isBelowCutoff) {
     displayStatus = 'Needs Improvement';
   }
 
+  const getBadgeStyle = (st: string) => {
+    switch (st) {
+      case 'Approved':
+        return { bg: '#dcfce7', color: '#166534', border: '#bbf7d0' };
+      case 'Needs Improvement':
+        return { bg: '#ffedd5', color: '#c2410c', border: '#fed7aa' };
+      case 'Under Review':
+        return { bg: '#e0e7ff', color: '#3730a3', border: '#c7d2fe' };
+      case 'Evaluating':
+        return { bg: '#ede9fe', color: '#6d28d9', border: '#ddd6fe' };
+      case 'Submitted':
+        return { bg: '#fef3c7', color: '#b45309', border: '#fde68a' };
+      case 'Rejected':
+        return { bg: '#fee2e2', color: '#b91c1c', border: '#fecaca' };
+      case 'Available':
+        return { bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' };
+      case 'Locked':
+        return { bg: '#f8fafc', color: '#94a3b8', border: '#e2e8f0' };
+      default:
+        return { bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' };
+    }
+  };
+
+  const badgeTheme = getBadgeStyle(displayStatus);
+
   return (
     <div
+      className="assignment-card-grid"
       title={isLocked || status === 'LOCKED' ? lockReason || 'Locked task' : undefined}
       onClick={isLocked && onClickLocked ? () => onClickLocked(lockReason) : undefined}
       style={{
         padding: '16px 20px',
         background: '#fff',
         border: '1px solid #e2e8f0',
-        borderRadius: 8,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 16,
-        opacity: isLocked || status === 'LOCKED' ? 0.5 : 1,
+        borderRadius: 10,
+        opacity: isLocked || status === 'LOCKED' ? 0.6 : 1,
         cursor: isLocked || status === 'LOCKED' ? 'not-allowed' : 'default',
         transition: isLocked || status === 'LOCKED' ? 'none' : 'all 0.15s ease-in-out',
-        flexWrap: 'wrap'
+        boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 240px', minWidth: 200 }}>
+      {/* ── COLUMN 1: TITLE & METADATA ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
         {isLocked || status === 'LOCKED' ? (
-          <div style={{ color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Lock size={16} />
+          <div style={{ width: 28, height: 28, borderRadius: 8, background: '#f1f5f9', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Lock size={15} />
           </div>
         ) : null}
-        <div>
-          <h4 style={{ margin: '0 0 4px', fontSize: 15, color: '#0f172a' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <h4
+            style={{
+              margin: '0 0 4px',
+              fontSize: 15,
+              fontWeight: 600,
+              color: '#0f172a',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={task.title}
+          >
             {task.title}
           </h4>
-          <span style={{ fontSize: 12, color: '#64748b' }}>
+          <span style={{ fontSize: 12, color: '#64748b', display: 'block' }}>
             {task.assignmentType} · {task.lessonTitle || 'Module task'}
           </span>
         </div>
       </div>
       
-      <div style={{ flex: '0 0 240px', display: 'flex', justifyContent: 'flex-start' }}>
+      {/* ── COLUMN 2: DUE DATE / DEADLINE (FIXED COLUMN WIDTH) ── */}
+      <div className="assignment-card-due-col">
         <DeadlineDisplay task={task} submission={submission} />
       </div>
       
-      <div style={{ flex: '0 0 240px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, pointerEvents: isLocked || status === 'LOCKED' ? 'none' : 'auto' }}>
+      {/* ── COLUMN 3: STATUS & ACTION BUTTON ── */}
+      <div
+        className="assignment-card-actions-col"
+        style={{ pointerEvents: isLocked || status === 'LOCKED' ? 'none' : 'auto' }}
+      >
         <span
           style={{
             fontSize: 11,
             fontWeight: 700,
             padding: '4px 10px',
             borderRadius: 999,
-            background:
-              displayStatus === 'Needs Improvement' ? '#ffedd5'
-              : displayStatus === 'Approved' ? '#dcfce7'
-              : status.toLowerCase() === 'rejected' ? '#fee2e2'
-              : status.toLowerCase() === 'submitted' ? '#fef3c7'
-              : '#f1f5f9',
-            color:
-              displayStatus === 'Needs Improvement' ? '#c2410c'
-              : displayStatus === 'Approved' ? '#166534'
-              : status.toLowerCase() === 'rejected' ? '#b91c1c'
-              : status.toLowerCase() === 'submitted' ? '#b45309'
-              : '#475569',
+            background: badgeTheme.bg,
+            color: badgeTheme.color,
+            border: `1px solid ${badgeTheme.border}`,
+            whiteSpace: 'nowrap',
+            letterSpacing: '0.02em',
           }}
         >
           {displayStatus}
@@ -123,8 +178,13 @@ export const AssignmentCard: React.FC<Props> = ({
               borderRadius: 6, 
               fontSize: 13, 
               fontWeight: 600, 
-              cursor: 'pointer' 
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'background 0.15s',
+              boxShadow: '0 1px 2px rgba(79,70,229,0.2)'
             }}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#4338ca'}
+            onMouseLeave={(e) => e.currentTarget.style.background = '#4f46e5'}
           >
             {isTaskSubmitted ? 'Resubmit' : 'Submit'}
           </button>

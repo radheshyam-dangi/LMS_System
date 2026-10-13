@@ -421,11 +421,29 @@ export function ModulesManagementSection({
 
     const tasks = [...lessonTasks, ...moduleLevelAssignments];
 
-    // Use backend computed-on-read values (§2 — no stale counters)
-    const completedLessons = moduleStats?.completedLessons ?? lessons.filter((l: any) => completedLessonIds.has(String(l.id))).length;
+    // ── Module progress calculation ──────────────────────────────────────────
+    // Formula: ((total task completed + total lesson completed) / (total lesson + task)) * 100
+    const completedLessons = Math.min(
+      lessons.length,
+      Math.max(
+        moduleStats?.completedLessons || 0,
+        lessons.filter((l: any) => completedLessonIds.has(String(l.id))).length
+      )
+    );
     const visitedResourceIds = new Set<string>((moduleStats?.visitedResourceIds || progressStats?.visitedResourceIds || []).map(String));
-    const isTaskSubmitted = (sub: any) => sub && sub.status !== 'AVAILABLE' && sub.status !== 'LOCKED';
-    const tasksSubmitted = tasks.filter((t: any) => isTaskSubmitted(subByAssignment.get(t.id))).length;
+    
+    const isTaskCompleted = (t: any) => {
+      const sub = subByAssignment.get(t.id);
+      if (!sub) return false;
+      const status = String(sub.status || '').toUpperCase();
+      return status !== 'AVAILABLE' && status !== 'LOCKED' && status !== '';
+    };
+
+    const tasksSubmitted = Math.min(
+      tasks.length,
+      tasks.filter((t: any) => isTaskCompleted(t)).length
+    );
+
     const tasksScored = tasks.filter((t: any) => {
       const s = subByAssignment.get(t.id);
       return s && typeof s.score === 'number';
@@ -435,10 +453,14 @@ export function ModulesManagementSection({
 
     const visitedResourcesCount = moduleStats?.visitedResources ?? resources.filter((r: any) => visitedResourceIds.has(String(r.id))).length;
 
-    // Module progress from backend (computed-on-read, §2 — single source of truth)
-    const totalVisibleItems = lessons.length + tasks.length;
-    const completedVisibleItems = Math.min(completedLessons, lessons.length) + Math.min(tasksSubmitted, tasks.length);
-    const progressPercent = totalVisibleItems > 0 ? Math.round((completedVisibleItems / totalVisibleItems) * 100) : 0;
+    // Strict pooled progress: ((completedTasks + completedLessons) / (totalLessons + totalTasks)) * 100
+    const totalLessonsCount = lessons.length;
+    const totalTasksCount = tasks.length;
+    const totalItems = totalLessonsCount + totalTasksCount;
+    const completedItems = completedLessons + tasksSubmitted;
+    const progressPercent = totalItems > 0 
+      ? Math.min(100, Math.max(0, Math.round((completedItems / totalItems) * 100))) 
+      : 0;
 
     const rawObj = openModuleData?.objectives;
     const rawKeyPoints = Array.isArray(openModuleData?.keyPoints)
@@ -803,29 +825,28 @@ export function ModulesManagementSection({
                   No tasks assigned yet.
                 </div>
               ) : (
-                tasks.map((task: any) => {
-                  const sub = subByAssignment.get(task.id);
-                  const status = sub?.status || 'Not Started';
-                  const statusColors: Record<string, { bg: string; color: string }> = {
-                    'Approved': { bg: '#dcfce7', color: '#166534' },
-                    'Rejected': { bg: '#fee2e2', color: '#b91c1c' },
-                    'Submitted': { bg: '#fef3c7', color: '#b45309' },
-                    'Not Started': { bg: '#f1f5f9', color: '#475569' },
-                  };
-                  const sc = statusColors[status] || statusColors['Not Started'];
-                  return (
-                    <AssignmentCard
-                      key={task.id}
-                      task={task}
-                      submission={sub}
-                      isLocked={task.isLocked}
-                      lockReason={task.lockReason}
-                      isTrainee={isTrainee}
-                      onClickLocked={(r) => toast.warning(r || 'Locked')}
-                      onAttempt={(t) => { setSubmitTask(t); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
-                    />
-                  );
-                })
+                <>
+                  <div className="tasks-header-row">
+                    <span>Task Name</span>
+                    <span>Due Date</span>
+                    <span style={{ textAlign: 'right' }}>Status & Action</span>
+                  </div>
+                  {tasks.map((task: any) => {
+                    const sub = subByAssignment.get(task.id);
+                    return (
+                      <AssignmentCard
+                        key={task.id}
+                        task={task}
+                        submission={sub}
+                        isLocked={task.isLocked}
+                        lockReason={task.lockReason}
+                        isTrainee={isTrainee}
+                        onClickLocked={(r) => toast.warning(r || 'Locked')}
+                        onAttempt={(t) => { setSubmitTask(t); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
+                      />
+                    );
+                  })}
+                </>
               )}
             </div>
           )}

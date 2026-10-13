@@ -99,3 +99,61 @@
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+/* ==========================================
+   ASSIGNMENT TASK ROW & DUE DATE ALIGNMENT
+   ========================================== */
+.tasks-header-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) 220px 240px;
+  gap: 20px;
+  padding: 0 20px 8px 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  align-items: center;
+}
+
+.assignment-card-grid {
+  display: grid !important;
+  grid-template-columns: minmax(240px, 1fr) 220px 240px !important;
+  align-items: center !important;
+  gap: 20px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.assignment-card-due-col {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.assignment-card-actions-col {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+@media (max-width: 860px) {
+  .tasks-header-row {
+    display: none !important;
+  }
+  .assignment-card-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .assignment-card-due-col {
+    justify-content: flex-start !important;
+  }
+  .assignment-card-actions-col {
+    justify-content: flex-start !important;
+  }
+}

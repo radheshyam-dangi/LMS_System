@@ -162,9 +162,12 @@ function extractQuestions(node: any): ParsedQuestion[] {
       }
 
       const type = q.attrs?.questionType || 'Subjective';
-      const options = (type === 'MCQ' && Array.isArray(q.attrs?.options) && q.attrs.options.length > 0) 
-        ? q.attrs.options 
-        : qOptions;
+      const validAttrOptions = Array.isArray(q.attrs?.options)
+        ? q.attrs.options.filter((o: string) => typeof o === 'string' && o.trim().length > 0)
+        : [];
+      const options = type === 'MCQ'
+        ? (validAttrOptions.length > 0 ? validAttrOptions : qOptions)
+        : [];
 
       return {
         id: q.attrs?.id || crypto.randomUUID(),
@@ -251,9 +254,12 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
         }
         
         const type = block.attrs?.questionType || 'Subjective';
-        const options = (type === 'MCQ' && Array.isArray(block.attrs?.options) && block.attrs.options.length > 0) 
-          ? block.attrs.options 
-          : qOptions;
+        const validAttrOptions = Array.isArray(block.attrs?.options)
+          ? block.attrs.options.filter((o: string) => typeof o === 'string' && o.trim().length > 0)
+          : [];
+        const options = type === 'MCQ'
+          ? (validAttrOptions.length > 0 ? validAttrOptions : qOptions)
+          : [];
 
         questions.push({
           id: block.attrs?.id || crypto.randomUUID(),

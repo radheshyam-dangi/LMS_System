@@ -18,7 +18,7 @@ export class EvaluationWorkerService {
   private assignmentRepo: Repository<AssignmentEntity>;
   private cacheRepo: Repository<LessonContentCacheEntity>;
 
-  private readonly MODEL = process.env.GROQ_EVAL_MODEL || 'openai/gpt-oss-safeguard-20b';
+  private readonly MODEL = process.env.GROQ_EVAL_MODEL || 'openai/gpt-oss-120b';
   private readonly API_KEY = process.env.GROQ_API_KEY;
   private readonly MAX_CONTEXT_TOKENS = process.env.GROQ_MAX_CONTEXT_TOKENS ? parseInt(process.env.GROQ_MAX_CONTEXT_TOKENS, 10) : 4000;
   private isProcessing = false;
@@ -128,33 +128,11 @@ export class EvaluationWorkerService {
       (assignment as any).dynamicRecipientId = recipientId;
 
       const questions = assignment.questions || [];
-      let submittedAnswers: any[] = submission?.answers || [];
-
-      if ((!submittedAnswers || submittedAnswers.length === 0) && submission.submissionText) {
-        try {
-          const parsed = JSON.parse(submission.submissionText);
-          if (parsed && typeof parsed.answers === 'object' && !Array.isArray(parsed.answers)) {
-            submittedAnswers = Object.entries(parsed.answers).map(([key, value]) => {
-              const idx = parseInt(key, 10);
-              const q = (!isNaN(idx) && questions[idx]) ? questions[idx] : questions.find(q => String(q.id) === key);
-              return {
-                questionId: q ? q.id : key,
-                answer: typeof value === 'string' ? value : (value as any)?.answer || JSON.stringify(value),
-              };
-            });
-          } else if (Array.isArray(parsed)) {
-            submittedAnswers = parsed;
-          } else {
-            submittedAnswers = questions.map(q => ({ questionId: q.id, answer: submission.submissionText }));
-          }
-        } catch (e) {
-          submittedAnswers = questions.map(q => ({ questionId: q.id, answer: submission.submissionText }));
-        }
-      }
+      const submittedAnswers = this.extractSubmittedAnswers(submission, questions);
 
       const rubricCache = new Map();
-      const evaluationPromises = questions.map(q => {
-        const ans = submittedAnswers.find(a => String(a.questionId) === String(q.id));
+      const evaluationPromises = questions.map((q, idx) => {
+        const ans = this.findAnswerForQuestion(submittedAnswers, q, idx);
         return this.evaluateQuestion(q, ans, assignment, rubricCache);
       });
 
@@ -198,15 +176,148 @@ export class EvaluationWorkerService {
     }
   }
 
+  private extractSubmittedAnswers(submission: AssignmentSubmissionEntity, questions: any[]): Array<{ questionId?: string; index?: number; answer: string }> {
+    const results: Array<{ questionId?: string; index?: number; answer: string }> = [];
+
+    // 1. Direct submission.answers array
+    if (Array.isArray(submission.answers) && submission.answers.length > 0) {
+      for (const item of submission.answers) {
+        if (item && (item.answer !== undefined || (item as any).value !== undefined)) {
+          results.push({
+            questionId: item.questionId ? String(item.questionId) : undefined,
+            answer: String(item.answer ?? (item as any).value ?? '').trim(),
+          });
+        }
+      }
+      if (results.length > 0) return results;
+    }
+
+    // 2. Parse submission.submissionText
+    if (submission.submissionText) {
+      try {
+        const parsed = typeof submission.submissionText === 'string'
+          ? JSON.parse(submission.submissionText)
+          : submission.submissionText;
+
+        if (Array.isArray(parsed)) {
+          for (let i = 0; i < parsed.length; i++) {
+            const item = parsed[i];
+            if (typeof item === 'string') {
+              results.push({ index: i, answer: item.trim() });
+            } else if (item && typeof item === 'object') {
+              results.push({
+                questionId: item.questionId ? String(item.questionId) : undefined,
+                index: i,
+                answer: String(item.answer ?? item.value ?? '').trim(),
+              });
+            }
+          }
+        } else if (parsed && typeof parsed === 'object') {
+          // Check textAnswers (from SharedAssignmentModal / ModuleDetailsView)
+          if (parsed.textAnswers && typeof parsed.textAnswers === 'object') {
+            for (const [key, val] of Object.entries(parsed.textAnswers)) {
+              if (val !== undefined && val !== null) {
+                const idx = parseInt(key, 10);
+                results.push({
+                  questionId: isNaN(idx) ? key : undefined,
+                  index: !isNaN(idx) ? idx : undefined,
+                  answer: typeof val === 'string' ? val.trim() : JSON.stringify(val),
+                });
+              }
+            }
+          }
+
+          // Check answers (MCQ or generic key-value)
+          if (parsed.answers && typeof parsed.answers === 'object') {
+            for (const [key, val] of Object.entries(parsed.answers)) {
+              if (val !== undefined && val !== null) {
+                const idx = parseInt(key, 10);
+                const existing = results.find(r => (!isNaN(idx) && r.index === idx) || (isNaN(idx) && r.questionId === key));
+                if (!existing) {
+                  results.push({
+                    questionId: isNaN(idx) ? key : undefined,
+                    index: !isNaN(idx) ? idx : undefined,
+                    answer: typeof val === 'string' ? val.trim() : (typeof val === 'number' ? String(val) : JSON.stringify(val)),
+                  });
+                }
+              }
+            }
+          }
+
+          // Check mcqAnswers if present separately
+          if (parsed.mcqAnswers && typeof parsed.mcqAnswers === 'object') {
+            for (const [key, val] of Object.entries(parsed.mcqAnswers)) {
+              if (val !== undefined && val !== null) {
+                const idx = parseInt(key, 10);
+                const existing = results.find(r => (!isNaN(idx) && r.index === idx) || (isNaN(idx) && r.questionId === key));
+                if (!existing) {
+                  results.push({
+                    questionId: isNaN(idx) ? key : undefined,
+                    index: !isNaN(idx) ? idx : undefined,
+                    answer: String(val).trim(),
+                  });
+                }
+              }
+            }
+          }
+
+          // Fallback to raw if no specific answers found
+          if (results.length === 0 && parsed.raw && typeof parsed.raw === 'string' && parsed.raw.trim().length > 0) {
+            results.push({ answer: parsed.raw.trim() });
+          }
+        }
+      } catch {
+        // Not JSON — plain text submission
+        results.push({ answer: String(submission.submissionText).trim() });
+      }
+    }
+
+    return results;
+  }
+
+  private findAnswerForQuestion(
+    submittedAnswers: Array<{ questionId?: string; index?: number; answer: string }>,
+    question: any,
+    questionIndex: number,
+  ): { answer: string } | undefined {
+    // 1. Match by questionId
+    if (question.id) {
+      const match = submittedAnswers.find(a => a.questionId && String(a.questionId) === String(question.id));
+      if (match) return match;
+    }
+
+    // 2. Match by question index
+    const matchByIndex = submittedAnswers.find(a => a.index !== undefined && a.index === questionIndex);
+    if (matchByIndex) return matchByIndex;
+
+    // 3. Fallback: single answer submitted for single question assignment
+    if (submittedAnswers.length === 1 && submittedAnswers[0].answer) {
+      return submittedAnswers[0];
+    }
+
+    return undefined;
+  }
+
   private async evaluateQuestion(question: any, answer: any, assignment: AssignmentEntity, rubricCache: Map<string, any>) {
     if (String(question.type || '').toLowerCase() === 'mcq') {
       const expectedOption = question.options?.[question.correctIndex];
-      const isCorrect = answer && String(answer.answer || answer.selectedOption || '').toLowerCase().trim() === String(expectedOption || '').toLowerCase().trim();
+      const ansVal = String(answer?.answer ?? answer?.selectedOption ?? '').trim();
+
+      let isCorrect = false;
+      const parsedIdx = parseInt(ansVal, 10);
+      if (!isNaN(parsedIdx) && parsedIdx === question.correctIndex) {
+        isCorrect = true;
+      } else if (expectedOption && ansVal.toLowerCase() === String(expectedOption).toLowerCase().trim()) {
+        isCorrect = true;
+      } else if (!isNaN(parsedIdx) && question.options?.[parsedIdx]) {
+        isCorrect = String(question.options[parsedIdx]).toLowerCase().trim() === String(expectedOption).toLowerCase().trim();
+      }
+
       return {
         questionId: question.id,
         score: isCorrect ? question.maxPoints : 0,
         maxScore: question.maxPoints,
-        remark: isCorrect ? 'Correct answer.' : `Incorrect. The correct answer is: ${expectedOption}`,
+        remark: isCorrect ? 'Correct answer.' : `Incorrect. The correct answer is: ${expectedOption ?? 'Option ' + ((question.correctIndex || 0) + 1)}`,
         type: 'mcq',
         confidence: 1.0,
         groundingSource: 'deterministic',
@@ -286,13 +397,33 @@ Return ONLY valid JSON matching this exact shape:
       })
     });
 
-    if (!response.ok) throw new Error(`API error ${response.status}`);
+    if (!response.ok) {
+      const errText = await response.text();
+      this.logger.error(`Groq API error ${response.status}: ${errText}`);
+      throw new Error(`Groq API error ${response.status}: ${errText}`);
+    }
+
     const data = await response.json();
+    const rawContent = data.choices?.[0]?.message?.content || '';
     let parsed: any;
     try {
-       parsed = JSON.parse(data.choices?.[0]?.message?.content);
+      parsed = JSON.parse(rawContent);
     } catch {
-       throw new Error('Unparseable JSON');
+      const cleaned = rawContent.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+      try {
+        parsed = JSON.parse(cleaned);
+      } catch {
+        const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            parsed = JSON.parse(jsonMatch[0]);
+          } catch {
+            throw new Error(`Unparseable JSON from model: ${rawContent.substring(0, 200)}`);
+          }
+        } else {
+          throw new Error(`Unparseable JSON from model: ${rawContent.substring(0, 200)}`);
+        }
+      }
     }
     
     // clamp score

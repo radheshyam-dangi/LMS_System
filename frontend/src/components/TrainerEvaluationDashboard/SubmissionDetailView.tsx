@@ -76,10 +76,24 @@ export function extractAssignmentQuestions(assignment: any): any[] {
     }];
   }
 
+  // 7. Fallback if rawList is empty but assignment has title/description/instructions
+  if (rawList.length === 0 && (assignment.title || assignment.description || assignment.instructions)) {
+    const fallbackText = assignment.description || assignment.instructions || assignment.title || 'Assignment Task';
+    rawList = [{
+      id: '0',
+      text: fallbackText,
+      questionText: fallbackText,
+      question: fallbackText,
+      type: assignment.assignmentType === 'MCQ' ? 'MCQ' : 'Subjective',
+      options: [],
+      maxPoints: assignment.maxScore || 10,
+    }];
+  }
+
   // Normalize each question object
   return rawList.map((q, idx) => {
     const qId = String(q.id ?? idx);
-    const qText = q.questionText || q.text || q.question || `Question ${idx + 1}`;
+    const qText = q.questionText || q.text || q.question || q.title || `Question ${idx + 1}`;
     const qOptions = Array.isArray(q.options) ? q.options : [];
     const qType = q.type || (qOptions.length > 0 ? 'MCQ' : 'Subjective');
     const correctIdx = q.correctIndex != null && !isNaN(Number(q.correctIndex)) ? Number(q.correctIndex) : null;
@@ -88,10 +102,13 @@ export function extractAssignmentQuestions(assignment: any): any[] {
     return {
       id: qId,
       text: qText,
+      questionText: qText,
+      question: qText,
       type: qType,
       options: qOptions,
       correctIndex: correctIdx,
       points,
+      maxPoints: points,
       expectedAnswerGuideline: q.expectedAnswerGuideline || q.guidelines || '',
     };
   });
@@ -107,8 +124,19 @@ export function parseSubmissionData(submission: any) {
   if (typeof parsed === 'string') {
     try {
       const obj = JSON.parse(parsed);
-      parsed = obj.answers ?? obj.mcqAnswers ?? obj.textAnswers ?? obj;
-      if (obj.raw) rawText = obj.raw;
+      if (typeof obj === 'object' && obj !== null) {
+        if (obj.answers !== undefined || obj.textAnswers !== undefined || obj.mcqAnswers !== undefined) {
+          parsed = {
+            ...(typeof obj.answers === 'object' && !Array.isArray(obj.answers) ? obj.answers : {}),
+            ...(typeof obj.textAnswers === 'object' && !Array.isArray(obj.textAnswers) ? obj.textAnswers : {}),
+            ...(typeof obj.mcqAnswers === 'object' && !Array.isArray(obj.mcqAnswers) ? obj.mcqAnswers : {}),
+          };
+          if (Array.isArray(obj.answers)) parsed = obj.answers;
+        } else {
+          parsed = obj;
+        }
+        if (obj.raw) rawText = obj.raw;
+      }
     } catch {}
   }
 
@@ -276,11 +304,13 @@ export function SubmissionDetailView({
       }}
     >
       <div
+        className="w-full max-w-[880px] h-auto min-h-0"
         style={{
           background: '#ffffff',
           width: '880px',
           maxWidth: '100%',
-          maxHeight: '92vh',
+          maxHeight: '90vh',
+          height: 'auto',
           borderRadius: '18px',
           display: 'flex',
           flexDirection: 'column',
@@ -369,7 +399,18 @@ export function SubmissionDetailView({
         </div>
 
         {/* ═══ MODAL BODY (SCROLLABLE) ═══ */}
-        <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div
+          className="max-h-[80vh] overflow-y-auto min-h-0 h-auto"
+          style={{
+            padding: '24px',
+            maxHeight: '80vh',
+            overflowY: 'auto',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+          }}
+        >
           
           {/* Quick Metrics Bar (for MCQs) */}
           {stats.mcqCount > 0 && (
@@ -777,12 +818,33 @@ export function SubmissionDetailView({
                         </div>
                       ) : (
                         /* ─── SUBJECTIVE QUESTION VIEW ─── */
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '6px' }}>
+                        <div className="h-auto min-h-0" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.3px' }}>
+                              Question Prompt:
+                            </div>
+                            <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '14px', lineHeight: '1.5' }}>
+                              {q.text || q.questionText || q.question}
+                            </div>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.3px' }}>
                               Trainee Submitted Answer:
                             </div>
-                            <div style={{ fontSize: '14px', color: '#0f172a', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
+                            <div
+                              className="whitespace-pre-wrap break-words min-h-0 h-auto"
+                              style={{
+                                fontSize: '14px',
+                                color: '#0f172a',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                overflowWrap: 'break-word',
+                                lineHeight: '1.6',
+                                background: '#ffffff',
+                                padding: '14px',
+                                borderRadius: '8px',
+                                border: '1px solid #cbd5e1',
+                                borderLeft: '4px solid #3b82f6',
+                              }}
+                            >
                               {traineeAnswer ? String(traineeAnswer) : <em style={{ color: '#94a3b8' }}>No answer written.</em>}
                             </div>
                           </div>
@@ -894,11 +956,26 @@ export function SubmissionDetailView({
               </div>
             ) : (
               /* Fallback view when no structured questions exist */
-              <div style={{ background: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+              <div className="h-auto min-h-0" style={{ background: '#f8fafc', padding: '18px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#475569', marginBottom: '8px' }}>
                   Raw Submission Content:
                 </div>
-                <div style={{ whiteSpace: 'pre-wrap', color: '#1e293b', fontSize: '13px', background: '#fff', padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                <div
+                  className="whitespace-pre-wrap break-words min-h-0 h-auto"
+                  style={{
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
+                    lineHeight: '1.6',
+                    color: '#1e293b',
+                    fontSize: '13px',
+                    background: '#fff',
+                    padding: '14px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    borderLeft: '4px solid #3b82f6',
+                  }}
+                >
                   {rawText || submission.submissionText || 'No textual content submitted.'}
                 </div>
               </div>

@@ -492,6 +492,8 @@ export function DashboardPage({
     moduleCompletion: [],
     pathPerformance: [],
   });
+  const [allPaths, setAllPaths] = useState<any[]>([]);
+  const [pathProgressSummary, setPathProgressSummary] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (charts.moduleCompletion.length > 0 && !selectedLpTitle) {
@@ -536,7 +538,7 @@ export function DashboardPage({
       setIsLoadingMetrics(true);
       try {
         const fetchRole = isTrainerDrillDown ? 'Trainee' : activeRole;
-        const [analytics, usersList, pathsList, pendingSubs, mySubs, myProgress] = await Promise.all([
+        const [analytics, usersList, pathsList, pendingSubs, mySubs, myProgress, pathSummary] = await Promise.all([
           (isTrainer
             ? analyticsService.fetchTrainerDashboardSummary(accessToken, currentUser.id)
             : analyticsService.fetchDashboard(accessToken, fetchRole, targetTraineeId, scopedToTrainerId)
@@ -551,10 +553,13 @@ export function DashboardPage({
             completionPercent: 0,
             averageScore: 0,
           })),
+          progressService.fetchPathProgressSummary(accessToken).catch(() => ({})),
         ]);
 
         if (!isMounted) return;
 
+        setAllPaths(pathsList || []);
+        setPathProgressSummary(pathSummary || {});
         setProgressStats(myProgress);
         if (analytics?.charts) setCharts(analytics.charts);
         setCompletionGrowth(analytics?.completionGrowth ?? 0);
@@ -895,14 +900,84 @@ export function DashboardPage({
       filteredModuleCompletion = [{ id: 'dummy', title: 'No modules yet', percent: 0, pathTitle: selectedLpTitle, completed: 0, total: 0, averageScore: 0 }];
     }
 
-    const COLORS = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+    // Exact LP progress formula as in LearningPathsSection:
+    // LP Progress (%) = (sum of all module progresses in Learning Path) / (total number of modules in Learning Path)
+    const calculateLPProgress = (path: any, summaryMap: Record<string, any>): number => {
+      if (!path) return 0;
+      const summary = summaryMap[path.id];
+      const totalModules = path.modules?.length ?? summary?.totalModules ?? 0;
 
-    let skillData = charts?.skillDistribution && charts.skillDistribution.length > 0
-      ? [...charts.skillDistribution]
-      : (dbData.activeEnrollments === 0 || !dbData.activeEnrollments)
-        ? [{ name: 'No data', count: 0, percent: 0 }]
-        : [{ name: 'No skills configured', count: 0, percent: 0 }];
-    if (skillData.length > 0 && skillData.length < 3 && !skillData.some((s: any) => s.name === 'No data')) {
+      if (totalModules === 0) {
+        return 0;
+      }
+
+      // 1. If backend summary provided moduleProgresses map, sum them up and divide by totalModules
+      if (summary?.moduleProgresses && path.modules && Array.isArray(path.modules) && path.modules.length > 0) {
+        const sum = path.modules.reduce((acc: number, mod: any) => {
+          return acc + (summary.moduleProgresses?.[mod.id] ?? 0);
+        }, 0);
+        return Math.min(100, Math.round(sum / totalModules));
+      }
+
+      // 2. If summary has precomputed userProgressPercent, use it
+      if (typeof summary?.userProgressPercent === 'number') {
+        return summary.userProgressPercent;
+      }
+
+      // 3. Fallback: if modules have local completion/progress percent
+      if (path.modules && Array.isArray(path.modules) && path.modules.length > 0) {
+        const sum = path.modules.reduce((acc: number, mod: any) => {
+          return acc + Number(mod.progressPercent ?? mod.completionPercent ?? 0);
+        }, 0);
+        return Math.min(100, Math.round(sum / totalModules));
+      }
+
+      return path.progressPercent ?? 0;
+    };
+
+    // Build Radar Chart Data: One axis per learning path displaying exact LP progress
+    let skillData: Array<{ name: string; percent: number; count: number; pathId?: string }> = [];
+
+    const assignedPaths = (allPaths || []).filter((p: any) => {
+      if (isTrainerDrillDown && targetTraineeId) {
+        return p.assignedToTraineeIds?.includes(targetTraineeId);
+      }
+      return p.assignedToTraineeIds?.includes(currentUser.id);
+    });
+
+    const activePaths = assignedPaths.length > 0
+      ? assignedPaths
+      : (allPaths || []).filter((p: any) => !['draft', 'archived', 'deleted'].includes(String(p.status || '').toLowerCase()));
+
+    if (activePaths.length > 0) {
+      skillData = activePaths.map((path: any) => {
+        const progress = calculateLPProgress(path, pathProgressSummary);
+        return {
+          name: path.title || path.name || 'Untitled Path',
+          percent: progress,
+          count: path.modules?.length || 0,
+          pathId: path.id,
+        };
+      });
+    } else if (charts?.skillDistribution && charts.skillDistribution.length > 0) {
+      skillData = charts.skillDistribution.map((item: any) => {
+        const matchedPath = (allPaths || []).find((p: any) => p.id === item.pathId || p.title === item.name);
+        const progress = matchedPath ? calculateLPProgress(matchedPath, pathProgressSummary) : (item.percent ?? 0);
+        return {
+          name: item.name,
+          percent: progress,
+          count: item.count || 0,
+          pathId: item.pathId,
+        };
+      });
+    }
+
+    if (skillData.length === 0) {
+      skillData = [{ name: 'No paths assigned', count: 0, percent: 0 }];
+    }
+
+    // Keep radar geometry intact with at least 3 points
+    if (skillData.length > 0 && skillData.length < 3 && !skillData.some((s: any) => s.name === 'No paths assigned')) {
       while (skillData.length < 3) {
         skillData.push({ name: ' ', count: 0, percent: 0 });
       }
@@ -1103,8 +1178,12 @@ export function DashboardPage({
                           return (
                             <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '13px' }}>
                               <strong style={{ color: '#0f172a', display: 'block', marginBottom: '4px' }}>{item.name}</strong>
-                              <span style={{ color: '#4f46e5', fontWeight: 700, fontSize: '15px' }}>{Math.round(item.percent)}%</span>
-                              {item.count > 0 && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{item.count} graded item{item.count !== 1 ? 's' : ''}</div>}
+                              <span style={{ color: '#4f46e5', fontWeight: 700, fontSize: '15px' }}>{Math.round(item.percent)}% Progress</span>
+                              {item.count > 0 && (
+                                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                                  {item.count} module{item.count !== 1 ? 's' : ''}
+                                </div>
+                              )}
                             </div>
                           );
                         }

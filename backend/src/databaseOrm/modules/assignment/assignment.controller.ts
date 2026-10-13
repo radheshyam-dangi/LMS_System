@@ -194,7 +194,7 @@ export class AssignmentController {
   @Roles('Trainee', 'Trainer', 'Admin')
   async submitAssignment(
     @Param('id') assignmentId: string,
-    @Body() dto: { submissionText: string; attachmentUrl?: string },
+    @Body() dto: { submissionText: string; attachmentUrl?: string; answers?: Array<{ questionId: string; answer: string }> },
     @GetUser() currentUser: any,
   ) {
     const traineeId = currentUser?.id || currentUser?.sub;
@@ -204,6 +204,7 @@ export class AssignmentController {
       traineeId,
       dto.submissionText,
       dto.attachmentUrl,
+      dto.answers,
     );
   }
 

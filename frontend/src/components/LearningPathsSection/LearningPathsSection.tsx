@@ -224,9 +224,48 @@ export function LearningPathsSection({
         userProgressPercent: number;
         cohortProgressPercent: number;
         enrolledCount: number;
+        totalModules?: number;
+        moduleProgresses?: Record<string, number>;
       }
     >
   >({});
+
+  /**
+   * Calculates Learning Path progress:
+   * LP Progress (%) = (sum of all module progresses in Learning Path) / (total number of modules in Learning Path)
+   * Example: 2 modules in Learning Path, one is 25%, other is 25% -> LP progress = (25 + 25) / 2 = 50 / 2 = 25%
+   */
+  const calculateLPProgress = (path: LearningPath): number => {
+    const summary = progressSummary[path.id];
+    const totalModules = path.modules?.length ?? summary?.totalModules ?? 0;
+
+    if (totalModules === 0) {
+      return 0;
+    }
+
+    // 1. If backend summary provided moduleProgresses map, sum them up and divide by totalModules
+    if (summary?.moduleProgresses && path.modules && Array.isArray(path.modules) && path.modules.length > 0) {
+      const sum = path.modules.reduce((acc: number, mod: any) => {
+        return acc + (summary.moduleProgresses?.[mod.id] ?? 0);
+      }, 0);
+      return Math.min(100, Math.round(sum / totalModules));
+    }
+
+    // 2. If summary has precomputed userProgressPercent, use it
+    if (typeof summary?.userProgressPercent === 'number') {
+      return summary.userProgressPercent;
+    }
+
+    // 3. Fallback: if modules have local completion/progress percent
+    if (path.modules && Array.isArray(path.modules) && path.modules.length > 0) {
+      const sum = path.modules.reduce((acc: number, mod: any) => {
+        return acc + Number(mod.progressPercent ?? mod.completionPercent ?? 0);
+      }, 0);
+      return Math.min(100, Math.round(sum / totalModules));
+    }
+
+    return (path as any).progressPercent ?? 0;
+  };
 
   const loadDatabasePaths = async () => {
     setIsLoading(true);
@@ -425,7 +464,7 @@ export function LearningPathsSection({
         return false;
 
       if (isTrainee) {
-        const progress = progressSummary[path.id]?.userProgressPercent || 0;
+        const progress = calculateLPProgress(path);
 
         if (activeTabFilter === "All") {
           // pass to search query check
@@ -789,7 +828,7 @@ export function LearningPathsSection({
                     let progressVal = 0;
 
                     if (isTrainee) {
-                      progressVal = summary?.userProgressPercent ?? (path as any).progressPercent ?? 0;
+                      progressVal = calculateLPProgress(path);
                       return (
                         <div style={{ marginTop: "14px", marginBottom: "8px" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", color: "#475569", marginBottom: "6px" }}>

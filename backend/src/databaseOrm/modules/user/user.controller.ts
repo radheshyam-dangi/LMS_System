@@ -7,6 +7,7 @@ import {
   Put,
   Delete,
   Req,
+  BadRequestException,
 } from '@nestjs/common';
 import { UserEntityService } from './user.service';
 import type { UserModel } from '../../../types/models/user.model';
@@ -40,6 +41,21 @@ export class UserController {
   @Get(':id/profile-stats')
   async getProfileStats(@Param('id') id: string) {
     return await this.userService.getUserProfileStats(id);
+  }
+
+  @Put(':id/change-password')
+  async changePassword(
+    @Param('id') id: string,
+    @Body() body: { currentPassword?: string; newPassword?: string },
+  ) {
+    if (!body?.currentPassword || !body?.newPassword) {
+      throw new BadRequestException('Current password and new password are required');
+    }
+    return await this.userService.changePassword(
+      id,
+      body.currentPassword,
+      body.newPassword,
+    );
   }
 
   @Put(':id/role')

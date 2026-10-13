@@ -21,8 +21,6 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
   const [lastName, setLastName] = useState(currentUser.lastName || '');
   const [avatarUrl, setAvatarUrl] = useState((currentUser as any).avatarUrl || '');
   const [savingProfile, setSavingProfile] = useState(false);
-  const [profileSuccess, setProfileSuccess] = useState(false);
-  const [profileError, setProfileError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Notifications State ---
@@ -37,8 +35,6 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingSecurity, setSavingSecurity] = useState(false);
-  const [securitySuccess, setSecuritySuccess] = useState(false);
-  const [securityError, setSecurityError] = useState('');
 
   // Password strength logic
   const calculateStrength = (pwd: string) => {
@@ -65,17 +61,16 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
 
     // Validate size (< 5MB)
     if (file.size > 5 * 1024 * 1024) {
-      setProfileError('Image must be smaller than 5MB');
+      toast.error('Image must be smaller than 5MB');
       return;
     }
 
     // Validate type
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      setProfileError('Unsupported file format (use JPG, PNG, WEBP)');
+      toast.error('Unsupported file format (use JPG, PNG, WEBP)');
       return;
     }
 
-    setProfileError('');
     // Client-side resize simulation (FileReader)
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -85,14 +80,13 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
       }
     };
     reader.onerror = () => {
-      setProfileError('Failed to read image file');
+      toast.error('Failed to read image file');
     };
     reader.readAsDataURL(file);
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setProfileError('');
     setSavingProfile(true);
     try {
       if (accessToken && currentUser.id) {
@@ -117,10 +111,8 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
         window.dispatchEvent(new CustomEvent('user_updated', { detail: updatedUser }));
       }
       toast.success('Profile updated successfully!');
-      setProfileSuccess(true);
-      setTimeout(() => setProfileSuccess(false), 3000);
     } catch (err: any) {
-      setProfileError(err?.message || 'Failed to save profile. Please retry.');
+      toast.error(err?.message || 'Failed to save profile. Please retry.');
     } finally {
       setSavingProfile(false);
     }
@@ -139,27 +131,48 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
 
   const handleSaveSecurity = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSecurityError('');
-    
-    if (newPassword !== confirmPassword) {
-      setSecurityError('New passwords do not match');
+
+    if (!currentPassword.trim()) {
+      toast.warning('Please enter your current password.');
       return;
     }
-    if (pwdStrength < 3) {
-      setSecurityError('Password is too weak');
+    if (!newPassword.trim()) {
+      toast.warning('Please enter a new password.');
+      return;
+    }
+    if (!confirmPassword.trim()) {
+      toast.warning('Please confirm your new password.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.warning('New password and confirm password should be same.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.warning('New password must be at least 6 characters.');
       return;
     }
 
     setSavingSecurity(true);
-    // Simulate API call
-    await new Promise(r => setTimeout(r, 800));
-    setSavingSecurity(false);
-    toast.success('Password updated successfully!');
-    setSecuritySuccess(true);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setTimeout(() => setSecuritySuccess(false), 3000);
+    try {
+      if (!currentUser?.id) {
+        throw new Error('User session not found.');
+      }
+      await userService.changePassword(
+        currentUser.id,
+        { currentPassword, newPassword },
+        accessToken
+      );
+      toast.success('Password updated successfully!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      const errMsg = err?.message || 'Current password is wrong';
+      toast.warning(errMsg);
+    } finally {
+      setSavingSecurity(false);
+    }
   };
 
   return (
@@ -225,17 +238,6 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
             <form onSubmit={handleSaveProfile}>
               <h2 className="settings-section-title">Profile Settings</h2>
               <p className="settings-section-desc">Update your personal details and avatar.</p>
-
-              {profileSuccess && (
-                <div className="settings-success-toast">
-                  <span role="img" aria-label="success">✓</span> Profile updated successfully.
-                </div>
-              )}
-              {profileError && (
-                <div className="settings-success-toast" style={{ background: '#fef2f2', borderColor: '#fecaca', color: '#dc2626' }}>
-                  <span role="img" aria-label="error">⚠️</span> {profileError}
-                </div>
-              )}
 
               <div className="settings-form-group" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                 <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#e2e8f0', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -323,17 +325,6 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
             <form onSubmit={handleSaveSecurity} style={{ maxWidth: '400px' }}>
               <h2 className="settings-section-title">Security</h2>
               <p className="settings-section-desc">Update your password to keep your account secure.</p>
-
-              {securitySuccess && (
-                <div className="settings-success-toast">
-                  <span role="img" aria-label="success">✓</span> Password updated successfully.
-                </div>
-              )}
-              {securityError && (
-                <div className="settings-success-toast" style={{ background: '#fef2f2', borderColor: '#fecaca', color: '#dc2626' }}>
-                  <span role="img" aria-label="error">⚠️</span> {securityError}
-                </div>
-              )}
 
               <div className="settings-form-group">
                 <label htmlFor="currentPwd" className="settings-form-label">Current Password</label>

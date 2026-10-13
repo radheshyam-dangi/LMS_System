@@ -422,4 +422,52 @@ export class UserEntityService extends BaseService<UserEntity> {
       activities: activities.slice(0, 6),
     };
   }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<{ success: boolean; message: string }> {
+    const user = await this.repository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!user.password) {
+      throw new BadRequestException('User does not have a password configured');
+    }
+
+    let isMatch = false;
+    if (
+      user.password.startsWith('$2a$') ||
+      user.password.startsWith('$2b$') ||
+      user.password.startsWith('$2y$')
+    ) {
+      isMatch = await bcrypt.compare(currentPassword, user.password);
+    } else {
+      isMatch =
+        currentPassword === user.password ||
+        (await bcrypt.compare(currentPassword, user.password).catch(() => false));
+    }
+
+    if (!isMatch) {
+      throw new BadRequestException('Current password is wrong');
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters');
+    }
+
+    const saltRounds = 10;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    await this.repository.update(userId, {
+      password: hashedPassword,
+    });
+
+    return { success: true, message: 'Password updated successfully' };
+  }
 }

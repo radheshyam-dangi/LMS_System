@@ -984,11 +984,25 @@ export class AnalyticsEntityService {
 
       // 2b. Build LP-based skillDistribution (radar chart: one axis per LP)
       const enrolledLpIds = Array.from(enrolledPathIds);
-      const enrolledLps = paths.filter(p => enrolledLpIds.includes(p.id));
+      let enrolledLps = paths.filter(p => enrolledLpIds.includes(p.id));
+      if (enrolledLps.length === 0 && paths.length > 0) {
+        enrolledLps = paths.filter(p => !['draft', 'archived', 'deleted'].includes(String(p.status || '').toLowerCase()));
+      }
 
-      enrolledLps.forEach(lp => {
+      for (const lp of enrolledLps) {
         const lpId = lp.id;
-        // Find all assignments belonging to this LP
+        // Evaluate exact LP progress using getLPProgress:
+        // LP Progress (%) = (sum of all module completion percentages in LP) / (total number of modules in LP)
+        const lpProgress = await this.progressService.getLPProgress(userId, lpId);
+
+        skillDistribution.push({
+          name: lp.title || 'Unknown Path',
+          count: 0,
+          percent: lpProgress,
+          pathId: lpId,
+        });
+
+        // Find all assignments belonging to this LP for growth calculation
         const lpAssignments = scopedAssignmentsList.filter(a =>
           (a.learningPath?.id === lpId) ||
           (a.module?.learningPath?.id === lpId) ||
@@ -1022,17 +1036,13 @@ export class AnalyticsEntityService {
           }
         });
 
-        // Per-LP score = (earned / total possible in LP) × 100
-        const lpPercent = totalLpMax > 0 ? Math.round((lpEarned / totalLpMax) * 100 * 100) / 100 : 0;
-        skillDistribution.push({ name: lp.title || 'Unknown Path', count: gradedCount, percent: lpPercent });
-
         // Growth calculation for this LP (absolute gain in percentage points over last 30 days)
         if (totalLpMax > 0 && recentEarned > 0) {
           const gainPct = (recentEarned / totalLpMax) * 100;
           sumGrowth += gainPct;
           pathsWithGrowth++;
         }
-      });
+      }
 
       // If no enrolled LPs at all, add a placeholder for the radar chart
       if (skillDistribution.length === 0) {

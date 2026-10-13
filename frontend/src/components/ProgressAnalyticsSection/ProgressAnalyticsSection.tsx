@@ -397,8 +397,8 @@ export function ProgressAnalyticsSection({ currentUser, activeRole, accessToken,
                           return (
                             <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '13px' }}>
                               <strong style={{ color: '#0f172a', display: 'block', marginBottom: '4px' }}>{item.name}</strong>
-                              <span style={{ color: '#4f46e5', fontWeight: 700, fontSize: '15px' }}>{Math.round(item.percent)}%</span>
-                              {item.count > 0 && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{item.count} graded item{item.count !== 1 ? 's' : ''}</div>}
+                              <span style={{ color: '#4f46e5', fontWeight: 700, fontSize: '15px' }}>{Math.round(item.percent)}% Progress</span>
+                              {item.count > 0 && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{item.count} module{item.count !== 1 ? 's' : ''}</div>}
                             </div>
                           );
                         }

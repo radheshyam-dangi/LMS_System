@@ -295,7 +295,16 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
       if (sub.submissionText) {
         const obj = JSON.parse(sub.submissionText);
         if (typeof obj === 'object' && obj !== null) {
-          parsedAnswers = { ...obj.answers, ...obj.textAnswers, ...obj.mcqAnswers };
+          if (obj.answers !== undefined || obj.textAnswers !== undefined || obj.mcqAnswers !== undefined) {
+            parsedAnswers = {
+              ...(typeof obj.answers === 'object' && !Array.isArray(obj.answers) ? obj.answers : {}),
+              ...(typeof obj.textAnswers === 'object' && !Array.isArray(obj.textAnswers) ? obj.textAnswers : {}),
+              ...(typeof obj.mcqAnswers === 'object' && !Array.isArray(obj.mcqAnswers) ? obj.mcqAnswers : {}),
+            };
+            if (Array.isArray(obj.answers)) parsedAnswers = { 0: obj.answers };
+          } else {
+            parsedAnswers = obj;
+          }
           if (obj.raw) rawText = obj.raw;
           isJson = true;
         }
@@ -304,47 +313,204 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
     if (!isJson && questions.length === 0) {
       return (
-        <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-          <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '4px' }}>Submitted Solution:</strong>
-          <div style={{ fontSize: '13px', color: '#0f172a', whiteSpace: 'pre-wrap' }}>{rawText || 'No answer provided.'}</div>
+        <div className="h-auto min-h-0" style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Submitted Solution:</strong>
+          <div className="whitespace-pre-wrap break-words min-h-0 h-auto" style={{ fontSize: '13px', color: '#0f172a', whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.5' }}>
+            {rawText || 'No answer provided.'}
+          </div>
         </div>
       );
     }
 
+    const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div className="h-auto min-h-0" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {questions.map((q: any, idx: number) => {
           const traineeAnswer = parsedAnswers[q.id] ?? parsedAnswers[idx] ?? parsedAnswers[String(idx)] ?? (idx === 0 && rawText ? rawText : null);
           const questionPoints = q.points || q.maxPoints || 10;
+          const questionPrompt = q.text || q.questionText || q.question || `Question ${idx + 1}`;
+
           if (isMcq && q.options?.length > 0) {
-            const traineeChoiceIdx = traineeAnswer !== null && traineeAnswer !== '' ? Number(traineeAnswer) : null;
-            const correctChoiceIdx = q.correctIndex !== null ? Number(q.correctIndex) : null;
+            const traineeChoiceIdx = traineeAnswer !== null && traineeAnswer !== '' && !isNaN(Number(traineeAnswer)) ? Number(traineeAnswer) : null;
+            const correctChoiceIdx = q.correctIndex !== null && !isNaN(Number(q.correctIndex)) ? Number(q.correctIndex) : null;
             const isCorrect = traineeChoiceIdx !== null && correctChoiceIdx !== null && traineeChoiceIdx === correctChoiceIdx;
+
             return (
-              <div key={q.id || idx} style={{ padding: '12px', background: isCorrect ? '#f0fdf4' : '#fef2f2', border: `1px solid ${isCorrect ? '#86efac' : '#fca5a5'}`, borderRadius: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>Q{idx + 1}: {q.text || q.questionText || q.question}</strong>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', padding: '2px 6px', borderRadius: '4px' }}>{questionPoints} Pts</span>
-                </div>
-                <div style={{ fontSize: '12px', marginTop: '6px' }}>
-                  Trainee Selected: <span style={{ fontWeight: 700, color: isCorrect ? '#15803d' : '#b91c1c' }}>{traineeChoiceIdx !== null && q.options?.[traineeChoiceIdx] ? q.options[traineeChoiceIdx] : (traineeAnswer !== null ? String(traineeAnswer) : 'No option selected')}</span>
-                </div>
-                {correctChoiceIdx !== null && (
-                  <div style={{ fontSize: '12px', color: '#15803d', fontWeight: 600, marginTop: '2px' }}>
-                    ✓ Correct Answer: {q.options?.[correctChoiceIdx] ?? 'N/A'}
+              <div
+                key={q.id || idx}
+                className="h-auto min-h-0"
+                style={{
+                  padding: '16px',
+                  background: isCorrect ? '#f0fdf4' : traineeChoiceIdx !== null ? '#fff5f5' : '#f8fafc',
+                  border: `1px solid ${isCorrect ? '#86efac' : traineeChoiceIdx !== null ? '#fca5a5' : '#e2e8f0'}`,
+                  borderRadius: '10px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                {/* 1. Full Question Text at Top */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: 1 }}>
+                    <span style={{ background: '#e2e8f0', color: '#334155', fontSize: '11px', fontWeight: 800, padding: '3px 7px', borderRadius: '5px', whiteSpace: 'nowrap' }}>
+                      Q{idx + 1}
+                    </span>
+                    <strong style={{ fontSize: '14px', color: '#0f172a', lineHeight: '1.45', wordBreak: 'break-word' }}>
+                      {questionPrompt}
+                    </strong>
                   </div>
-                )}
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                    {questionPoints} Pts
+                  </span>
+                </div>
+
+                {/* 2. List ALL Available Options with Visual Highlighting */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {q.options.map((opt: string, optIdx: number) => {
+                    const isTraineePick = traineeChoiceIdx === optIdx;
+                    const isThisCorrect = correctChoiceIdx === optIdx;
+
+                    let optBg = '#ffffff';
+                    let optBorder = '1px solid #e2e8f0';
+                    let badgeBg = '#f1f5f9';
+                    let badgeColor = '#475569';
+                    let statusPill: React.ReactNode = null;
+
+                    if (isTraineePick && isThisCorrect) {
+                      optBg = '#dcfce7';
+                      optBorder = '1.5px solid #16a34a';
+                      badgeBg = '#16a34a';
+                      badgeColor = '#ffffff';
+                      statusPill = (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#bbf7d0', padding: '2px 8px', borderRadius: '4px' }}>
+                          ✓ Trainee Selected (Correct)
+                        </span>
+                      );
+                    } else if (isTraineePick && !isThisCorrect) {
+                      optBg = '#fee2e2';
+                      optBorder = '1.5px solid #dc2626';
+                      badgeBg = '#dc2626';
+                      badgeColor = '#ffffff';
+                      statusPill = (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#b91c1c', background: '#fecaca', padding: '2px 8px', borderRadius: '4px' }}>
+                          ✗ Trainee Selected (Incorrect)
+                        </span>
+                      );
+                    } else if (isThisCorrect) {
+                      optBg = '#f0fdf4';
+                      optBorder = '1.5px solid #22c55e';
+                      badgeBg = '#dcfce7';
+                      badgeColor = '#15803d';
+                      statusPill = (
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: '4px', border: '1px solid #86efac' }}>
+                          ✓ Correct Answer
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={optIdx}
+                        className="h-auto min-h-0"
+                        style={{
+                          background: optBg,
+                          border: optBorder,
+                          borderRadius: '8px',
+                          padding: '8px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                          <span
+                            style={{
+                              width: '22px',
+                              height: '22px',
+                              borderRadius: '50%',
+                              background: badgeBg,
+                              color: badgeColor,
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {optionLetters[optIdx] || optIdx + 1}
+                          </span>
+                          <span style={{ fontSize: '13px', color: '#1e293b', fontWeight: isTraineePick || isThisCorrect ? 700 : 500, wordBreak: 'break-word' }}>
+                            {opt}
+                          </span>
+                        </div>
+                        {statusPill}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Trainee Answer Summary */}
+                <div style={{ fontSize: '12px', color: isCorrect ? '#15803d' : '#b91c1c', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {isCorrect ? (
+                    <span>✓ Trainee answered correctly (+{questionPoints} Pts)</span>
+                  ) : traineeChoiceIdx !== null ? (
+                    <span>✗ Trainee selected wrong answer (Correct: Option {optionLetters[correctChoiceIdx ?? -1] || (correctChoiceIdx !== null ? correctChoiceIdx + 1 : 'N/A')})</span>
+                  ) : (
+                    <span style={{ color: '#b45309' }}>⚪ No option selected by trainee</span>
+                  )}
+                </div>
               </div>
             );
           }
+
+          {/* Subjective Question Rendering */}
           return (
-            <div key={idx} style={{ padding: '12px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <strong style={{ fontSize: '13px', color: '#0f172a' }}>Q{idx + 1}: {q.questionText || q.question}</strong>
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '2px 6px', borderRadius: '4px' }}>Max: {questionPoints} Pts</span>
+            <div key={idx} className="h-auto min-h-0" style={{ padding: '16px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: 1 }}>
+                  <span style={{ background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 800, padding: '3px 7px', borderRadius: '5px', whiteSpace: 'nowrap' }}>
+                    Q{idx + 1}
+                  </span>
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>
+                      Question Prompt
+                    </div>
+                    <strong style={{ fontSize: '14px', color: '#0f172a', lineHeight: '1.45', wordBreak: 'break-word', display: 'block' }}>
+                      {questionPrompt}
+                    </strong>
+                  </div>
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '3px 8px', borderRadius: '5px', whiteSpace: 'nowrap' }}>
+                  Max: {questionPoints} Pts
+                </span>
               </div>
-              <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '6px', fontSize: '13px', color: '#1e293b', borderLeft: '3px solid #2563eb', whiteSpace: 'pre-wrap', minHeight: '36px' }}>
-                {traineeAnswer ? String(traineeAnswer) : <em style={{ color: '#94a3b8' }}>No answer written.</em>}
+
+              <div>
+                <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '6px' }}>
+                  Trainee Submitted Answer:
+                </div>
+                <div
+                  className="whitespace-pre-wrap break-words min-h-0 h-auto"
+                  style={{
+                    background: '#f8fafc',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    color: '#1e293b',
+                    border: '1px solid #e2e8f0',
+                    borderLeft: '4px solid #2563eb',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
+                    lineHeight: '1.6',
+                    minHeight: '36px',
+                  }}
+                >
+                  {traineeAnswer ? String(traineeAnswer) : <em style={{ color: '#94a3b8' }}>No answer written.</em>}
+                </div>
               </div>
             </div>
           );
@@ -760,20 +926,36 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                               {renderParsedSubmission(assign.latestSubmission)}
                             </div>
                           ) : assign.mcqConfig?.questions?.length > 0 ? (
-                            <div style={{ background: '#fff', padding: '14px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                              <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block', marginBottom: '8px' }}>Assignment Questions:</strong>
-                              {assign.mcqConfig.questions.map((q: any, qIdx: number) => (
-                                <div key={qIdx} style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '8px' }}>
-                                  <div style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a' }}>
-                                    Q{qIdx + 1}: {q.questionText || q.question} <span style={{ color: '#4f46e5' }}>({q.points || q.maxPoints || 10} pts)</span>
-                                  </div>
-                                  {q.options?.length > 0 && (
-                                    <div style={{ marginTop: '6px', fontSize: '12px', color: '#475569' }}>
-                                      Options: {q.options.join(', ')}
+                            <div className="h-auto min-h-0" style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                              <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block', marginBottom: '10px' }}>Assignment Questions:</strong>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {assign.mcqConfig.questions.map((q: any, qIdx: number) => {
+                                  const qText = q.text || q.questionText || q.question || `Question ${qIdx + 1}`;
+                                  const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+                                  return (
+                                    <div key={qIdx} className="h-auto min-h-0" style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                                        <span>Q{qIdx + 1}: {qText}</span>
+                                        <span style={{ fontSize: '11px', color: '#4f46e5', background: '#eef2ff', padding: '2px 8px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                                          {q.points || q.maxPoints || 10} pts
+                                        </span>
+                                      </div>
+                                      {q.options?.length > 0 && (
+                                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                          {q.options.map((opt: string, optIdx: number) => (
+                                            <div key={optIdx} style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                              <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#e2e8f0', color: '#334155', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                {optionLetters[optIdx] || optIdx + 1}
+                                              </span>
+                                              <span>{opt}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
-                                </div>
-                              ))}
+                                  );
+                                })}
+                              </div>
                             </div>
                           ) : (
                             <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic', padding: '10px 0' }}>No questions or submissions yet.</div>

@@ -23,9 +23,6 @@ export function LoginPage({ onBackHome, onLogin }: LoginPageProps) {
             <span className="logo-spark">⚡</span>
             <strong>SkillForge</strong>
           </div>
-          <button className="modal-back-btn" type="button" onClick={onBackHome}>
-            Cancel ×
-          </button>
         </header>
 
         {/* Auth Details / Header Content */}

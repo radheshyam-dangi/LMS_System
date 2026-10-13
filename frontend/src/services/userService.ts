@@ -106,4 +106,26 @@ export const userService = {
       throw new Error(message);
     }
   },
+
+  /**
+   * 6. CHANGE USER PASSWORD
+   */
+  changePassword: async (
+    userId: string,
+    payload: { currentPassword: string; newPassword: string },
+    token?: string
+  ): Promise<{ success: boolean; message: string }> => {
+    try {
+      const headers = token ? getAuthHeaders(token) : { headers: { 'Content-Type': 'application/json' } };
+      const response = await axios.put<{ success: boolean; message: string }>(
+        `${API_BASE_URL}/users/${userId}/change-password`,
+        payload,
+        headers
+      );
+      return response.data;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to update password.';
+      throw new Error(message);
+    }
+  },
 };
