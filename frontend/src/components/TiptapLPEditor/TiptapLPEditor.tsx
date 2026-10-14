@@ -162,9 +162,9 @@ const LPMetadataBar = ({ editor, onDirty }: { editor: any; onDirty?: () => void 
               value={level} 
               onChange={(e) => updateDocAttr('level', e.target.value)}
             >
-              <option value="basic">🌱 Basic</option>
-              <option value="intermediate">⚡ Intermediate</option>
-              <option value="advanced">🚀 Advanced</option>
+              <option value="basic">Basic</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="advanced">Advanced</option>
             </select>
           </div>
           <div className="lp-metadata-item">
@@ -538,7 +538,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
           >
             {isSubmitting 
               ? (pathId ? 'Updating...' : 'Publishing...') 
-              : (pathId ? '💾 Update Learning Path' : '🚀 Publish Learning Path')}
+              : (pathId ? 'Update Learning Path' : 'Publish Learning Path')}
           </button>
         </div>
       </div>

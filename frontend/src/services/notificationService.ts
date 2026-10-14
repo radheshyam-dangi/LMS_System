@@ -14,6 +14,8 @@ export type NotificationType =
   | 'assignment_assigned'
   | 'submission_pending'
   | 'evaluation_completed'
+  | 'ai_evaluation_ready'
+  | 'ai_evaluation_failed'
   | 'general';
 
 export type AppNotification = {

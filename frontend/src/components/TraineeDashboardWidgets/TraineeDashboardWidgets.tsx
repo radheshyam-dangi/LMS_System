@@ -1,33 +1,57 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowRight, BookOpen, CheckCircle2, FileText } from 'lucide-react';
 import './TraineeDashboardWidgets.css';
 
 // ---------------------------------------------------------
 // TraineeHeroCard
 // ---------------------------------------------------------
-export const TraineeHeroCard = ({ isLoading, hasProgress, lastAccessedTitle, pathId }: { isLoading: boolean, hasProgress: boolean, lastAccessedTitle?: string, pathId?: string }) => {
+export interface TraineeHeroCardProps {
+  isLoading: boolean;
+  hasProgress: boolean;
+  lastAccessedTitle?: string;
+  pathId?: string;
+  progressPercent?: number;
+}
+
+export const TraineeHeroCard: React.FC<TraineeHeroCardProps> = ({
+  isLoading,
+  hasProgress,
+  lastAccessedTitle,
+  pathId,
+  progressPercent,
+}) => {
   if (isLoading) {
     return (
-      <div className="trainee-hero-card skeleton-pulse" style={{ background: '#e2e8f0', minHeight: '160px' }}>
-        <div style={{ width: '40%', height: '24px', background: '#cbd5e1', borderRadius: '4px', marginBottom: '16px' }} />
-        <div style={{ width: '60%', height: '16px', background: '#cbd5e1', borderRadius: '4px' }} />
+      <div className="trainee-hero-card skeleton-pulse">
+        <div className="trainee-hero-skeleton-line" style={{ width: '35%', height: '22px', marginBottom: '14px' }} />
+        <div className="trainee-hero-skeleton-line" style={{ width: '60%', height: '16px', marginBottom: '22px' }} />
+        <div className="trainee-hero-skeleton-line" style={{ width: '150px', height: '42px', borderRadius: '10px' }} />
       </div>
     );
   }
 
   if (!hasProgress || !pathId) {
     return (
-      <div className="trainee-hero-card">
+      <div className="trainee-hero-card welcome-mode">
         <div className="trainee-hero-content">
-          <h2 className="trainee-hero-title">Welcome to SkillForge!</h2>
+          <div className="trainee-hero-badge">
+            <span>Getting Started</span>
+          </div>
+          <h2 className="trainee-hero-title">Welcome to SkillForge</h2>
           <p className="trainee-hero-subtitle">
-            You haven't started any modules yet. Get started by exploring your assigned learning paths.
+            You haven't started any modules yet. Explore your assigned learning paths to begin your curriculum.
           </p>
           <Link to="/learning-paths" className="trainee-hero-btn">
-            Browse Learning Paths
+            <span>Browse Learning Paths</span>
+            <ArrowRight size={15} />
           </Link>
         </div>
-        <div className="trainee-hero-image">🚀</div>
+        <div className="trainee-hero-graphic">
+          <div className="hero-icon-orb">
+            <BookOpen size={32} strokeWidth={1.75} />
+          </div>
+        </div>
       </div>
     );
   }
@@ -35,15 +59,23 @@ export const TraineeHeroCard = ({ isLoading, hasProgress, lastAccessedTitle, pat
   return (
     <div className="trainee-hero-card">
       <div className="trainee-hero-content">
+        <div className="trainee-hero-badge">
+          <span>{typeof progressPercent === 'number' && progressPercent > 0 ? `${progressPercent}% Complete` : 'In Progress'}</span>
+        </div>
         <h2 className="trainee-hero-title">Continue Learning</h2>
         <p className="trainee-hero-subtitle">
-          Jump right back in! You left off at <strong>{lastAccessedTitle}</strong>.
+          Jump right back in. You left off at <strong>{lastAccessedTitle}</strong>.
         </p>
-        <Link to={`/learning-paths`} state={{ pathId }} className="trainee-hero-btn">
-          Resume Module
+        <Link to="/learning-paths" state={{ pathId }} className="trainee-hero-btn">
+          <span>Resume Module</span>
+          <ArrowRight size={15} />
         </Link>
       </div>
-      <div className="trainee-hero-image">📚</div>
+      <div className="trainee-hero-graphic">
+        <div className="hero-icon-orb">
+          <BookOpen size={32} strokeWidth={1.75} />
+        </div>
+      </div>
     </div>
   );
 };
@@ -67,8 +99,10 @@ export const UpcomingDeadlinesWidget = ({ isLoading, assignments }: { isLoading:
         </div>
       ) : assignments.length === 0 ? (
         <div className="db-widget-empty">
-          <div className="db-widget-empty-icon">🎉</div>
-          <div className="db-widget-empty-text">You're all caught up — no deadlines coming up!</div>
+          <div className="db-widget-empty-icon">
+            <CheckCircle2 size={24} color="#10b981" strokeWidth={1.75} />
+          </div>
+          <div className="db-widget-empty-text">All caught up — no upcoming deadlines.</div>
         </div>
       ) : (
         <div className="db-widget-list">
@@ -108,8 +142,10 @@ export const RecentFeedbackWidget = ({ isLoading, feedback }: { isLoading: boole
         </div>
       ) : feedback.length === 0 ? (
         <div className="db-widget-empty">
-          <div className="db-widget-empty-icon">📝</div>
-          <div className="db-widget-empty-text">No recent feedback to display.</div>
+          <div className="db-widget-empty-icon">
+            <FileText size={24} color="#94a3b8" strokeWidth={1.75} />
+          </div>
+          <div className="db-widget-empty-text">No recent evaluation feedback recorded.</div>
         </div>
       ) : (
         <div className="db-widget-list">

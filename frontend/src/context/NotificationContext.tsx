@@ -16,6 +16,7 @@ import {
 type NotificationContextValue = {
   notifications: AppNotification[];
   unreadCount: number;
+  isLoading: boolean;
   refresh: () => Promise<void>;
   markAsRead: (id: string) => Promise<void>;
   markSectionRead: (section: string) => Promise<void>;
@@ -41,6 +42,7 @@ type ProviderProps = {
 export function NotificationProvider({ accessToken, activeRole, children }: ProviderProps) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
   const tokenRef = useRef(accessToken);
   const roleRef = useRef(activeRole);
   tokenRef.current = accessToken;
@@ -52,14 +54,18 @@ export function NotificationProvider({ accessToken, activeRole, children }: Prov
     if (!token || !role) {
       setNotifications([]);
       setUnreadCount(0);
+      setIsLoading(false);
       return;
     }
+    setIsLoading(true);
     try {
       const { items, unreadCount: count } = await notificationService.fetchNotifications(token, role);
       setNotifications(items);
       setUnreadCount(count);
     } catch {
       // Keep last known count on transient errors
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -145,6 +151,7 @@ export function NotificationProvider({ accessToken, activeRole, children }: Prov
     () => ({
       notifications,
       unreadCount,
+      isLoading,
       refresh,
       markAsRead,
       markSectionRead,
@@ -152,7 +159,7 @@ export function NotificationProvider({ accessToken, activeRole, children }: Prov
       markAllRead,
       deleteNotification,
     }),
-    [notifications, unreadCount, refresh, markAsRead, markSectionRead, markRelatedRead, markAllRead, deleteNotification],
+    [notifications, unreadCount, isLoading, refresh, markAsRead, markSectionRead, markRelatedRead, markAllRead, deleteNotification],
   );
 
   return (
@@ -166,6 +173,7 @@ export function useNotifications() {
     return {
       notifications: [] as AppNotification[],
       unreadCount: 0,
+      isLoading: false,
       refresh: async () => undefined,
       markAsRead: async () => undefined,
       markSectionRead: async () => undefined,

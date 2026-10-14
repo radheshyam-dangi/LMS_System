@@ -27,6 +27,7 @@ interface ModulesProps {
 }
 
 import { ModuleDescriptionPreview, ModuleShowMoreModal } from '../common/ModuleShowMoreModal';
+import { Clock, BookOpen, CheckSquare, Award } from 'lucide-react';
 
 export function ModulesManagementSection({
   currentPathId,
@@ -59,6 +60,10 @@ export function ModulesManagementSection({
   // ── Progress state (for Trainee) ──────────────────────────────────────────
   const [progressStats, setProgressStats] = useState<any>(null);
   const [mySubs, setMySubs] = useState<any[]>([]);
+
+  // ── Learning Path Details & Summary Progress ──────────────────────────────
+  const [currentPathDetails, setCurrentPathDetails] = useState<any | null>(null);
+  const [pathProgressSummary, setPathProgressSummary] = useState<Record<string, any>>({});
 
   // ── Detail-view tab ───────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'Lessons' | 'Tasks' | 'Resources' | 'Assessments'>((location.state as any)?.activeTab || 'Lessons');
@@ -118,6 +123,20 @@ export function ModulesManagementSection({
     }
   }, [currentPathId, selectedPathId]);
 
+  // ── Load selected path details & summary progress ─────────────────────────
+  useEffect(() => {
+    if (!selectedPathId) return;
+    learningPathService.fetchPathById(selectedPathId, accessToken)
+      .then((data: any) => setCurrentPathDetails(data))
+      .catch(() => { });
+
+    if (isTrainee) {
+      progressService.fetchPathProgressSummary(accessToken)
+        .then((summary: any) => setPathProgressSummary(summary || {}))
+        .catch(() => { });
+    }
+  }, [selectedPathId, accessToken, isTrainee]);
+
   // ── Load modules when path changes ────────────────────────────────────────
   useEffect(() => {
     if (!selectedPathId) return;
@@ -128,15 +147,12 @@ export function ModulesManagementSection({
         const mods = Array.isArray(data) ? data : [];
         setModules(mods);
 
-        // Open or refresh module for Trainee
-        if (isTrainee && mods.length > 0) {
-          if (urlModuleId) {
-            void openModule(urlModuleId, true);
-          } else if (openModuleId && mods.some((m: any) => m.id === openModuleId)) {
-            void openModule(openModuleId, true);
-          } else {
-            void openModule(mods[0].id, false);
-          }
+        // Open module ONLY if explicitly requested by URL or navigation state
+        const targetModuleId = urlModuleId || (location.state as any)?.moduleId;
+        if (targetModuleId && mods.some((m: any) => m.id === targetModuleId)) {
+          void openModule(targetModuleId, true);
+        } else if (openModuleId && mods.some((m: any) => m.id === openModuleId)) {
+          void openModule(openModuleId, true);
         }
       })
       .catch(() => setModules([]))
@@ -200,13 +216,9 @@ export function ModulesManagementSection({
   };
 
   const closeModule = () => {
-    if (isTrainee) {
-      onBack();
-    } else {
-      setOpenModuleId(null);
-      setOpenModuleData(null);
-      setModuleStats(null);
-    }
+    setOpenModuleId(null);
+    setOpenModuleData(null);
+    setModuleStats(null);
   };
 
   // Refetch on window focus & periodic polling to ensure updated DB data is always visible (§6.2)
@@ -221,7 +233,9 @@ export function ModulesManagementSection({
               if (mods.some((m: any) => m.id === openModuleId)) {
                 void refreshModuleData(openModuleId);
               } else if (mods.length > 0 && isTrainee) {
-                void openModule(mods[0].id, false);
+                setOpenModuleId(null);
+                setOpenModuleData(null);
+                setModuleStats(null);
               }
             }
           })
@@ -497,17 +511,31 @@ export function ModulesManagementSection({
       ['Tasks', `Tasks (${tasksSubmitted}/${tasks.length})`],
     ];
 
-    return (
-      <div style={{ background: '#f8fafc', minHeight: '100%', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    // Progress circle SVG parameters (matching overview page)
+    const moduleCircleRadius = 26;
+    const moduleCircleCircumference = 2 * Math.PI * moduleCircleRadius;
+    const moduleCircleStrokeDashoffset = moduleCircleCircumference - (moduleCircleCircumference * progressPercent) / 100;
 
-        {/* ── Breadcrumb ── */}
-        <div style={{ padding: '16px 32px 0' }}>
-          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button type="button" onClick={onBack} style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 12 }}>
-              Learning Paths
+    return (
+      <div className="module-detail-container">
+
+        {/* ── Top Header / Breadcrumbs ── */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#64748b', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={onBack}
+              style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              ← Learning Paths
             </button>
             <span>›</span>
-            <button type="button" onClick={closeModule} style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 12 }}>
+            <button
+              type="button"
+              onClick={closeModule}
+              style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 13 }}
+              title="View all modules in this Learning Path"
+            >
               {selectedPathTitle}
             </button>
             <span>›</span>
@@ -525,36 +553,36 @@ export function ModulesManagementSection({
                   type="button"
                   onClick={() => setIsModuleDropdownOpen(!isModuleDropdownOpen)}
                   style={{
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 6,
-                    background: '#f8fafc',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: 8,
+                    background: '#ffffff',
                     color: '#0f172a',
-                    fontWeight: 600,
-                    fontSize: 12,
-                    padding: '6px 32px 6px 12px',
+                    fontWeight: 700,
+                    fontSize: 12.5,
+                    padding: '6px 28px 6px 12px',
                     cursor: 'pointer',
                     outline: 'none',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
-                    position: 'relative'
+                    position: 'relative',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                   }}
                 >
                   {modules.find((m: any) => m.id === openModuleId)?.title || 'Select Module'}
-                  <svg style={{ position: 'absolute', right: 8, transition: 'transform 0.2s', transform: isModuleDropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }} xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  <svg style={{ position: 'absolute', right: 8, transition: 'transform 0.2s', transform: isModuleDropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }} xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
                 {isModuleDropdownOpen && (
                   <div style={{
                     position: 'absolute',
-                    top: '100%',
+                    top: 'calc(100% + 4px)',
                     left: 0,
-                    marginTop: 4,
                     background: '#fff',
                     border: '1px solid #e2e8f0',
-                    borderRadius: 6,
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                    borderRadius: 10,
+                    boxShadow: '0 12px 24px -4px rgba(15, 23, 42, 0.12), 0 4px 6px -2px rgba(15, 23, 42, 0.04)',
                     zIndex: 50,
-                    minWidth: 200,
+                    minWidth: 220,
                     maxHeight: 300,
                     overflowY: 'auto'
                   }}>
@@ -567,493 +595,797 @@ export function ModulesManagementSection({
                           setIsModuleDropdownOpen(false);
                         }}
                         style={{
-                          display: 'block',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
                           width: '100%',
                           textAlign: 'left',
-                          padding: '10px 16px',
+                          padding: '10px 14px',
                           border: 'none',
-                          background: m.id === openModuleId ? '#e0e7ff' : '#fff',
-                          color: m.id === openModuleId ? '#4f46e5' : '#334155',
+                          background: m.id === openModuleId ? '#eef2ff' : '#fff',
+                          color: m.id === openModuleId ? '#4338ca' : '#334155',
                           fontSize: 13,
-                          fontWeight: m.id === openModuleId ? 600 : 400,
+                          fontWeight: m.id === openModuleId ? 700 : 500,
                           cursor: 'pointer',
-                          borderBottom: '1px solid #f1f5f9',
-                          transition: 'all 0.1s ease-in-out'
+                          borderBottom: '1px solid #f8fafc',
+                          transition: 'all 0.15s ease'
                         }}
                         onMouseEnter={(e) => { if (m.id !== openModuleId) e.currentTarget.style.background = '#f8fafc'; }}
                         onMouseLeave={(e) => { if (m.id !== openModuleId) e.currentTarget.style.background = '#fff'; }}
                       >
-                        {m.title}
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</span>
+                        {m.id === openModuleId && <span style={{ color: '#4f46e5', fontSize: 13, fontWeight: 800 }}>✓</span>}
                       </button>
                     ))}
                   </div>
                 )}
               </div>
             ) : (
-              <span style={{ color: '#0f172a', fontWeight: 600 }}>{openModuleData.title}</span>
+              <span style={{ color: '#0f172a', fontWeight: 700 }}>{openModuleData.title}</span>
             )}
           </div>
+
+          {/* Navigation back to all modules button */}
+          <button
+            type="button"
+            onClick={closeModule}
+            className="btn-module-outline"
+            style={{ padding: '7px 16px', fontSize: 12.5, fontWeight: 600 }}
+            title="Return to the curriculum overview with all modules"
+          >
+            ← Back to all modules
+          </button>
         </div>
 
-        {/* ── Premium Hero Banner ── */}
-        <div style={{ margin: '0 auto 24px auto', maxWidth: 1440, width: '100%', padding: '0 24px', boxSizing: 'border-box', position: 'relative' }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #8b5cf6 100%)',
-            color: '#fff',
-            borderRadius: 24,
-            padding: '48px 48px 64px 48px',
-            position: 'relative',
-            overflow: 'hidden',
-            boxShadow: '0 20px 40px -10px rgba(79,70,229,0.3)'
-          }}>
-            {/* Decorative background circles */}
-            <div style={{ position: 'absolute', top: -50, right: -50, width: 300, height: 300, background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%' }} />
-            <div style={{ position: 'absolute', bottom: -100, left: 100, width: 250, height: 250, background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%)', borderRadius: '50%' }} />
+        {/* ── Module Executive Hero Banner (Matches Overview Design) ── */}
+        <div className="lp-hero-card">
+          <div className="lp-hero-circle-accent1" />
+          <div className="lp-hero-circle-accent2" />
 
-            <p style={{ position: 'relative', fontSize: 12, opacity: 0.9, margin: '0 0 12px', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 800, color: '#e0e7ff' }}>
-              MODULE · {(openModuleData.level || 'Beginner').toUpperCase()} · {selectedPathTitle.toUpperCase()}
-            </p>
-            <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 24 }}>
-              <div style={{ flex: 1 }}>
-                <h1 style={{ fontSize: 36, margin: '0 0 16px', fontWeight: 900, lineHeight: 1.1, letterSpacing: '-0.02em' }}>{openModuleData.title}</h1>
-                <ModuleDescriptionPreview
-                  description={openModuleData.description}
-                  resources={resources.filter((r: any) => !r.lesson && !r.lessonId)}
-                  onShowMore={() => setShowMoreModalOpen(true)}
-                />
+          <div className="lp-hero-content">
+            <div className="lp-hero-left">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                <span style={{
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: '1px solid rgba(255, 255, 255, 0.25)',
+                  borderRadius: 6,
+                  padding: '2px 8px',
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  letterSpacing: '0.06em',
+                  color: '#ffffff',
+                  textTransform: 'uppercase'
+                }}>
+                  Module
+                </span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)' }}>•</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(224, 231, 255, 0.9)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  {(openModuleData.level || 'Beginner').toUpperCase()}
+                </span>
+                <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.4)' }}>•</span>
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(224, 231, 255, 0.9)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                  {selectedPathTitle.toUpperCase()}
+                </span>
+              </div>
 
-                {resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
-                  <div style={{ marginTop: 16, background: 'rgba(255,255,255,0.1)', padding: '16px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.2)' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12, color: '#e0e7ff' }}>
-                      Module Resources
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any) => (
-                        <a
-                          key={res.id}
-                          href={res.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          onClick={() => { if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { }); }}
-                          style={{ color: '#fff', fontSize: 14, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}
-                          onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                          onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
-                        >
-                          <span style={{ fontSize: 16 }}>🔗</span>
-                          {res.title}
-                        </a>
-                      ))}
-                    </div>
+              <h1 className="lp-hero-title">
+                {openModuleData.title}
+              </h1>
+
+              <ModuleDescriptionPreview
+                description={openModuleData.description}
+                resources={resources.filter((r: any) => !r.lesson && !r.lessonId)}
+                onShowMore={() => setShowMoreModalOpen(true)}
+              />
+
+              {resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
+                <div style={{ marginTop: 16, background: 'rgba(255,255,255,0.08)', padding: '14px 18px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.15)', backdropFilter: 'blur(8px)' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, color: '#e0e7ff' }}>
+                    Module Resources
                   </div>
-                )}
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0, background: 'rgba(255,255,255,0.1)', padding: '16px 24px', borderRadius: 16, backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.2)' }}>
-                <div style={{ fontSize: 12, opacity: 0.9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Module Progress</div>
-                <div style={{ fontSize: 48, fontWeight: 900, lineHeight: 1 }}>{progressPercent}%</div>
-              </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                    {resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any) => (
+                      <a
+                        key={res.id}
+                        href={res.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => { if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { }); }}
+                        style={{ color: '#fff', fontSize: 13, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, background: 'rgba(255,255,255,0.12)', padding: '5px 12px', borderRadius: 8, transition: 'background 0.15s' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.22)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+                      >
+                        <span>🔗</span>
+                        {res.title}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Progress bar */}
-            <div style={{ position: 'relative', width: '100%', height: 8, background: 'rgba(255,255,255,0.2)', borderRadius: 999, marginTop: 32, overflow: 'hidden' }}>
-              <div style={{ width: `${progressPercent}%`, height: '100%', background: '#10b981', borderRadius: 999, transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 0 10px rgba(16,185,129,0.5)' }} />
+            {/* Circular Progress Widget (Identical to Overview Page) */}
+            <div className="lp-hero-progress-widget">
+              <div className="lp-progress-circle-wrap">
+                <svg className="lp-progress-circle-svg" viewBox="0 0 60 60">
+                  <circle cx="30" cy="30" r={moduleCircleRadius} stroke="rgba(255,255,255,0.18)" strokeWidth="5" fill="none" />
+                  <circle
+                    cx="30"
+                    cy="30"
+                    r={moduleCircleRadius}
+                    stroke={progressPercent === 100 ? '#10b981' : '#38bdf8'}
+                    strokeWidth="5"
+                    fill="none"
+                    strokeDasharray={moduleCircleCircumference}
+                    strokeDashoffset={moduleCircleStrokeDashoffset}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <div className="lp-progress-circle-text">
+                  <span className="lp-progress-circle-pct">{progressPercent}%</span>
+                  <span className="lp-progress-circle-label">PROGRESS</span>
+                </div>
+              </div>
+              <div className="lp-progress-widget-text">
+                <h4>{progressPercent === 100 ? 'Module Completed' : progressPercent > 0 ? 'In Progress' : 'Not Started'}</h4>
+                <p>{completedLessons} of {lessons.length} lessons done</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Key Metrics Strip (Clean, non-overlapping) ── */}
+        <div className="lp-stats-strip" style={{ marginTop: 18 }}>
+          <div className="lp-stat-pill-card">
+            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
+              <Clock size={16} strokeWidth={1.75} />
+            </div>
+            <div className="lp-stat-info">
+              <strong>{openModuleData.durationLabel || `${openModuleData.durationWeeks || 2} weeks`}</strong>
+              <span>Duration</span>
             </div>
           </div>
 
-          {/* Overlapping Stats Row */}
+          <div className="lp-stat-pill-card">
+            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
+              <BookOpen size={16} strokeWidth={1.75} />
+            </div>
+            <div className="lp-stat-info">
+              <strong>{isTrainee ? `${completedLessons}/${lessons.length} done` : `${lessons.length} total`}</strong>
+              <span>Lessons</span>
+            </div>
+          </div>
+
+          <div className="lp-stat-pill-card">
+            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
+              <CheckSquare size={16} strokeWidth={1.75} />
+            </div>
+            <div className="lp-stat-info">
+              <strong>{isTrainee ? `${tasksSubmitted}/${tasks.length} submitted` : `${tasks.length} assigned`}</strong>
+              <span>Tasks</span>
+            </div>
+          </div>
+
+          <div className="lp-stat-pill-card">
+            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
+              <Award size={16} strokeWidth={1.75} />
+            </div>
+            <div className="lp-stat-info">
+              <strong>{tasks.length > 0 ? `${totalGained}/${totalMax}` : '0/0'}</strong>
+              <span>Avg. Score</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Learning Objectives & Outcomes ── */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+          gap: 20,
+          marginTop: 24,
+          marginBottom: 32,
+          boxSizing: 'border-box'
+        }}>
+          {/* Objectives Card */}
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4,1fr)',
-            gap: 20,
-            padding: '0 32px',
-            marginTop: -32,
-            position: 'relative',
-            zIndex: 10
+            background: '#ffffff',
+            borderRadius: 16,
+            border: '1.5px solid #e2e8f0',
+            padding: '24px 26px',
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.03)',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16
           }}>
-            {[
-              { icon: '⏱️', label: 'Duration', value: openModuleData.durationLabel || `${openModuleData.durationWeeks || 2} weeks` },
-              { icon: '📖', label: 'Lessons', value: isTrainee ? `${completedLessons}/${lessons.length} done` : `${lessons.length} total` },
-              { icon: '🎯', label: 'Tasks', value: isTrainee ? `${tasksSubmitted}/${tasks.length} submitted` : `${tasks.length} assigned` },
-              { icon: '🏆', label: 'Avg. Score', value: tasks.length > 0 ? `${totalGained}/${totalMax}` : `0/0` },
-            ].map((m) => (
-              <div key={m.label} style={{
-                background: 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(10px)',
-                padding: '20px',
-                borderRadius: 16,
-                border: '1px solid rgba(255,255,255,0.8)',
-                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01)',
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: '#eef2ff',
+                color: '#4f46e5',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 16,
-                transition: 'transform 0.2s',
-                cursor: 'default'
-              }}
-                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-4px)'}
-                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                <div style={{
-                  width: 48, height: 48, borderRadius: 12,
-                  background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24
-                }}>
-                  {m.icon}
-                </div>
-                <div>
-                  <span style={{ display: 'block', fontSize: 12, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{m.label}</span>
-                  <strong style={{ fontSize: 18, color: '#0f172a', fontWeight: 800 }}>{m.value}</strong>
-                </div>
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
               </div>
-            ))}
+              <div>
+                <h4 style={{ margin: 0, color: '#0f172a', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                  Learning Objectives
+                </h4>
+                <span style={{ fontSize: 12, color: '#64748b' }}>Core concepts and focus areas</span>
+              </div>
+            </div>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {objectives.map((o, i) => (
+                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#334155', fontSize: 13.5, lineHeight: 1.55 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6366f1', marginTop: 7, flexShrink: 0 }} />
+                  <span>{o}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Outcomes Card */}
+          <div style={{
+            background: '#ffffff',
+            borderRadius: 16,
+            border: '1.5px solid #e2e8f0',
+            padding: '24px 26px',
+            boxShadow: '0 1px 3px rgba(15, 23, 42, 0.03)',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 16
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: '#ecfdf5',
+                color: '#059669',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              </div>
+              <div>
+                <h4 style={{ margin: 0, color: '#0f172a', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                  Learning Outcomes
+                </h4>
+                <span style={{ fontSize: 12, color: '#64748b' }}>Practical capabilities & competencies</span>
+              </div>
+            </div>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {outcomes.map((o, i) => (
+                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#334155', fontSize: 13.5, lineHeight: 1.55 }}>
+                  <svg width="16" height="16" fill="none" stroke="#059669" strokeWidth="2.5" viewBox="0 0 24 24" style={{ marginTop: 3, flexShrink: 0 }}><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  <span>{o}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
 
-        {/* ── Body ── */}
-        <div style={{ padding: '28px 32px', maxWidth: 1440, margin: '0 auto' }}>
-
-          {/* Objectives + Outcomes */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 40, marginTop: 12 }}>
-            <div style={{
-              background: 'linear-gradient(to right, #ffffff, #f8fafc)',
-              padding: 32,
-              borderRadius: 20,
-              border: '1px solid #e2e8f0',
-              borderLeft: '6px solid #4f46e5',
-              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
-                  <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                </div>
-                <h4 style={{ margin: 0, color: '#1e293b', fontSize: 18, fontWeight: 800 }}>Learning Objectives</h4>
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {objectives.map((o, i) => (
-                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, color: '#475569', fontSize: 14, lineHeight: 1.6 }}>
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#818cf8', marginTop: 8, flexShrink: 0 }} />
-                    {o}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div style={{
-              background: 'linear-gradient(to right, #ffffff, #f8fafc)',
-              padding: 32,
-              borderRadius: 20,
-              border: '1px solid #e2e8f0',
-              borderLeft: '6px solid #10b981',
-              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
-                  <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                </div>
-                <h4 style={{ margin: 0, color: '#1e293b', fontSize: 18, fontWeight: 800 }}>Learning Outcomes</h4>
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {outcomes.map((o, i) => (
-                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, color: '#475569', fontSize: 14, lineHeight: 1.6 }}>
-                    <div style={{ color: '#10b981', marginTop: 2, flexShrink: 0 }}>
-                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"></path></svg>
-                    </div>
-                    {o}
-                  </li>
-                ))}
-              </ul>
-            </div>
+        {/* ── Modern Tabs Bar ── */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+          <div style={{
+            display: 'inline-flex',
+            background: '#f1f5f9',
+            padding: 4,
+            borderRadius: 12,
+            border: '1px solid #e2e8f0',
+            gap: 4
+          }}>
+            {tabLabels.map(([key, label]) => {
+              const countMatch = label.match(/\((.*?)\)/);
+              const countText = countMatch ? countMatch[1] : '';
+              const tabName = key;
+              const isActive = activeTab === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveTab(key)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '8px 18px',
+                    border: isActive ? '1px solid rgba(0,0,0,0.06)' : '1px solid transparent',
+                    background: isActive ? '#ffffff' : 'transparent',
+                    borderRadius: 9,
+                    cursor: 'pointer',
+                    fontWeight: isActive ? 700 : 600,
+                    fontSize: 13.5,
+                    color: isActive ? '#1e1b4b' : '#64748b',
+                    boxShadow: isActive ? '0 2px 6px rgba(15, 23, 42, 0.06)' : 'none',
+                    transition: 'all 0.15s ease',
+                    outline: 'none'
+                  }}
+                >
+                  <span>{tabName}</span>
+                  {countText && (
+                    <span style={{
+                      padding: '2px 8px',
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: isActive ? '#eef2ff' : '#e2e8f0',
+                      color: isActive ? '#4f46e5' : '#64748b'
+                    }}>
+                      {countText}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          {/* Modern Tabs */}
-          <div className="modules-management-tabs-container" style={{ display: 'flex', gap: 8, marginBottom: 24, background: '#f1f5f9', padding: 6, borderRadius: 14, overflowX: 'auto', maxWidth: '100%' }}>
-            {tabLabels.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setActiveTab(key)}
-                style={{
-                  padding: '10px 24px',
-                  border: 'none',
-                  background: activeTab === key ? '#fff' : 'transparent',
-                  borderRadius: 10,
-                  cursor: 'pointer',
-                  fontWeight: activeTab === key ? 700 : 600,
-                  fontSize: 14,
-                  color: activeTab === key ? '#4f46e5' : '#64748b',
-                  boxShadow: activeTab === key ? '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)' : 'none',
-                  transition: 'all 0.2s',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {label}
-              </button>
-            ))}
+          <div style={{ fontSize: 13, color: '#64748b', fontWeight: 500 }}>
+            {activeTab === 'Lessons' && `${completedLessons} of ${lessons.length} lessons watched`}
+            {activeTab === 'Tasks' && `${tasksSubmitted} of ${tasks.length} tasks completed`}
           </div>
+        </div>
 
-          {/* ── LESSONS TAB ── */}
-          {activeTab === 'Lessons' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {lessons.length === 0 && (
-                <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 10 }}>
-                  No lessons in this module yet.
+        {/* ── LESSONS TAB ── */}
+        {activeTab === 'Lessons' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {lessons.length === 0 && (
+              <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 12 }}>
+                No lessons in this module yet.
+              </div>
+            )}
+            {lessons.map((lesson: any, lIdx: number) => {
+              const isDone = completedLessonIds.has(String(lesson.id));
+              return (
+                <div key={lesson.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <LessonCard
+                    lesson={{ ...lesson, title: `${lIdx + 1}. ${lesson.title}` }}
+                    isDone={isDone}
+                    isLocked={lesson.isLocked}
+                    isTrainee={isTrainee}
+                    resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
+                    onVisitResource={(res) => {
+                      if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { });
+                    }}
+                    onMarkWatched={markLessonWatched}
+                    onClickLocked={() => lesson.isLocked && toast.warning(lesson.lockReason)}
+                  />
                 </div>
-              )}
-              {lessons.map((lesson: any, lIdx: number) => {
-                const isDone = completedLessonIds.has(String(lesson.id));
-                return (
-                  <div key={lesson.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <LessonCard
-                      lesson={{ ...lesson, title: `${lIdx + 1}. ${lesson.title}` }}
-                      isDone={isDone}
-                      isLocked={lesson.isLocked}
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── TASKS TAB ── */}
+        {activeTab === 'Tasks' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {tasks.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 12 }}>
+                No tasks assigned yet.
+              </div>
+            ) : (
+              <>
+                <div className="tasks-header-row">
+                  <span>Task Name</span>
+                  <span>Due Date</span>
+                  <span style={{ textAlign: 'right' }}>Status & Action</span>
+                </div>
+                {tasks.map((task: any) => {
+                  const sub = subByAssignment.get(task.id);
+                  return (
+                    <AssignmentCard
+                      key={task.id}
+                      task={task}
+                      submission={sub}
+                      isLocked={task.isLocked}
+                      lockReason={task.lockReason}
                       isTrainee={isTrainee}
-                      resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
-                      onVisitResource={(res) => {
-                        if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { });
-                      }}
-                      onMarkWatched={markLessonWatched}
-                      onClickLocked={() => lesson.isLocked && toast.warning(lesson.lockReason)}
+                      onClickLocked={(r) => toast.warning(r || 'Locked')}
+                      onAttempt={(t) => { setSubmitTask(t); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
                     />
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
 
-          {/* ── TASKS TAB ── */}
-          {activeTab === 'Tasks' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {tasks.length === 0 ? (
-                <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 10 }}>
-                  No tasks assigned yet.
-                </div>
-              ) : (
-                <>
-                  <div className="tasks-header-row">
-                    <span>Task Name</span>
-                    <span>Due Date</span>
-                    <span style={{ textAlign: 'right' }}>Status & Action</span>
-                  </div>
-                  {tasks.map((task: any) => {
-                    const sub = subByAssignment.get(task.id);
-                    return (
-                      <AssignmentCard
-                        key={task.id}
-                        task={task}
-                        submission={sub}
-                        isLocked={task.isLocked}
-                        lockReason={task.lockReason}
-                        isTrainee={isTrainee}
-                        onClickLocked={(r) => toast.warning(r || 'Locked')}
-                        onAttempt={(t) => { setSubmitTask(t); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
-                      />
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          )}
+        {/* ── ASSESSMENTS TAB ── */}
+        {activeTab === 'Assessments' && (
+          <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            {isTrainee && completedLessons < lessons.length ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 32px', textAlign: 'center' }}>
+                <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 16 }}>🔒</div>
+                <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>Module Assessment</h3>
+                <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
+                  Complete {lessons.length - completedLessons} more lesson{lessons.length - completedLessons !== 1 ? 's' : ''} to unlock the final assessment.
+                </p>
+                <span style={{ fontSize: 13, color: '#94a3b8', background: '#f8fafc', padding: '6px 14px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                  Locked — {lessons.length - completedLessons} lesson{lessons.length - completedLessons !== 1 ? 's' : ''} remaining
+                </span>
+              </div>
+            ) : (
+              <div style={{ padding: '24px 28px' }}>
+                <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Module Assessment</h3>
+                <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
+                  Submitted: {tasksSubmitted}
+                </p>
+                {tasks.map((task: any) => {
+                  const sub = subByAssignment.get(task.id);
+                  const isLocked = task.isLocked;
 
-          {/* Resources tab removed */}
+                  let timeLeftStr = '';
+                  let isOverdue = false;
+                  const status = task.status || (sub ? sub.status : 'not_started');
 
-          {/* ── ASSESSMENTS TAB ── */}
-          {activeTab === 'Assessments' && (
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-              {isTrainee && completedLessons < lessons.length ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 32px', textAlign: 'center' }}>
-                  <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 16 }}>🔒</div>
-                  <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>Module Assessment</h3>
-                  <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
-                    Complete {lessons.length - completedLessons} more lesson{lessons.length - completedLessons !== 1 ? 's' : ''} to unlock the final assessment.
-                  </p>
-                  <span style={{ fontSize: 13, color: '#94a3b8', background: '#f8fafc', padding: '6px 14px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                    Locked — {lessons.length - completedLessons} lesson{lessons.length - completedLessons !== 1 ? 's' : ''} remaining
-                  </span>
-                </div>
-              ) : (
-                <div style={{ padding: '24px 28px' }}>
-                  <h3 style={{ margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Module Assessment</h3>
-                  <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
-                    Submitted: {tasksSubmitted}
-                  </p>
-                  {tasks.map((task: any) => {
-                    const sub = subByAssignment.get(task.id);
-                    const isLocked = task.isLocked;
-
-                    let timeLeftStr = '';
-                    let isOverdue = false;
-                    const status = task.status || (sub ? sub.status : 'not_started');
-
-                    if (status === 'started' && task.computedDeadline) {
-                      const deadline = new Date(task.computedDeadline);
-                      const diff = deadline.getTime() - currentTime.getTime();
-                      if (diff <= 0) {
-                        isOverdue = true;
-                        timeLeftStr = 'Time is up!';
-                      } else {
-                        const d = Math.floor(diff / (1000 * 60 * 60 * 24));
-                        const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
-                        const m = Math.floor((diff / 1000 / 60) % 60);
-                        const s = Math.floor((diff / 1000) % 60);
-                        timeLeftStr = `${d}d ${h}h ${m}m ${s}s left`;
-                      }
+                  if (status === 'started' && task.computedDeadline) {
+                    const deadline = new Date(task.computedDeadline);
+                    const diff = deadline.getTime() - currentTime.getTime();
+                    if (diff <= 0) {
+                      isOverdue = true;
+                      timeLeftStr = 'Time is up!';
+                    } else {
+                      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+                      const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                      const m = Math.floor((diff / 1000 / 60) % 60);
+                      const s = Math.floor((diff / 1000) % 60);
+                      timeLeftStr = `${d}d ${h}h ${m}m ${s}s left`;
                     }
+                  }
 
-                    const hasDuration = (task.durationDays || 0) > 0 || (task.durationHours || 0) > 0 || (task.durationMinutes || 0) > 0;
-                    const canSubmit = !hasDuration || status === 'started' || status === 'Submitted' || status === 'Approved' || status === 'Rejected' || status === 'Overdue';
+                  const hasDuration = (task.durationDays || 0) > 0 || (task.durationHours || 0) > 0 || (task.durationMinutes || 0) > 0;
+                  const canSubmit = !hasDuration || status === 'started' || status === 'Submitted' || status === 'Approved' || status === 'Rejected' || status === 'Overdue';
 
-                    return (
-                      <div key={task.id} style={{ padding: '14px 18px', background: isLocked ? '#f1f5f9' : '#f8fafc', borderRadius: 10, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isLocked ? 0.6 : 1 }}>
-                        <div>
-                          <strong style={{ fontSize: 14 }}>
-                            {isLocked && <span style={{ marginRight: 6 }}>🔒</span>}
-                            {task.title}
-                          </strong>
-                          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{task.assignmentType}</div>
-                          {isLocked && task.lockReason && (
-                            <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{task.lockReason}</div>
-                          )}
-                          {!isLocked && status === 'started' && (
-                            <div style={{ fontSize: 13, color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 600, marginTop: 6 }}>
-                              ⏳ {timeLeftStr}
-                            </div>
-                          )}
-                          {!isLocked && status === 'Overdue' && (
-                            <div style={{ fontSize: 13, color: '#ef4444', fontWeight: 600, marginTop: 6 }}>
-                              ⚠️ Overdue
-                            </div>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                          {typeof sub?.score === 'number' && (
-                            <span style={{ fontWeight: 700, fontSize: 15, color: sub.score >= 75 ? '#16a34a' : sub.score >= 35 ? '#b45309' : '#dc2626' }}>
-                              {sub.score}/{task.maxScore || 100}
-                            </span>
-                          )}
-
-                          {isTrainee && !isLocked && (
-                            <>
-                              {!canSubmit && status !== 'started' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleStartTask(task.id)}
-                                  style={{ padding: '6px 14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-                                >
-                                  Now I will do task
-                                </button>
-                              )}
-
-                              {canSubmit && (!sub || (sub.status !== 'Approved' && sub.status !== 'Evaluated')) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSubmitTask(task);
-
-                                    let prefilledMcq = {};
-                                    let prefilledSubj = {};
-                                    let prefilledText = '';
-                                    if (sub?.submissionText) {
-                                      try {
-                                        prefilledText = sub.submissionText;
-                                        if (sub.submissionText.startsWith('{')) {
-                                          const parsed = JSON.parse(sub.submissionText);
-                                          prefilledMcq = parsed.answers || {};
-                                          prefilledSubj = parsed.textAnswers || {};
-                                        }
-                                      } catch (e) { }
-                                    }
-
-                                    setSubmissionText(prefilledText);
-                                    setSubjectiveAnswers(prefilledSubj);
-                                    setMcqAnswers(prefilledMcq);
-                                  }}
-                                  disabled={isOverdue || status === 'Overdue'}
-                                  style={{ padding: '6px 14px', background: isOverdue || status === 'Overdue' ? '#cbd5e1' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: isOverdue || status === 'Overdue' ? 'not-allowed' : 'pointer' }}
-                                >
-                                  {sub ? 'Resubmit' : 'Submit'}
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
+                  return (
+                    <div key={task.id} style={{ padding: '14px 18px', background: isLocked ? '#f1f5f9' : '#f8fafc', borderRadius: 10, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isLocked ? 0.6 : 1 }}>
+                      <div>
+                        <strong style={{ fontSize: 14 }}>
+                          {isLocked && <span style={{ marginRight: 6 }}>🔒</span>}
+                          {task.title}
+                        </strong>
+                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{task.assignmentType}</div>
+                        {isLocked && task.lockReason && (
+                          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{task.lockReason}</div>
+                        )}
+                        {!isLocked && status === 'started' && (
+                          <div style={{ fontSize: 13, color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 600, marginTop: 6 }}>
+                            ⏳ {timeLeftStr}
+                          </div>
+                        )}
+                        {!isLocked && status === 'Overdue' && (
+                          <div style={{ fontSize: 13, color: '#ef4444', fontWeight: 600, marginTop: 6 }}>
+                            ⚠️ Overdue
+                          </div>
+                        )}
                       </div>
-                    );
-                  })}
-                  {tasks.length === 0 && <p style={{ color: '#94a3b8', fontSize: 14 }}>No assessments in this module.</p>}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        {typeof sub?.score === 'number' && (
+                          <span style={{ fontWeight: 700, fontSize: 15, color: sub.score >= 75 ? '#16a34a' : sub.score >= 35 ? '#b45309' : '#dc2626' }}>
+                            {sub.score}/{task.maxScore || 100}
+                          </span>
+                        )}
 
-              {submitTask && (
-        <SharedAssignmentModal
-          task={submitTask}
-          submission={subByAssignment.get(submitTask.id)}
-          accessToken={accessToken}
-          onClose={() => setSubmitTask(null)}
-          onSuccess={() => {
+                        {isTrainee && !isLocked && (
+                          <>
+                            {!canSubmit && status !== 'started' && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartTask(task.id)}
+                                style={{ padding: '6px 14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                Now I will do task
+                              </button>
+                            )}
+
+                            {canSubmit && (!sub || (sub.status !== 'Approved' && sub.status !== 'Evaluated')) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSubmitTask(task);
+
+                                  let prefilledMcq = {};
+                                  let prefilledSubj = {};
+                                  let prefilledText = '';
+                                  if (sub?.submissionText) {
+                                    try {
+                                      prefilledText = sub.submissionText;
+                                      if (sub.submissionText.startsWith('{')) {
+                                        const parsed = JSON.parse(sub.submissionText);
+                                        prefilledMcq = parsed.answers || {};
+                                        prefilledSubj = parsed.textAnswers || {};
+                                      }
+                                    } catch (e) { }
+                                  }
+
+                                  setSubmissionText(prefilledText);
+                                  setSubjectiveAnswers(prefilledSubj);
+                                  setMcqAnswers(prefilledMcq);
+                                }}
+                                disabled={isOverdue || status === 'Overdue'}
+                                style={{ padding: '6px 14px', background: isOverdue || status === 'Overdue' ? '#cbd5e1' : 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: isOverdue || status === 'Overdue' ? 'not-allowed' : 'pointer' }}
+                              >
+                                {sub ? 'Resubmit' : 'Submit'}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                {tasks.length === 0 && <p style={{ color: '#94a3b8', fontSize: 14 }}>No assessments in this module.</p>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {submitTask && (
+          <SharedAssignmentModal
+            task={submitTask}
+            submission={subByAssignment.get(submitTask.id)}
+            accessToken={accessToken}
+            onClose={() => setSubmitTask(null)}
+            onSuccess={() => {
               if (openModuleId) openModule(openModuleId);
               refreshNotifications();
-          }}
-        />
-      )}
+            }}
+          />
+        )}
       </div>
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // MODULE LIST VIEW
+  // MODULE LIST VIEW (Learning Path & Modules Overview - Screenshot 2)
   // ─────────────────────────────────────────────────────────────────────────
-  return (
-    <div style={{ padding: '24px 32px', maxWidth: '1440px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+  const activeLP = currentPathDetails || allPaths.find((p: any) => p.id === selectedPathId);
+  const lpSummary = pathProgressSummary[selectedPathId];
 
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
-        <div>
-          <button type="button" onClick={onBack}
-            style={{ fontSize: 13, color: '#4f46e5', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: 8, padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+  // Helper to calculate module progress percentage
+  const getModuleProgress = (m: any): number => {
+    if (lpSummary?.moduleProgresses?.[m.id] !== undefined) {
+      return Math.min(100, Math.max(0, Math.round(Number(lpSummary.moduleProgresses[m.id]))));
+    }
+    const mLessons = m.lessons || [];
+    const mTasks = m.assignments || [];
+    const totalItems = mLessons.length + mTasks.length;
+    if (totalItems === 0) return 0;
+
+    const completedLessonIdsSet = new Set<string>((progressStats?.completedLessonIds || []).map(String));
+    const completedLessonsCount = mLessons.filter((l: any) => completedLessonIdsSet.has(String(l.id))).length;
+
+    const completedTasksCount = mTasks.filter((t: any) => {
+      const sub = subByAssignment.get(t.id);
+      return sub && String(sub.status || '').toUpperCase() !== 'AVAILABLE';
+    }).length;
+
+    return Math.min(100, Math.round(((completedLessonsCount + completedTasksCount) / totalItems) * 100));
+  };
+
+  // Overall LP progress percentage
+  const overallProgressPercent = typeof lpSummary?.userProgressPercent === 'number'
+    ? lpSummary.userProgressPercent
+    : modules.length > 0
+      ? Math.min(100, Math.max(0, Math.round(modules.reduce((acc: number, m: any) => acc + getModuleProgress(m), 0) / modules.length)))
+      : (progressStats?.completionPercent || 0);
+
+  // Lessons counts across LP
+  const allLessons = modules.flatMap((m: any) => m.lessons || []);
+  const completedLessonIdsSet = new Set<string>((progressStats?.completedLessonIds || []).map(String));
+  const completedLessonsInLP = allLessons.filter((l: any) => completedLessonIdsSet.has(String(l.id))).length;
+  const totalLessonsInLP = allLessons.length;
+
+  // Total projects / activities count
+  const allAssignments = modules.flatMap((m: any) => m.assignments || []);
+  const totalProjectsCount = allAssignments.length || 0;
+
+  // Next lesson computation
+  const nextIncompleteModule = modules.find((m: any) => getModuleProgress(m) < 100) || modules[0];
+  const nextIncompleteLesson = nextIncompleteModule?.lessons?.find((l: any) => !completedLessonIdsSet.has(String(l.id)));
+  const nextLessonTitle = nextIncompleteLesson?.title || (nextIncompleteModule?.title ? `${nextIncompleteModule.title} Overview` : 'Next Lesson');
+  const nextLessonDuration = nextIncompleteLesson?.durationMinutes || 15;
+
+  // Progress circle SVG parameters (r=26 => circumference ≈ 163.36)
+  const circleRadius = 26;
+  const circleCircumference = 2 * Math.PI * circleRadius;
+  const circleStrokeDashoffset = circleCircumference - (circleCircumference * overallProgressPercent) / 100;
+
+  // Momentum label
+  let momentumText = 'Getting started';
+  if (overallProgressPercent >= 100) {
+    momentumText = 'Path completed!';
+  } else if (overallProgressPercent >= 60) {
+    momentumText = 'Great momentum';
+  } else if (overallProgressPercent >= 25) {
+    momentumText = 'Well underway';
+  } else if (overallProgressPercent > 0) {
+    momentumText = 'Good start';
+  }
+
+  // Estimated duration
+  const lpDurationDisplay = activeLP?.duration || (() => {
+    const totalDays = modules.reduce((sum: number, m: any) => sum + (m.durationWeeks ? m.durationWeeks * 7 : 7), 0);
+    return totalDays > 0 ? `${totalDays} days` : '33 days';
+  })();
+
+  const stageLabels = ['GETTING STARTED', 'CORE SKILLS', 'PRACTICAL APPLICATION', 'RESPONSIBLE PRACTICE', 'ADVANCED MASTERY'];
+  const firstActiveIndex = modules.findIndex((m: any) => getModuleProgress(m) < 100);
+
+  // Sanitize raw HTML tags from Learning Path description
+  const cleanLpDescription = (activeLP?.description || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim();
+
+  return (
+    <div className="lp-overview-container">
+      {/* ── Top Header / Breadcrumbs ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#64748b' }}>
+          <button
+            type="button"
+            onClick={onBack}
+            style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+          >
             ← Back to Learning Paths
           </button>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: '#0f172a' }}>Modules</h1>
-          <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0 0' }}>Browse module content and resources</p>
+          <span>›</span>
+          <span style={{ color: '#0f172a', fontWeight: 700 }}>
+            {activeLP?.title || selectedPathTitle}
+          </span>
         </div>
-        {isTrainerOrAdmin && (
-          <button type="button" onClick={() => setShowNewModuleModal(true)}
-            style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 10, padding: '10px 20px', fontWeight: 700, fontSize: 13, cursor: 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.35)' }}>
-            + New Module
-          </button>
-        )}
-      </div>
 
-      {/* Learning Path Selector */}
-      <div style={{ marginBottom: 28, background: '#fff', borderRadius: 12, border: '1px solid #f1f5f9', padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-        <label style={{ fontSize: 12, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 8 }}>
-          Select Learning Path
-        </label>
-        <select
-          value={selectedPathId}
-          onChange={e => {
-            const found = allPaths.find(p => p.id === e.target.value);
-            setSelectedPathId(e.target.value);
-            setSelectedPathTitle(found?.title || found?.name || '');
-          }}
-          style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', fontSize: 14, background: '#fff', cursor: 'pointer', outline: 'none', fontWeight: 500, color: '#1e293b' }}
-        >
-          {allPaths.length === 0 && <option value="">Loading paths...</option>}
-          {allPaths.map((p: any) => (
-            <option key={p.id} value={p.id}>{p.title || p.name}</option>
-          ))}
-        </select>
-        {selectedPathTitle && (
-          <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
-            📚 Showing modules for: <strong>{selectedPathTitle}</strong>
+        {isTrainerOrAdmin && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {allPaths.length > 1 && (
+              <select
+                value={selectedPathId}
+                onChange={e => {
+                  const found = allPaths.find(p => p.id === e.target.value);
+                  setSelectedPathId(e.target.value);
+                  setSelectedPathTitle(found?.title || found?.name || '');
+                }}
+                style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13, background: '#fff', cursor: 'pointer', outline: 'none', color: '#334155' }}
+              >
+                {allPaths.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.title || p.name}</option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowNewModuleModal(true)}
+              style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', color: '#fff', border: 'none', borderRadius: 10, padding: '9px 18px', fontWeight: 700, fontSize: 13, cursor: 'pointer', boxShadow: '0 2px 8px rgba(99,102,241,0.35)' }}
+            >
+              + New Module
+            </button>
           </div>
         )}
       </div>
 
-      {/* Modules List */}
+      {/* ── Learning Path Executive Hero Banner ── */}
+      <div className="lp-hero-card">
+        <div className="lp-hero-circle-accent1" />
+        <div className="lp-hero-circle-accent2" />
+
+        <div className="lp-hero-content">
+          <div className="lp-hero-left">
+            <h1 className="lp-hero-title">
+              {activeLP?.title || selectedPathTitle || 'Learning Path'}
+            </h1>
+            <p className="lp-hero-desc">
+              {cleanLpDescription || 'Follow this structured curriculum to gain practical skills, complete assignments, and track your learning progress.'}
+            </p>
+
+            <div className="lp-hero-actions">
+              <button
+                type="button"
+                className="btn-hero-continue"
+                onClick={() => {
+                  if (nextIncompleteModule) {
+                    void openModule(nextIncompleteModule.id);
+                  }
+                }}
+              >
+                Continue learning <span>›</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Right Floating Progress Card */}
+          <div className="lp-hero-progress-widget">
+            <div className="lp-progress-circle-wrap">
+              <svg className="lp-progress-circle-svg" viewBox="0 0 66 66">
+                <circle
+                  cx="33"
+                  cy="33"
+                  r={circleRadius}
+                  fill="none"
+                  stroke="rgba(255, 255, 255, 0.2)"
+                  strokeWidth="5"
+                />
+                <circle
+                  cx="33"
+                  cy="33"
+                  r={circleRadius}
+                  fill="none"
+                  stroke="#38bdf8"
+                  strokeWidth="5"
+                  strokeDasharray={circleCircumference}
+                  strokeDashoffset={circleStrokeDashoffset}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <div className="lp-progress-circle-text">
+                <span className="lp-progress-circle-pct">{overallProgressPercent}%</span>
+                <span className="lp-progress-circle-label">OVERALL</span>
+              </div>
+            </div>
+
+            <div className="lp-progress-widget-text">
+              <h4>{momentumText}</h4>
+              <p>{totalLessonsInLP > 0 ? `${completedLessonsInLP} of ${totalLessonsInLP} lessons completed` : 'Start learning today'}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Quick Stats Strip (Modules, Duration, Lessons) ── */}
+      <div className="lp-stats-strip">
+        <div className="lp-stat-pill-card">
+          <div className="lp-stat-icon-wrap" style={{ background: '#eef2ff', color: '#4f46e5' }}>
+            📚
+          </div>
+          <div className="lp-stat-info">
+            <strong>{modules.length} {modules.length === 1 ? 'module' : 'modules'}</strong>
+            <span>Curriculum structure</span>
+          </div>
+        </div>
+
+        <div className="lp-stat-pill-card">
+          <div className="lp-stat-icon-wrap" style={{ background: '#f0fdfa', color: '#0d9488' }}>
+            ⏱️
+          </div>
+          <div className="lp-stat-info">
+            <strong>{lpDurationDisplay}</strong>
+            <span>Estimated duration</span>
+          </div>
+        </div>
+
+        {totalLessonsInLP > 0 && (
+          <div className="lp-stat-pill-card">
+            <div className="lp-stat-icon-wrap" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
+              🎯
+            </div>
+            <div className="lp-stat-info">
+              <strong>{totalLessonsInLP} {totalLessonsInLP === 1 ? 'lesson' : 'lessons'}</strong>
+              <span>Interactive lessons</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Curriculum Section Header ── */}
+      <div className="lp-curriculum-header">
+        <div>
+          <h2>Your modules</h2>
+          <p>Complete each module in sequence to build your skills.</p>
+        </div>
+      </div>
+
+      {/* ── Modules Timeline / Cards List ── */}
       {isLoading ? (
         <div style={{ textAlign: 'center', padding: '60px', color: '#94a3b8' }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
-          Loading modules...
+          Loading curriculum modules...
         </div>
       ) : modules.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px', background: '#f8fafc', borderRadius: 16, border: '2px dashed #e2e8f0' }}>
@@ -1064,103 +1396,139 @@ export function ModulesManagementSection({
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {modules.map((module: any, mIdx: number) => {
-            const lc = getLevelColor(module.level);
-            const lessons = module.lessons || [];
-            const resources = module.resources || [];
+        <div className="module-cards-timeline">
+          {modules.map((module: any, idx: number) => {
+            const padNum = String(idx + 1).padStart(2, '0');
+            const stage = stageLabels[idx] || (module.level ? String(module.level).toUpperCase() : 'SPECIALIZATION');
+            const modProgress = getModuleProgress(module);
+            const isActive = idx === (firstActiveIndex === -1 ? 0 : firstActiveIndex);
+
+            // Status badge details
+            let statusBadge = { label: 'Not started', bg: '#f8fafc', color: '#94a3b8', border: '#e2e8f0' };
+            if (modProgress >= 100) {
+              statusBadge = { label: 'Completed', bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' };
+            } else if (modProgress > 0) {
+              statusBadge = { label: 'In progress', bg: '#eff6ff', color: '#4f46e5', border: '#dbeafe' };
+            }
+
+            const modLessonsCount = module.lessons?.length || 0;
+            const modActivitiesCount = module.assignments?.length || 0;
+            const durationLabel = module.durationLabel || (module.durationWeeks ? `${module.durationWeeks * 7} days` : '7 days');
+
+            // Sanitize raw HTML tags from module description
+            const cleanModDesc = (module.description || '')
+              .replace(/<[^>]*>/g, '')
+              .replace(/&nbsp;/g, ' ')
+              .trim();
 
             return (
               <div
                 key={module.id}
-                style={{ background: '#fff', borderRadius: 14, border: '1px solid #f1f5f9', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', overflow: 'hidden', cursor: 'pointer', transition: 'box-shadow 0.2s, transform 0.15s' }}
+                className={`module-card-item ${isActive ? 'is-active-module' : ''}`}
                 onClick={() => openModule(module.id)}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 6px 20px rgba(99,102,241,0.15)'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)'; (e.currentTarget as HTMLElement).style.transform = 'none'; }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    void openModule(module.id);
+                  }
+                }}
               >
-                <div style={{ padding: '18px 22px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 10, background: 'linear-gradient(135deg,#6366f1,#4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>
-                      {mIdx + 1}
+                {/* Top: Index + Stage Label (Left) and Status Badge (Right) */}
+                <div className="module-card-top">
+                  <div className="module-card-top-left">
+                    <div className="module-index-pill">
+                      {padNum}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>{module.title}</h3>
-                        {module.level && (
-                          <span style={{ ...lc, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700 }}>{module.level}</span>
-                        )}
-                        {lessons.length > 0 && (
-                          <span style={{ fontSize: 11, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: 6 }}>
-                            {lessons.length} lesson{lessons.length > 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </div>
-                      {module.description && (
-                        <p style={{ margin: '4px 0 0 0', fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {module.description}
-                        </p>
-                      )}
-                    </div>
+                    <span className="module-stage-label">{stage}</span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    {resources.length > 0 && (
-                      <span style={{ fontSize: 11, color: '#2563eb', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '2px 8px', borderRadius: 6, fontWeight: 600 }}>
-                        {resources.length} resource{resources.length > 1 ? 's' : ''}
-                      </span>
-                    )}
-                    <span style={{ color: '#6366f1', fontSize: 14, fontWeight: 600 }}>View →</span>
-                  </div>
+
+                  <span
+                    className="module-status-badge"
+                    style={{
+                      background: statusBadge.bg,
+                      color: statusBadge.color,
+                      border: `1px solid ${statusBadge.border}`
+                    }}
+                  >
+                    {statusBadge.label}
+                  </span>
                 </div>
 
-                {/* About this module + Lessons preview */}
-                <div style={{ padding: '0 22px 18px', borderTop: '1px solid #f8fafc' }}>
-                  {module.description && (
-                    <div style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4, marginTop: 14 }}>About this module</div>
-                      <p style={{ margin: 0, fontSize: 13, color: '#475569' }}>{module.description}</p>
+                {/* Title */}
+                <h3 className="module-card-title">{module.title}</h3>
+
+                {/* Description */}
+                <p className="module-card-desc">
+                  {cleanModDesc || 'Build core principles, practical workflows, and real-world mastery through guided lessons and assessments.'}
+                </p>
+
+                {/* Meta Row: Duration, Lessons, Activities */}
+                <div className="module-meta-row">
+                  <span className="module-meta-item">
+                    ⏱️ {durationLabel}
+                  </span>
+                  <span className="module-meta-item">
+                    📚 {modLessonsCount} lessons
+                  </span>
+                  <span className="module-meta-item">
+                    📝 {modActivitiesCount} activities
+                  </span>
+                </div>
+
+                {/* Bottom Row: Progress Bar + Action Button */}
+                <div className="module-bottom-row">
+                  <div className="module-progress-group">
+                    <span className="module-progress-label">Module progress</span>
+                    <div className="module-progress-track">
+                      <div
+                        className="module-progress-fill"
+                        style={{
+                          width: `${modProgress}%`,
+                          background: modProgress >= 100 ? '#10b981' : 'linear-gradient(90deg, #6366f1, #4f46e5)'
+                        }}
+                      />
                     </div>
-                  )}
-                  {lessons.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6, marginTop: 12 }}>📖 Lessons</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                        {lessons.slice(0, 3).map((lesson: any, lIdx: number) => {
-                          const isDone = completedLessonIds.has(String(lesson.id));
-                          return (
-                            <div key={lesson.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: '#fafcff', border: '1px solid #f1f5f9', borderRadius: 8 }}>
-                              {/* Checkbox visible for all roles */}
-                              <div style={{
-                                width: 18, height: 18, borderRadius: 4,
-                                border: isDone ? 'none' : '1.5px solid #cbd5e1',
-                                background: isDone ? '#22c55e' : '#fff',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                              }}>
-                                {isDone && (
-                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                                    <path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                )}
-                              </div>
-                              <span style={{ width: 20, height: 20, borderRadius: '50%', background: '#ede9fe', color: '#6d28d9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
-                                {lIdx + 1}
-                              </span>
-                              <span style={{ fontSize: 13, fontWeight: 500, flex: 1, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#94a3b8' : '#1e293b' }}>
-                                {lesson.title}
-                              </span>
-                              {lesson.durationMinutes && (
-                                <span style={{ fontSize: 11, color: '#94a3b8' }}>⏱ {lesson.durationMinutes} min</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                        {lessons.length > 3 && (
-                          <div style={{ fontSize: 12, color: '#4f46e5', fontWeight: 600, padding: '4px 12px' }}>
-                            +{lessons.length - 3} more lessons
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
+                    <span className="module-progress-pct">{modProgress}%</span>
+                  </div>
+
+                  <div>
+                    {modProgress >= 100 ? (
+                      <button
+                        type="button"
+                        className="btn-module-outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openModule(module.id);
+                        }}
+                      >
+                        Review module <span>›</span>
+                      </button>
+                    ) : isActive ? (
+                      <button
+                        type="button"
+                        className="btn-module-continue"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openModule(module.id);
+                        }}
+                      >
+                        Continue module <span>›</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn-module-outline"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void openModule(module.id);
+                        }}
+                      >
+                        {modProgress === 0 ? 'Start module' : 'Continue module'} <span>›</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

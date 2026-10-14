@@ -2389,10 +2389,17 @@ pathPerformance,
         // Compute full stats using the updated item-aggregate logic in statsForUser
         const stats = await this.progressService.statsForUser(t.id, lpId);
         
+        const firstName = t.firstName || '';
+        const lastName = t.lastName || '';
+        const traineeName = [firstName, lastName].filter(Boolean).join(' ') || t.email;
+
         trainees.push({
           traineeId: t.id,
-          traineeName: `${t.firstName} ${t.lastName}`.trim(),
+          traineeName,
+          firstName,
+          lastName,
           email: t.email,
+          avatarUrl: t.avatarUrl || null,
           lessonsCompleted: stats.completedLessons,
           lessonsTotal: stats.totalLessons,
           tasksApproved: stats.tasksAccepted,

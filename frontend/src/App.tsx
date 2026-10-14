@@ -288,7 +288,7 @@ function App() {
       <Route path="/progress" element={<ProtectedLayout section="Progress" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/analytics" element={<ProtectedLayout section="Analytics" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/settings" element={<ProtectedLayout section="Settings" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
-      <Route path="/notifications" element={currentUser && accessToken ? <NotificationsPage activeRole={activeRole} /> : <Navigate to="/login" replace />} />
+      <Route path="/notifications" element={<ProtectedLayout section="Notifications" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
 
       <Route path="*" element={<Navigate to={getRoleDashboard(activeRole)} replace />} />
     </Routes>

@@ -24,7 +24,7 @@ interface FilterPanelProps {
 
 export const AssignmentsFilterPanel: React.FC<FilterPanelProps> = ({ categories, isOpen, onClose, initialFilters, onApply }) => {
   useScrollLock(isOpen);
-  
+
   // Local state for checkboxes
   const [localFilters, setLocalFilters] = useState<Record<string, string[]>>({});
 
@@ -94,7 +94,7 @@ export const AssignmentsFilterPanel: React.FC<FilterPanelProps> = ({ categories,
               <div className="category-options">
                 {category.options.map(opt => (
                   <label key={opt.value} className="checkbox-label">
-                    <input 
+                    <input
                       type="checkbox"
                       checked={(localFilters[category.id] || []).includes(opt.value)}
                       onChange={() => handleCheckboxChange(category.id, opt.value)}

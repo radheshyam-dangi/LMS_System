@@ -42,13 +42,10 @@ function getTaskState(task: any): {
   const pct = Math.round((submission.score / maxScore) * 100);
   const isRejected = submission.status === 'Rejected';
 
-  if (!isRejected && pct >= 75) {
-    return { status: 'accepted_high', percentage: pct, score: submission.score, maxScore, label: `✅ Submitted — ${submission.score}/${maxScore} (${pct}%)`, color: '#166534', bg: '#dcfce7', border: '#86efac' };
-  }
   if (!isRejected && pct >= 35) {
-    return { status: 'needs_resubmit_orange', percentage: pct, score: submission.score, maxScore, label: `🔄 Resubmit — ${pct}% (improve score)`, color: '#92400e', bg: '#fef3c7', border: '#fcd34d' };
+    return { status: 'accepted_high', percentage: pct, score: submission.score, maxScore, label: `✅ Evaluated — ${submission.score}/${maxScore} (${pct}%)`, color: '#166534', bg: '#dcfce7', border: '#86efac' };
   }
-  return { status: 'needs_resubmit_red', percentage: pct, score: submission.score, maxScore, label: `⚠️ Resubmit — ${pct}% (below 35%${isRejected ? ', Needs Improvement' : ''})`, color: '#b91c1c', bg: '#fee2e2', border: '#fca5a5' };
+  return { status: 'needs_resubmit_red', percentage: pct, score: submission.score, maxScore, label: `⚠️ Resubmit — ${pct}% (Need Improvement)`, color: '#b91c1c', bg: '#fee2e2', border: '#fca5a5' };
 }
 
 export function TraineeCurriculumView({

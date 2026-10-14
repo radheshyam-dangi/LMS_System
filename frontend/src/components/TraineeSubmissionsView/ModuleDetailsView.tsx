@@ -53,23 +53,26 @@ const getCardData = (a: any, sub: any, isLocked: boolean) => {
     }
   };
 
+  const maxScore = a.maxScore || 100;
+  const scorePct = typeof sub?.score === 'number' ? (sub.score / maxScore) * 100 : null;
+  isBelowCutoff = scorePct !== null && scorePct < 35;
+
   if (rawStatus === 'LOCKED') {
     displayStatus = 'Locked';
   } else if (['APPROVED', 'EVALUATED', 'ACCEPTED'].includes(rawStatus)) {
-    const maxScore = a.maxScore || 100;
-    isBelowCutoff = typeof sub?.score === 'number' && (sub.score / maxScore) * 100 < 35;
     if (isBelowCutoff) {
-      displayStatus = 'Needs Improvement';
+      displayStatus = 'Need Improvement';
       markOverdue();
     } else {
       displayStatus = 'Approved';
     }
-  } else if (rawStatus === 'NEEDS_IMPROVEMENT') {
-    displayStatus = 'Needs Improvement';
-    markOverdue();
-  } else if (rawStatus === 'REJECTED') {
-    displayStatus = 'Rejected';
-    markOverdue();
+  } else if (rawStatus === 'NEEDS_IMPROVEMENT' || rawStatus === 'REJECTED') {
+    if (isBelowCutoff || scorePct === null) {
+      displayStatus = 'Need Improvement';
+      markOverdue();
+    } else {
+      displayStatus = 'Approved';
+    }
   } else if (rawStatus === 'SUBMITTED') {
     displayStatus = 'Submitted';
   } else {
@@ -431,7 +434,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     let bg = '#f1f5f9';
     let color = '#475569';
     if (displayStatus === 'Approved') { bg = '#dcfce7'; color = '#166534'; }
-    else if (displayStatus === 'Needs Improvement') { bg = '#ffedd5'; color = '#c2410c'; }
+    else if (displayStatus === 'Need Improvement' || displayStatus === 'Needs Improvement') { bg = '#ffedd5'; color = '#c2410c'; }
     else if (displayStatus === 'Rejected') { bg = '#fee2e2'; color = '#b91c1c'; }
     else if (displayStatus === 'Submitted') { bg = '#fef3c7'; color = '#b45309'; }
     else if (displayStatus === 'Missed/Overdue') { bg = '#fecaca'; color = '#991b1b'; }
@@ -474,7 +477,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           {displayStatus === 'Rejected' && sub?.feedback && (
             <span style={{ fontSize: 11, color: '#b91c1c', marginTop: 3, display: 'block' }}>Reason: {sub.feedback}</span>
           )}
-          {displayStatus === 'Needs Improvement' && sub?.feedback && (
+          {(displayStatus === 'Need Improvement' || displayStatus === 'Needs Improvement') && sub?.feedback && (
             <span style={{ fontSize: 11, color: '#c2410c', marginTop: 3, display: 'block' }}>Feedback: {sub.feedback}</span>
           )}
         </div>
@@ -509,12 +512,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           >
             {displayStatus === 'Rejected' ? 'REJECTED' : displayStatus}
             {typeof sub?.score === 'number' &&
-              ['Approved', 'Needs Improvement', 'Rejected'].includes(displayStatus)
+              ['Approved', 'Need Improvement', 'Needs Improvement', 'Rejected'].includes(displayStatus)
               ? ` · ${sub.score}`
               : ''}
           </span>
 
-          {(['Approved', 'Needs Improvement', 'Rejected'].includes(displayStatus) || rawStatus === 'EVALUATED') && sub && (
+          {(['Approved', 'Need Improvement', 'Needs Improvement', 'Rejected'].includes(displayStatus) || rawStatus === 'EVALUATED') && sub && (
             <button
               type="button"
               onClick={() => setViewDetailsTarget({ assignment: task, submission: sub })}
@@ -525,7 +528,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           )}
 
           {isTrainee && !isExpired && !isOverdue && displayStatus !== 'Locked' &&
-            (displayStatus !== 'Approved' || isBelowCutoff) && displayStatus !== 'Submitted' && (
+            displayStatus !== 'Approved' && displayStatus !== 'Submitted' && (
               <>
                 {rawStatus === 'AVAILABLE' && task.anchorType === 'TASK_START' ? (
                   <button
@@ -549,11 +552,11 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                     onClick={() => beginAssignmentSubmission(task, sub)}
                     style={{
                       padding: '8px 16px', borderRadius: 8, border: 'none', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                      background: ['Needs Improvement', 'Rejected'].includes(displayStatus) || isBelowCutoff ? '#7c3aed' : '#4f46e5',
+                      background: displayStatus === 'Need Improvement' ? '#c2410c' : '#4f46e5',
                       boxShadow: '0 1px 4px rgba(79,70,229,0.3)',
                     }}
                   >
-                    {['Needs Improvement', 'Rejected'].includes(displayStatus) || isBelowCutoff ? 'Resubmit' : 'Submit'}
+                    {displayStatus === 'Need Improvement' ? 'Resubmit' : 'Submit'}
                   </button>
                 )}
               </>

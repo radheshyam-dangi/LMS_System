@@ -11,12 +11,21 @@ import {
   BarChart3,
   Settings,
   ChevronRight,
+  ChevronLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
   Zap,
   Bell,
   Trash2,
   Menu,
   X,
-  ChevronDown
+  ChevronDown,
+  FileText,
+  Bot,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowRight,
+  Clock
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
@@ -154,7 +163,47 @@ export function AppLayout({
   const [panelOpen, setPanelOpen] = useState(false);
   const [hoveredNotificationId, setHoveredNotificationId] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<any>(null);
   const count = Math.max(notificationCount, unreadCount);
+
+  const handleMouseEnter = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setPanelOpen(true);
+    }, 150);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      setPanelOpen(false);
+    }, 250);
+  };
+
+  const handleBellToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    setPanelOpen((prev) => !prev);
+  };
+
+  const getDropdownIconMeta = (type: string) => {
+    switch (type) {
+      case 'learning_path_assigned':
+        return { icon: <BookOpen size={15} />, orbClass: 'theme-indigo' };
+      case 'assignment_assigned':
+        return { icon: <FileText size={15} />, orbClass: 'theme-sky' };
+      case 'submission_pending':
+        return { icon: <ClipboardList size={15} />, orbClass: 'theme-amber' };
+      case 'ai_evaluation_ready':
+        return { icon: <Bot size={15} />, orbClass: 'theme-purple' };
+      case 'ai_evaluation_failed':
+        return { icon: <AlertTriangle size={15} />, orbClass: 'theme-red' };
+      case 'evaluation_completed':
+        return { icon: <CheckCircle2 size={15} />, orbClass: 'theme-emerald' };
+      default:
+        return { icon: <Bell size={15} />, orbClass: 'theme-indigo' };
+    }
+  };
 
   useEffect(() => {
     // Keep panel open on hover, but still allow click outside if click-opened
@@ -164,7 +213,10 @@ export function AppLayout({
       }
     };
     document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    };
   }, []);
 
   const availableRoles = useMemo(() => {
@@ -190,6 +242,46 @@ export function AppLayout({
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Persistent sidebar toggle state: 'on' = expanded (icons and titles visible), 'off' = collapsed (only icons visible)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('sidebar_toggle_state') || localStorage.getItem('sidebar_status');
+      if (saved === 'off') return true;
+      if (saved === 'on') return false;
+      // Default to 'on' (expanded) and persist initial state
+      localStorage.setItem('sidebar_toggle_state', 'on');
+      return false;
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const isNowCollapsed = !prev;
+      const statusValue = isNowCollapsed ? 'off' : 'on';
+      try {
+        localStorage.setItem('sidebar_toggle_state', statusValue);
+        localStorage.setItem('sidebar_status', statusValue);
+        localStorage.setItem('sidebar_toggle', statusValue);
+      } catch (err) {
+        console.warn('Unable to persist sidebar toggle state', err);
+      }
+      return isNowCollapsed;
+    });
+  };
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'sidebar_toggle_state' || e.key === 'sidebar_status') {
+        if (e.newValue === 'off') setIsSidebarCollapsed(true);
+        else if (e.newValue === 'on') setIsSidebarCollapsed(false);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // When clicking a link on mobile, close the menu
   const handleNavClick = (path: string) => {
     navigate(path);
@@ -209,32 +301,67 @@ export function AppLayout({
         />
       )}
 
-      <aside className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
-        <div className="brand-block" onClick={() => navigate('/dashboard')} style={{ cursor: 'pointer' }}>
-          <div className="brand-mark">
-            <Zap size={20} color="#ffffff" strokeWidth={2.5} />
+      <aside className={`sidebar ${isSidebarCollapsed ? 'collapsed' : ''} ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
+        <div className="sidebar-brand-header">
+          <div
+            className="brand-block"
+            onClick={() => navigate(effectiveRole === 'Admin' ? '/users' : '/dashboard')}
+            style={{ cursor: 'pointer' }}
+            title={effectiveRole === 'Admin' ? "SkillForge Users" : "SkillForge Dashboard"}
+          >
+            <div className="brand-mark">
+              <Zap size={20} color="#ffffff" strokeWidth={2.5} />
+            </div>
+            {!isSidebarCollapsed && (
+              <div className="brand-text">
+                <strong>SkillForge</strong>
+                <span>Enterprise LMS</span>
+              </div>
+            )}
           </div>
-          <div>
-            <strong>SkillForge</strong>
-            <span>AI Training Platform</span>
-          </div>
+
+          <button
+            type="button"
+            className="sidebar-collapse-toggle-btn"
+            onClick={handleToggleSidebar}
+            title={isSidebarCollapsed ? "Expand sidebar (Status: Off -> On)" : "Collapse sidebar (Status: On -> Off)"}
+            aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            id="sidebar-toggle-btn"
+          >
+            {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
         </div>
 
-        <span
-          className="role-pill"
-          style={{
-            background:
-              effectiveRole === 'Trainer' ? '#ede9fe' : effectiveRole === 'Admin' ? '#fef3c7' : '#d1fae5',
-            color:
-              effectiveRole === 'Trainer' ? '#6d28d9' : effectiveRole === 'Admin' ? '#b45309' : '#047857',
-          }}
-        >
-          <span className="role-pill-dot" />
-          {effectiveRole} View
-        </span>
+        {!isSidebarCollapsed ? (
+          <span
+            className="role-pill"
+            style={{
+              background:
+                effectiveRole === 'Trainer' ? '#ede9fe' : effectiveRole === 'Admin' ? '#fef3c7' : '#d1fae5',
+              color:
+                effectiveRole === 'Trainer' ? '#6d28d9' : effectiveRole === 'Admin' ? '#b45309' : '#047857',
+            }}
+          >
+            <span className="role-pill-dot" />
+            {effectiveRole} View
+          </span>
+        ) : (
+          <div
+            className="role-pill-compact"
+            title={`${effectiveRole} View`}
+            style={{
+              background:
+                effectiveRole === 'Trainer' ? '#ede9fe' : effectiveRole === 'Admin' ? '#fef3c7' : '#d1fae5',
+              color:
+                effectiveRole === 'Trainer' ? '#6d28d9' : effectiveRole === 'Admin' ? '#b45309' : '#047857',
+            }}
+          >
+            <span className="role-pill-dot" />
+          </div>
+        )}
 
         <nav className="side-nav" aria-label="Main navigation">
-          <p className="side-nav-header">MAIN</p>
+          {!isSidebarCollapsed && <p className="side-nav-header">MAIN</p>}
           {navigation.main.map((item) => {
             const IconComponent = item.icon;
             const active = isCurrentPath(item.path);
@@ -244,19 +371,21 @@ export function AppLayout({
                 key={item.name}
                 type="button"
                 onClick={() => handleNavClick(item.path)}
+                title={item.name}
+                data-title={item.name}
               >
                 <div className="nav-item-left">
                   <IconComponent className="nav-icon-svg" size={18} />
-                  <span>{item.name}</span>
+                  {!isSidebarCollapsed && <span>{item.name}</span>}
                 </div>
-                {active && <ChevronRight size={16} className="active-arrow-svg" />}
+                {!isSidebarCollapsed && active && <ChevronRight size={16} className="active-arrow-svg" />}
               </button>
             );
           })}
         </nav>
 
         <nav className="side-nav" aria-label="Tools navigation">
-          <p className="side-nav-header">TOOLS</p>
+          {!isSidebarCollapsed && <p className="side-nav-header">TOOLS</p>}
           {navigation.tools.map((item) => {
             const IconComponent = item.icon;
             const active = isCurrentPath(item.path);
@@ -266,19 +395,21 @@ export function AppLayout({
                 key={item.name}
                 type="button"
                 onClick={() => handleNavClick(item.path)}
+                title={item.name}
+                data-title={item.name}
               >
                 <div className="nav-item-left">
                   <IconComponent className="nav-icon-svg" size={18} />
-                  <span>{item.name}</span>
+                  {!isSidebarCollapsed && <span>{item.name}</span>}
                 </div>
-                {item.tag && <span className="nav-tag">{item.tag}</span>}
-                {active && !item.tag && <ChevronRight size={16} className="active-arrow-svg" />}
+                {!isSidebarCollapsed && item.tag && <span className="nav-tag">{item.tag}</span>}
+                {!isSidebarCollapsed && active && !item.tag && <ChevronRight size={16} className="active-arrow-svg" />}
               </button>
             );
           })}
         </nav>
 
-        <div className="sidebar-profile">
+        <div className="sidebar-profile" title={displayName}>
           <div className="avatar" style={{ padding: (user as any).avatarUrl ? 0 : undefined, overflow: 'hidden' }}>
             {(user as any).avatarUrl ? (
               <img src={(user as any).avatarUrl} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -286,33 +417,37 @@ export function AppLayout({
               initialsFor(user)
             )}
           </div>
-          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-            <strong
-              style={{
-                display: 'block',
-                fontSize: '13px',
-                color: '#0f172a',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              {displayName}
-            </strong>
-          </div>
+          {!isSidebarCollapsed && (
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+              <strong
+                style={{
+                  display: 'block',
+                  fontSize: '13px',
+                  color: '#0f172a',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                {displayName}
+              </strong>
+            </div>
+          )}
         </div>
       </aside>
 
       <section className="workspace">
         <header className="workspace-topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <button
               className="hidden-desktop hover-effect focus-ring touch-target"
               onClick={() => setIsMobileMenuOpen(true)}
               style={{ background: 'none', border: 'none', padding: 0, color: '#475569', display: 'flex', alignItems: 'center' }}
+              aria-label="Open mobile navigation"
             >
               <Menu size={24} />
             </button>
+
             <h2 className="topbar-title">{activeSection}</h2>
           </div>
           <div className="topbar-actions">
@@ -327,22 +462,16 @@ export function AppLayout({
             <div
               ref={panelRef}
               style={{ position: 'relative' }}
-              onMouseEnter={() => setPanelOpen(true)}
-              onMouseLeave={() => setPanelOpen(false)}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
             >
               <button
-                className="icon-badge-button"
+                className={`icon-badge-button ${panelOpen ? 'is-open' : ''}`}
                 type="button"
                 aria-label={`Notifications${count > 0 ? ` (${count})` : ''}`}
-                onClick={() => setPanelOpen((o) => !o)}
-                style={{
-                  position: 'relative',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+                onClick={handleBellToggle}
               >
-                <Bell size={20} color="#475569" />
+                <Bell size={20} color={panelOpen ? '#4f46e5' : '#475569'} />
                 {bellDisplay && (
                   <span
                     style={{
@@ -372,166 +501,143 @@ export function AppLayout({
               </button>
 
               {panelOpen && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: 0,
-                    top: '110%',
-                    width: 420,
-                    maxHeight: 450,
-                    overflowX: 'hidden',
-                    overflowY: 'auto',
-                    background: '#fff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 12,
-                    boxShadow: '0 12px 40px rgba(15,23,42,0.12)',
-                    zIndex: 50,
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '12px 14px',
-                      borderBottom: '1px solid #f1f5f9',
-                    }}
-                  >
-                    <strong style={{ fontSize: 13 }}>Notifications</strong>
+                <div className="topbar-notif-dropdown">
+                  <div className="topbar-notif-header">
+                    <div className="topbar-notif-header-title">
+                      <span>Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="topbar-notif-badge">{unreadCount} unread</span>
+                      )}
+                    </div>
                     {count > 0 && (
                       <button
                         type="button"
                         onClick={() => void markAllRead()}
-                        style={{
-                          border: 'none',
-                          background: 'none',
-                          color: '#4f46e5',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                        }}
+                        className="topbar-notif-mark-btn"
+                        title="Mark all notifications as read"
                       >
                         Mark all read
                       </button>
                     )}
                   </div>
-                  {notifications.filter(n => !n.isRead).length === 0 && (
-                    <div style={{ padding: '24px 16px', color: '#64748b', fontSize: 14, textAlign: 'center' }}>
-                      You're all caught up!
-                    </div>
-                  )}
-                  {notifications.filter(n => !n.isRead).slice(0, 20).map((n) => (
-                    <div
-                      key={n.id}
-                      title={n.message || n.title}
-                      onClick={() => {
-                        void markAsRead(n.id);
-                        navigate(getNotificationRoute(n, effectiveRole));
-                        setPanelOpen(false);
-                      }}
-                      style={{
-                        position: 'relative',
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        width: '100%',
-                        textAlign: 'left',
-                        padding: '12px 14px',
-                        borderBottom: '1px solid #f8fafc',
-                        background: n.isRead ? '#fff' : '#f0f9ff',
-                        cursor: 'pointer',
-                        transition: 'background 0.2s',
-                        gap: '12px'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = n.isRead ? '#f8fafc' : '#e0f2fe';
-                        setHoveredNotificationId(n.id);
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = n.isRead ? '#fff' : '#f0f9ff';
-                        setHoveredNotificationId(null);
-                      }}
-                    >
-                      <div style={{ flex: 1 }}>
+
+                  <div className="topbar-notif-list">
+                    {notifications.filter((n) => !n.isRead).length === 0 && (
+                      <div
+                        style={{
+                          padding: '32px 16px',
+                          color: '#64748b',
+                          fontSize: 13,
+                          textAlign: 'center',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
                         <div
                           style={{
-                            fontSize: 13,
-                            fontWeight: n.isRead ? 400 : 700,
-                            color: n.isRead ? '#475569' : '#0f172a',
-                            lineHeight: 1.4
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            background: '#f1f5f9',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                           }}
                         >
-                          {n.title}
+                          <Bell size={18} color="#94a3b8" />
                         </div>
-                        {n.message && (
-                          <div style={{
-                            fontSize: 12,
-                            color: n.isRead ? '#94a3b8' : '#64748b',
-                            marginTop: 4,
-                            display: '-webkit-box',
-                            WebkitLineClamp: hoveredNotificationId === n.id ? 'unset' : 2,
-                            WebkitBoxOrient: 'vertical',
-                            overflow: 'hidden',
-                            wordBreak: 'break-word'
-                          }}>
-                            {n.message}
-                          </div>
-                        )}
-                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
-                          {timeAgo(n.createdAt)}
-                        </div>
+                        <span style={{ fontWeight: 600, color: '#334155' }}>You're all caught up!</span>
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>No unread alerts right now.</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void deleteNotification(n.id);
-                        }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: '#cbd5e1',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                        onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
-                        onMouseLeave={(e) => (e.currentTarget.style.color = '#cbd5e1')}
-                        title="Delete notification"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
+                    )}
 
-                  {notifications.length > 0 && (
+                    {notifications
+                      .filter((n) => !n.isRead)
+                      .slice(0, 15)
+                      .map((n) => {
+                        const meta = getDropdownIconMeta(n.type);
+                        return (
+                          <div
+                            key={n.id}
+                            title={n.message || n.title}
+                            onClick={() => {
+                              void markAsRead(n.id);
+                              navigate(getNotificationRoute(n, effectiveRole));
+                              setPanelOpen(false);
+                            }}
+                            className={`topbar-notif-item ${!n.isRead ? 'is-unread' : ''}`}
+                            onMouseEnter={() => setHoveredNotificationId(n.id)}
+                            onMouseLeave={() => setHoveredNotificationId(null)}
+                          >
+                            <div className={`topbar-notif-icon-orb ${meta.orbClass}`}>
+                              {meta.icon}
+                            </div>
+                            <div className="topbar-notif-content">
+                              <div className="topbar-notif-title">
+                                {n.title}
+                              </div>
+                              {n.message && (
+                                <div
+                                  className="topbar-notif-desc"
+                                  style={{
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: hoveredNotificationId === n.id ? 'unset' : 2,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden',
+                                    wordBreak: 'break-word',
+                                  }}
+                                >
+                                  {n.message}
+                                </div>
+                              )}
+                              <div className="topbar-notif-time">
+                                <Clock size={11} style={{ display: 'inline', marginRight: 4 }} />
+                                <span>{timeAgo(n.createdAt)}</span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void deleteNotification(n.id);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#cbd5e1',
+                                cursor: 'pointer',
+                                padding: '4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: '4px',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = '#cbd5e1')}
+                              title="Delete notification"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  <div className="topbar-notif-footer">
                     <button
                       type="button"
+                      className="topbar-notif-view-all-btn"
                       onClick={() => {
                         navigate('/notifications');
                         setPanelOpen(false);
                       }}
-                      style={{
-                        padding: '12px',
-                        background: '#f8fafc',
-                        border: 'none',
-                        borderTop: '1px solid #e2e8f0',
-                        color: '#4f46e5',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        width: '100%',
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = '#f8fafc')}
                     >
-                      View all notifications
+                      <span>All Notifications</span>
+                      <ArrowRight size={13} />
                     </button>
-                  )}
+                  </div>
                 </div>
               )}
             </div>

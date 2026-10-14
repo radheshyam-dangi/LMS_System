@@ -156,4 +156,527 @@
   .assignment-card-actions-col {
     justify-content: flex-start !important;
   }
-}
+}
+
+/* ==========================================
+   LEARNING PATH MODULES OVERVIEW (SENIOR UI/UX DESIGN)
+   ========================================== */
+.lp-overview-container {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 0 36px 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .lp-overview-container {
+    padding: 0 0 24px 0;
+  }
+}
+
+/* ── Top Hero Banner ── */
+.lp-hero-card {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  color: #ffffff;
+  position: relative;
+  overflow: hidden;
+  padding: 32px 36px;
+  box-shadow: 0 12px 32px -8px rgba(30, 27, 75, 0.35);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .lp-hero-card {
+    padding: 24px 20px;
+    border-radius: 14px;
+  }
+}
+
+.lp-hero-circle-accent1 {
+  position: absolute;
+  top: -80px;
+  right: -60px;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.lp-hero-circle-accent2 {
+  position: absolute;
+  bottom: -90px;
+  left: 20%;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(165, 180, 252, 0.08) 0%, rgba(165, 180, 252, 0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.lp-hero-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 32px;
+  position: relative;
+  z-index: 2;
+}
+
+@media (max-width: 960px) {
+  .lp-hero-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 24px;
+  }
+}
+
+.lp-hero-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.lp-hero-title {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.25;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.025em;
+  color: #ffffff;
+}
+
+@media (max-width: 768px) {
+  .lp-hero-title {
+    font-size: 22px;
+  }
+}
+
+.lp-hero-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #e2e8f0;
+  max-width: 760px;
+  margin: 0 0 22px 0;
+}
+
+.lp-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.btn-hero-continue {
+  background: #ffffff;
+  color: #312e81;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 22px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  outline: none;
+}
+
+.btn-hero-continue:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+  background: #f8fafc;
+}
+
+.btn-hero-continue:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* ── Hero Progress Widget ── */
+.lp-hero-progress-widget {
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 18px;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-shrink: 0;
+  min-width: 260px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .lp-hero-progress-widget {
+    width: 100%;
+  }
+}
+
+.lp-progress-circle-wrap {
+  width: 66px;
+  height: 66px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.lp-progress-circle-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.lp-progress-circle-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.lp-progress-circle-pct {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.lp-progress-circle-label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 2px;
+}
+
+.lp-progress-widget-text h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.lp-progress-widget-text p {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* ── Stats Strip ── */
+.lp-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.lp-stat-pill-card {
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s ease;
+}
+
+.lp-stat-pill-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.05);
+  border-color: #e2e8f0;
+}
+
+.lp-stat-icon-wrap {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.lp-stat-info strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.lp-stat-info span {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+/* ── Curriculum Section Header ── */
+.lp-curriculum-header {
+  margin-top: 40px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.lp-curriculum-header-sub {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6366f1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lp-curriculum-header h2 {
+  font-size: 24px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 4px 0 0 0;
+  letter-spacing: -0.01em;
+}
+
+.lp-curriculum-header p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+/* ── Module Cards Timeline ── */
+.module-cards-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.module-card-item {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px 28px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .module-card-item {
+    padding: 18px 18px;
+  }
+}
+
+.module-card-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.08);
+  transform: translateY(-2px);
+}
+
+.module-card-item.is-active-module {
+  border-color: #818cf8;
+  box-shadow: 0 8px 24px -4px rgba(99, 102, 241, 0.12);
+}
+
+.module-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.module-card-top-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.module-index-pill {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-weight: 800;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.module-stage-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.module-status-badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.module-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+}
+
+.module-card-desc {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #475569;
+  margin: 0 0 16px 0;
+  max-width: 840px;
+}
+
+.module-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.module-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.module-bottom-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid #f8fafc;
+}
+
+.module-progress-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.module-progress-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.module-progress-track {
+  width: 200px;
+  max-width: 260px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+
+.module-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+  transition: width 0.4s ease;
+}
+
+.module-progress-pct {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  min-width: 32px;
+}
+
+.btn-module-continue {
+  background: #4f46e5;
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  outline: none;
+}
+
+.btn-module-continue:hover {
+  background: #4338ca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+.btn-module-outline {
+  background: #ffffff;
+  color: #334155;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 9px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  outline: none;
+}
+
+.btn-module-outline:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+/* ==========================================
+   MODULE DETAIL VIEW CONTAINER
+   ========================================== */
+.module-detail-container {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 0 36px 0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .module-detail-container {
+    padding: 0 0 24px 0;
+  }
+}
+

@@ -1,233 +1,890 @@
-/* Settings Layout */
-.settings-layout {
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
+/* ==========================================================================
+   SETTINGS SECTION STYLESHEET
+   Clean, Content-Adaptive, Highly Responsive Enterprise CSS
+   ========================================================================== */
+
+:root {
+  --st-primary: #4f46e5;
+  --st-primary-hover: #4338ca;
+  --st-primary-light: #eef2ff;
+  --st-primary-border: #c7d2fe;
+  --st-text-heading: #0f172a;
+  --st-text-body: #334155;
+  --st-text-muted: #64748b;
+  --st-text-subtle: #94a3b8;
+  --st-border-light: #e2e8f0;
+  --st-border-card: #e2e8f0;
+  --st-bg-page: transparent;
+  --st-bg-card: #ffffff;
+  --st-bg-subtle: #f8fafc;
+  --st-success: #16a34a;
+  --st-success-light: #dcfce7;
+  --st-warning: #d97706;
+  --st-warning-light: #fef3c7;
+  --st-danger: #dc2626;
+  --st-danger-light: #fee2e2;
+  --st-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.05);
+  --st-shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.07);
+  --st-shadow-lg: 0 12px 24px -4px rgba(15, 23, 42, 0.1);
+  --st-radius-sm: 8px;
+  --st-radius-md: 12px;
+  --st-radius-lg: 16px;
+  --st-radius-pill: 9999px;
+  --st-font: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* Sidebar Tablist */
+/* ==========================================================================
+   MAIN CONTAINER
+   ========================================================================== */
+
+.settings-container {
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  background-color: var(--st-bg-page);
+  font-family: var(--st-font);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ==========================================================================
+   PAGE HEADER
+   ========================================================================== */
+
+.settings-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.settings-header-left {
+  flex: 1;
+  min-width: 280px;
+}
+
+.settings-eyebrow-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--st-primary);
+  background: var(--st-primary-light);
+  border: 1px solid var(--st-primary-border);
+  border-radius: var(--st-radius-pill);
+  padding: 3px 10px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.settings-main-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--st-text-heading);
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.settings-sub-heading {
+  font-size: 14px;
+  color: var(--st-text-muted);
+  margin: 0;
+  line-height: 1.5;
+  max-width: 640px;
+}
+
+/* ==========================================================================
+   SETTINGS LAYOUT & SIDEBAR
+   ========================================================================== */
+
+.settings-layout {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .settings-sidebar {
   width: 260px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  background: var(--st-bg-card);
+  border: 1px solid var(--st-border-card);
+  border-radius: var(--st-radius-lg);
+  padding: 12px;
+  box-shadow: var(--st-shadow-sm);
 }
 
-.settings-tab {
+.settings-tab-btn {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 11px 14px;
   background: transparent;
   border: none;
-  border-radius: 8px;
-  color: #64748b;
-  font-size: 15px;
+  border-radius: var(--st-radius-md);
+  color: var(--st-text-muted);
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   text-align: left;
-  transition: all 0.2s;
+  transition: all 0.15s ease;
+  width: 100%;
+  outline: none;
 }
 
-.settings-tab:hover {
-  background: #f1f5f9;
-  color: #1e293b;
+.settings-tab-btn:hover {
+  background: var(--st-bg-subtle);
+  color: var(--st-text-heading);
 }
 
-.settings-tab[aria-selected="true"] {
-  background: #eef2ff;
-  color: #4f46e5;
+.settings-tab-btn.is-active {
+  background: var(--st-primary-light);
+  color: var(--st-primary);
+  font-weight: 700;
 }
 
 .settings-tab-icon {
-  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  flex-shrink: 0;
 }
 
-/* Content Area */
-.settings-content {
+/* Role Profile Badge in Sidebar */
+.settings-sidebar-user-card {
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--st-bg-subtle);
+  border: 1px solid var(--st-border-light);
+  border-radius: var(--st-radius-md);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-sidebar-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--st-primary-light);
+  color: var(--st-primary);
+  font-weight: 750;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--st-primary-border);
+}
+
+.settings-sidebar-user-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-sidebar-user-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--st-text-heading);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-sidebar-user-role {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--st-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ==========================================================================
+   SETTINGS MAIN CONTENT PANEL (CONTENT-ADAPTIVE)
+   ========================================================================== */
+
+.settings-content-card {
   flex: 1;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 32px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+  min-width: 0;
+  background: var(--st-bg-card);
+  border: 1px solid var(--st-border-card);
+  border-radius: var(--st-radius-lg);
+  padding: 28px 32px;
+  box-shadow: var(--st-shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  height: auto;
+  min-height: fit-content;
+  box-sizing: border-box;
+}
+
+.settings-panel-header {
+  border-bottom: 1px solid var(--st-border-light);
+  padding-bottom: 18px;
 }
 
 .settings-section-title {
-  font-size: 20px;
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--st-text-heading);
   margin: 0 0 4px 0;
+  letter-spacing: -0.015em;
 }
 
 .settings-section-desc {
-  font-size: 14px;
-  color: #64748b;
-  margin: 0 0 24px 0;
+  font-size: 13.5px;
+  color: var(--st-text-muted);
+  margin: 0;
+  line-height: 1.5;
 }
 
-.settings-form-group {
-  margin-bottom: 20px;
-}
+/* ==========================================================================
+   PROFILE TAB: AVATAR & FORM
+   ========================================================================== */
 
-.settings-form-label {
-  display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: #475569;
-  margin-bottom: 8px;
-}
-
-.settings-form-input {
-  display: block;
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.settings-form-input:focus {
-  outline: none;
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-}
-
-.settings-form-input:disabled {
-  background: #f8fafc;
-  color: #94a3b8;
-  cursor: not-allowed;
-}
-
-/* Checkbox Toggle */
-.settings-toggle-label {
+.settings-avatar-cluster {
   display: flex;
   align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  font-size: 14px;
-  color: #1e293b;
-  font-weight: 500;
+  gap: 20px;
+  background: var(--st-bg-subtle);
+  border: 1px solid var(--st-border-light);
+  border-radius: var(--st-radius-md);
+  padding: 18px 20px;
+  flex-wrap: wrap;
 }
 
-.settings-toggle {
-  appearance: none;
-  width: 44px;
-  height: 24px;
-  background: #cbd5e1;
-  border-radius: 12px;
-  position: relative;
-  cursor: pointer;
-  outline: none;
-  transition: background 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.settings-toggle::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  background: #fff;
+.settings-avatar-preview-box {
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  background: #ffffff;
+  border: 2px solid var(--st-border-light);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: var(--st-shadow-sm);
+  position: relative;
 }
 
-.settings-toggle:checked {
-  background: #10b981;
+.settings-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.settings-toggle:checked::after {
-  transform: translateX(20px);
+.settings-avatar-initials-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--st-primary-light);
+  color: var(--st-primary);
+  font-size: 24px;
+  font-weight: 800;
 }
 
-.settings-btn-save {
-  background: #4f46e5;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 20px;
-  font-weight: 600;
-  font-size: 14px;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+.settings-avatar-actions-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.settings-btn-save:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+.settings-avatar-btns-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.settings-btn-save:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.settings-success-toast {
-  background: #f0fdf4;
-  border: 1px solid #86efac;
-  color: #16a34a;
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-bottom: 24px;
+.btn-upload-photo {
+  padding: 7px 14px;
+  background: #ffffff;
+  border: 1px solid var(--st-border-card);
+  border-radius: var(--st-radius-sm);
   font-size: 13px;
   font-weight: 600;
+  color: var(--st-text-body);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.btn-upload-photo:hover {
+  background: var(--st-bg-subtle);
+  border-color: #cbd5e1;
+}
+
+.btn-remove-photo {
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--st-radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--st-danger);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.15s ease;
+}
+
+.btn-remove-photo:hover {
+  background: var(--st-danger-light);
+  border-color: #fca5a5;
+}
+
+.settings-avatar-hint {
+  font-size: 12px;
+  color: var(--st-text-subtle);
+}
+
+/* Role Insight Box */
+.settings-role-privilege-box {
+  background: var(--st-primary-light);
+  border: 1px solid var(--st-primary-border);
+  border-radius: var(--st-radius-md);
+  padding: 16px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.settings-role-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--st-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(79, 70, 229, 0.1);
+}
+
+.settings-role-text-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-role-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-/* Password Strength */
-.password-strength-bar {
-  height: 4px;
-  background: #e2e8f0;
-  border-radius: 2px;
-  margin-top: 8px;
-  overflow: hidden;
+.settings-role-title {
+  font-size: 13.5px;
+  font-weight: 750;
+  color: #312e81;
+}
+
+.settings-role-pill-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #ffffff;
+  color: var(--st-primary);
+  border: 1px solid var(--st-primary-border);
+  text-transform: uppercase;
+}
+
+.settings-role-desc {
+  font-size: 12.5px;
+  color: #4338ca;
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* Profile Statistics Strip */
+.settings-profile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.settings-stat-card {
+  background: var(--st-bg-subtle);
+  border: 1px solid var(--st-border-light);
+  border-radius: var(--st-radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings-stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--st-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-stat-val {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--st-text-heading);
+}
+
+/* Form Fields */
+.settings-form-grid-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 639px) {
+  .settings-form-grid-two {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-form-label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--st-text-heading);
+}
+
+.settings-form-input-wrapper {
   position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.settings-form-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--st-radius-sm);
+  border: 1px solid var(--st-border-card);
+  font-size: 13.5px;
+  color: var(--st-text-heading);
+  background: #ffffff;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.settings-form-input:focus {
+  border-color: var(--st-primary);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.settings-form-input:disabled {
+  background: var(--st-bg-subtle);
+  color: var(--st-text-muted);
+  cursor: not-allowed;
+  border-color: var(--st-border-light);
+}
+
+.settings-input-action-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--st-text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.settings-input-action-btn:hover {
+  color: var(--st-text-heading);
+}
+
+/* ==========================================================================
+   NOTIFICATIONS TAB (INTERACTIVE IOS-STYLE SWITCHES)
+   ========================================================================== */
+
+.settings-notifs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-notif-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: var(--st-bg-subtle);
+  border: 1px solid var(--st-border-light);
+  border-radius: var(--st-radius-md);
+  transition: border-color 0.15s ease;
+}
+
+.settings-notif-item:hover {
+  border-color: #cbd5e1;
+}
+
+.settings-notif-text-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.settings-notif-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--st-text-heading);
+}
+
+.settings-notif-desc {
+  font-size: 12.5px;
+  color: var(--st-text-muted);
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* iOS Style Switch */
+.settings-switch-label {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+.settings-switch-label input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings-switch-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: var(--st-radius-pill);
+}
+
+.settings-switch-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #ffffff;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.settings-switch-label input:checked + .settings-switch-slider {
+  background-color: var(--st-primary);
+}
+
+.settings-switch-label input:checked + .settings-switch-slider::before {
+  transform: translateX(20px);
+}
+
+/* ==========================================================================
+   SECURITY TAB: PASSWORD STRENGTH & SESSION CARD
+   ========================================================================== */
+
+.password-strength-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.password-strength-bar {
+  height: 5px;
+  background: var(--st-border-light);
+  border-radius: var(--st-radius-pill);
+  overflow: hidden;
+  width: 100%;
 }
 
 .password-strength-fill {
   height: 100%;
   transition: width 0.3s ease, background-color 0.3s ease;
+  border-radius: var(--st-radius-pill);
 }
 
-/* Mobile Breakpoint */
+.password-strength-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--st-text-muted);
+}
+
+.password-strength-label-row strong {
+  font-weight: 700;
+}
+
+.password-rules-checklist {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--st-bg-subtle);
+  border-radius: var(--st-radius-sm);
+  border: 1px solid var(--st-border-light);
+}
+
+.password-rule-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--st-text-muted);
+}
+
+.password-rule-item.is-valid {
+  color: var(--st-success);
+  font-weight: 600;
+}
+
+/* Session Info Card */
+.settings-session-card {
+  background: var(--st-bg-subtle);
+  border: 1px solid var(--st-border-light);
+  border-radius: var(--st-radius-md);
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-session-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-session-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--st-border-light);
+  color: var(--st-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-session-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-session-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--st-text-heading);
+}
+
+.settings-session-meta {
+  font-size: 12px;
+  color: var(--st-text-muted);
+}
+
+.settings-session-active-pill {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--st-success);
+  background: var(--st-success-light);
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ==========================================================================
+   PRIMARY SAVE BUTTONS
+   ========================================================================== */
+
+.settings-actions-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+  border-top: 1px solid var(--st-border-light);
+  padding-top: 18px;
+}
+
+.btn-settings-save-primary {
+  background: var(--st-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--st-radius-sm);
+  padding: 9px 20px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  outline: none;
+}
+
+.btn-settings-save-primary:hover:not(:disabled) {
+  background: var(--st-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+.btn-settings-save-primary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-settings-save-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   SKELETON SHIMMER LOADING STATES (MANDATORY REQUIREMENT)
+   ========================================================================== */
+
+@keyframes settingsShimmerPulse {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.settings-skeleton-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: settingsShimmerPulse 1.6s infinite ease-in-out;
+  border-radius: 6px;
+}
+
+.settings-skeleton-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.settings-skeleton-bar-title {
+  width: 40%;
+  height: 22px;
+  border-radius: 4px;
+}
+
+.settings-skeleton-bar-sub {
+  width: 60%;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.settings-skeleton-avatar-orb {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+}
+
+.settings-skeleton-input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.settings-skeleton-input-box {
+  width: 100%;
+  height: 42px;
+  border-radius: var(--st-radius-sm);
+}
+
+.settings-skeleton-btn {
+  width: 140px;
+  height: 38px;
+  border-radius: var(--st-radius-sm);
+  align-self: flex-end;
+}
+
+/* ==========================================================================
+   RESPONSIVE DESIGN BREAKPOINTS
+   ========================================================================== */
+
 @media (max-width: 768px) {
   .settings-layout {
     flex-direction: column;
-    gap: 24px;
+    gap: 16px;
   }
-  
+
   .settings-sidebar {
     width: 100%;
     flex-direction: row;
     overflow-x: auto;
-    padding-bottom: 8px;
-    /* Hide scrollbar */
+    padding: 6px;
+    box-sizing: border-box;
     scrollbar-width: none;
-    -ms-overflow-style: none;
   }
-  
+
   .settings-sidebar::-webkit-scrollbar {
     display: none;
   }
-  
-  .settings-tab {
-    flex-shrink: 0;
-    padding: 8px 16px;
-    background: #f8fafc;
-    border-radius: 20px;
+
+  .settings-sidebar-user-card {
+    display: none; /* Hide in horizontal pill mode on mobile */
   }
-  
-  .settings-tab[aria-selected="true"] {
-    background: #4f46e5;
-    color: #fff;
+
+  .settings-tab-btn {
+    white-space: nowrap;
+    padding: 8px 14px;
+  }
+
+  .settings-content-card {
+    padding: 20px 18px;
+  }
+
+  .password-rules-checklist {
+    grid-template-columns: 1fr;
   }
 }

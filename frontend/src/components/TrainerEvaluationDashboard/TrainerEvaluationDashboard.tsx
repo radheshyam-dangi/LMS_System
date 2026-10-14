@@ -1,12 +1,29 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { curriculumService } from '../../services/curriculumService';
 import { assignmentService } from '../../services/assignmentService';
-import { learningPathService } from '../../services/learningPathService';
-import { userService } from '../../services/userService';
-import { Plus, CheckCircle, Clock, Search, ExternalLink, X, MessageSquare, Save, Users, AlertCircle, PlayCircle, Eye, Edit2, Archive, Link as LinkIcon, Filter } from 'lucide-react';
+import {
+  CheckCircle2,
+  Clock,
+  Search,
+  X,
+  Users,
+  AlertCircle,
+  Filter,
+  ClipboardList,
+  Bot,
+  ChevronDown,
+  ChevronUp,
+  FileCheck,
+  Award,
+  Layers,
+  ArrowRight,
+  BookOpen,
+  GraduationCap,
+  TrendingUp,
+  FileText
+} from 'lucide-react';
 import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
-import { useSearch } from '../../context/SearchContext';
 import { useSearchParams } from 'react-router-dom';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
 import { SubmissionDetailView, extractAssignmentQuestions } from './SubmissionDetailView';
@@ -26,13 +43,12 @@ const PRIORITY_COLORS: Record<string, { bg: string; color: string; border: strin
 };
 
 const STATUS_COLORS: Record<string, { bg: string; color: string; border: string; dot: string }> = {
-  Pending: { bg: '#f8fafc', color: '#475569', border: '#e2e8f0', dot: '#94a3b8' },
+  Pending: { bg: '#fffbeb', color: '#b45309', border: '#fde68a', dot: '#f59e0b' },
   'In Progress': { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe', dot: '#3b82f6' },
   Submitted: { bg: '#fef3c7', color: '#b45309', border: '#fde68a', dot: '#f59e0b' },
   Accepted: { bg: '#dcfce7', color: '#166534', border: '#86efac', dot: '#22c55e' },
   Approved: { bg: '#dcfce7', color: '#166534', border: '#86efac', dot: '#22c55e' },
   Rejected: { bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5', dot: '#ef4444' },
-  'Needs Improvement': { bg: '#ffedd5', color: '#c2410c', border: '#fed7aa', dot: '#ea580c' },
 };
 
 const formatDuration = (d?: number, h?: number, m?: number) => {
@@ -43,7 +59,62 @@ const formatDuration = (d?: number, h?: number, m?: number) => {
   return parts.length ? parts.join(' ') : 'No duration';
 };
 
-export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSection, activeRole }: TrainerEvaluationDashboardProps) {
+const getRelativeTime = (dateStr?: string) => {
+  if (!dateStr) return 'Date unknown';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Date unknown';
+  const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDays = Math.floor(diffHour / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return d.toLocaleDateString();
+};
+
+/**
+ * Safely builds initials from firstName/lastName, fallback to fullName split,
+ * then email handle, then generic fallback. Guards against literal "undefined" strings.
+ */
+const isValidStr = (v?: string | null) =>
+  typeof v === 'string' && v.trim().length > 0 && v.trim().toLowerCase() !== 'undefined';
+
+const getTraineeInitials = (
+  firstName?: string,
+  lastName?: string,
+  fullName?: string,
+  email?: string
+): string => {
+  const fn = isValidStr(firstName) ? firstName!.trim() : '';
+  const ln = isValidStr(lastName) ? lastName!.trim() : '';
+  if (fn && ln) return (fn[0] + ln[0]).toUpperCase();
+  if (fn) return fn.slice(0, 2).toUpperCase();
+  if (ln) return ln.slice(0, 2).toUpperCase();
+  // fallback: split full name
+  if (isValidStr(fullName)) {
+    const parts = fullName!.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  // fallback: email
+  if (isValidStr(email)) return email!.trim().slice(0, 2).toUpperCase();
+  return 'TR';
+};
+
+/** Legacy compat wrapper used by the assignment catalog section */
+const getInitials = (name?: string, email?: string): string => {
+  return getTraineeInitials(undefined, undefined, name, email);
+};
+
+export function TrainerEvaluationDashboard({
+  accessToken,
+  currentUser,
+  activeSection,
+  activeRole
+}: TrainerEvaluationDashboardProps) {
   const { refresh: refreshNotifications, markRelatedRead } = useNotifications();
   const toast = useToast();
   const [searchQuery, setSearchQuery] = useState('');
@@ -57,13 +128,36 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     return filters;
   }, [searchParams]);
 
+  // ─── Workspace Main Tab Switcher ──────────────────────────────────────
+  // Default to evaluations if activeSection is Evaluations or URL has status=pending
+  const initialTab = useMemo(() => {
+    if (activeSection === 'Evaluations' || window.location.pathname.includes('/evaluations')) {
+      return 'evaluations';
+    }
+    if (localFiltersState['tab'] === 'evaluations' || localFiltersState['tab'] === 'assignments') {
+      return localFiltersState['tab'] as 'evaluations' | 'assignments';
+    }
+    if (localFiltersState['status'] === 'pending') {
+      return 'evaluations';
+    }
+    return 'evaluations';
+  }, [activeSection, localFiltersState]);
+
+  const [activeMainTab, setActiveMainTab] = useState<'evaluations' | 'assignments'>(initialTab);
+
+  // Sync tab with external section changes
+  useEffect(() => {
+    if (activeSection === 'Evaluations' || window.location.pathname.includes('/evaluations')) {
+      setActiveMainTab('evaluations');
+    }
+  }, [activeSection]);
+
+  const isAdminView = activeRole?.toLowerCase() === 'admin';
+
   // ─── Evaluation (pending submissions) state ───────────────────────────
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState(true);
   const [selectedSub, setSelectedSub] = useState<any | null>(null);
-  const [evalScore, setEvalScore] = useState<number>(0);
-  const [evalFeedback, setEvalFeedback] = useState<string>('');
-  const [isEvaluating, setIsEvaluating] = useState(false);
 
   // ─── Assignments list state ────────────────────────────────────────────
   const [assignments, setAssignments] = useState<any[]>([]);
@@ -72,12 +166,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
 
   // ─── View / Edit Modal State ───────────────────────────────────────────
   const [expandedAssignmentId, setExpandedAssignmentId] = useState<string | null>(null);
-  const [editAssignment, setEditAssignment] = useState<any | null>(null);
   const lastOpenedIdRef = useRef<string | null>(null);
-
-  // ─── Active main tab ───────────────────────────────────────────────────
-  const currentTab = (activeSection === 'Evaluations' || window.location.pathname.includes('/evaluations')) ? 'evaluations' : 'assignments';
-  const isAdminView = activeRole?.toLowerCase() === 'admin';
 
   // ─── Load data ─────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -96,14 +185,11 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
       setIsLoadingSubmissions(false);
       setIsLoadingAssignments(false);
     }
-  }, [accessToken, activeRole, localFiltersState]);
+  }, [accessToken, activeRole]);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
-
-  // ─── Filter assignments by active role ────────────────────────────────
-  const roleFilteredAssignments = useMemo(() => {
-    return assignments;
-  }, [assignments]);
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
   // ─── Filter assignments by status ─────────────────────────────────────
   const statusFilter = localFiltersState['status'] || 'All';
@@ -118,7 +204,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
   };
 
   const filteredAssignments = useMemo(() => {
-    let result = roleFilteredAssignments;
+    let result = assignments;
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
@@ -130,11 +216,11 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
 
     if (localFiltersState.id) {
-      // It could be an assignment ID or a submission ID. Check both.
       result = result.filter((a: any) => {
         if (a.id === localFiltersState.id) return true;
-        // Check if any pending submission for this assignment matches the ID
-        const matchingSub = pendingSubmissions.find((s: any) => s.id === localFiltersState.id && (s.assignment?.id === a.id || s.assignmentId === a.id));
+        const matchingSub = pendingSubmissions.find(
+          (s: any) => s.id === localFiltersState.id && (s.assignment?.id === a.id || s.assignmentId === a.id)
+        );
         return !!matchingSub;
       });
     }
@@ -143,19 +229,19 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     if (Object.keys(localFiltersState).length > 0) {
       result = result.filter(assignment =>
         Object.entries(localFiltersState).every(([category, selectedValuesStr]) => {
-          if (category === 'evaluationMode') return true;
+          if (category === 'evaluationMode' || category === 'tab') return true;
           const selectedValues = selectedValuesStr.split(',').map(s => normalize(s));
           if (selectedValues.length === 0) return true;
-          
+
           if (category === 'status') {
             const status = normalize(assignment.status || 'pending');
-            if (selectedValues.includes('pending')) {
-              if (status !== 'accepted' && status !== 'approved' && status !== 'evaluated' && status !== 'rejected' && status !== 'needs_improvement') return true;
-            }
-            if (selectedValues.includes('approved') && status === 'evaluated') return true;
-            if (selectedValues.includes('needs improvement') && status === 'needs_improvement') return true;
-            if (selectedValues.includes('rejected') && status === 'rejected') return true;
-            return selectedValues.includes(status);
+            const isApproved = status === 'accepted' || status === 'approved' || status === 'evaluated';
+            const isRejected = status === 'rejected' || status === 'needs_improvement';
+
+            if (selectedValues.includes('all')) return true;
+            if (selectedValues.includes('approved') && isApproved) return true;
+            if (selectedValues.includes('rejected') && isRejected) return true;
+            return false;
           }
           if (category === 'type') {
             const type = assignment.isExternal ? 'external' : 'learning path';
@@ -171,7 +257,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
 
     return result;
-  }, [roleFilteredAssignments, searchQuery, localFiltersState, pendingSubmissions]);
+  }, [assignments, searchQuery, localFiltersState, pendingSubmissions]);
 
   const getActiveFilterCount = (filters: Record<string, string>, excludeKeys: string[] = []) => {
     return Object.entries(filters).reduce((count, [key, value]) => {
@@ -186,39 +272,32 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }, 0);
   };
 
-  const activeFilterCount = getActiveFilterCount(localFiltersState, ['status', 'evaluationMode']);
+  const activeFilterCount = getActiveFilterCount(localFiltersState, ['status', 'evaluationMode', 'tab']);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { All: roleFilteredAssignments.length, Pending: 0, 'In Progress': 0, Submitted: 0, Approved: 0, Rejected: 0, 'Needs Improvement': 0 };
-    roleFilteredAssignments.forEach((a: any) => {
-      let st = (a.status || 'Pending').toLowerCase();
-      
+    const counts: Record<string, number> = {
+      All: assignments.length,
+      Approved: 0,
+      Rejected: 0
+    };
+    assignments.forEach((a: any) => {
+      const st = (a.status || '').toLowerCase();
       if (st === 'accepted' || st === 'approved' || st === 'evaluated') {
         counts['Approved'] = (counts['Approved'] || 0) + 1;
-      } else if (st === 'needs_improvement') {
-        counts['Needs Improvement'] = (counts['Needs Improvement'] || 0) + 1;
-      } else if (st === 'rejected') {
+      } else if (st === 'rejected' || st === 'needs_improvement') {
         counts['Rejected'] = (counts['Rejected'] || 0) + 1;
-      } else {
-        counts['Pending'] = (counts['Pending'] || 0) + 1;
       }
     });
     return counts;
-  }, [roleFilteredAssignments]);
+  }, [assignments]);
 
   const summaryCards = [
-    { title: 'Pending', count: statusCounts['Pending'] || 0, key: 'Pending' },
-    { title: 'Needs Improvement', count: statusCounts['Needs Improvement'] || 0, key: 'Needs Improvement' },
+    { title: 'All', count: assignments.length, key: 'All' },
     { title: 'Approved', count: statusCounts['Approved'] || 0, key: 'Approved' },
     { title: 'Rejected', count: statusCounts['Rejected'] || 0, key: 'Rejected' },
   ];
 
-  const filteredPendingSubmissions = useMemo(() => {
-    return pendingSubmissions;
-  }, [pendingSubmissions]);
-
   // ─── Modal Handlers ──────────────────────────────────────────────
-  const handleViewAssignment = (assign: any) => { setExpandedAssignmentId(assign.id); };
   const clearIdParam = () => {
     const newParams = new URLSearchParams(searchParams.toString());
     newParams.delete('id');
@@ -226,14 +305,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     lastOpenedIdRef.current = null;
   };
 
-  const closeViewEditModals = () => { setExpandedAssignmentId(null); setEditAssignment(null); clearIdParam(); };
-
-  // ─── Evaluation handlers ───────────────────────────────────────────────
-    const handleOpenReview = async (sub: any) => {
+  const handleOpenReview = async (sub: any) => {
     setSelectedSub(sub);
-    setEvalScore(sub.aiEvaluationResult?.totalScore ?? (sub.assignment?.maxScore || 100));
-    setEvalFeedback(sub.aiEvaluationResult?.overallRemark || '');
-    // Opening evaluation decreases trainer bell counter without page reload
     try {
       await assignmentService.openSubmissionForEvaluation(sub.id, accessToken);
       await markRelatedRead('submission', sub.id);
@@ -243,50 +316,66 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     }
   };
 
+  // Deep-linking listener for URL ?id= and ?tab=
   useEffect(() => {
     const idToOpen = searchParams.get('id');
-    if (idToOpen && idToOpen !== lastOpenedIdRef.current && (pendingSubmissions.length > 0 || assignments.length > 0)) {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'evaluations' || tabParam === 'assignments') {
+      setActiveMainTab(tabParam as 'evaluations' | 'assignments');
+    }
+
+    if (idToOpen && idToOpen !== lastOpenedIdRef.current) {
+      if (isLoadingSubmissions || isLoadingAssignments) return;
+
       const targetSub = pendingSubmissions.find((s: any) => s.id === idToOpen || s.assignment?.id === idToOpen);
       if (targetSub) {
         lastOpenedIdRef.current = idToOpen;
+        setActiveMainTab('evaluations');
         handleOpenReview(targetSub);
         return;
       }
       const targetAssign = assignments.find((a: any) => a.id === idToOpen);
       if (targetAssign) {
         lastOpenedIdRef.current = idToOpen;
-        handleViewAssignment(targetAssign);
+        setActiveMainTab('assignments');
+        setExpandedAssignmentId(targetAssign.id);
+        return;
       }
-    }
-  }, [pendingSubmissions, assignments, searchParams]);
 
-  const handleEvaluate = async (status: 'Approved' | 'Rejected') => {
-    // This unused handler has been kept for compatibility if called from elsewhere.
-    // Real logic is handled in SubmissionDetailView component itself now.
-    if (status === 'Rejected' && !evalFeedback.trim()) {
-      toast.warning('Feedback is mandatory when rejecting a submission.');
-      return;
-    }
-    setIsEvaluating(true);
-    try {
-      await curriculumService.evaluateSubmission(
-        selectedSub.id,
-        { score: evalScore, feedback: evalFeedback, status },
-        accessToken
-      );
-      setSelectedSub(null);
-      await loadAll();
-      await refreshNotifications();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || err.message || 'Evaluation failed.');
-    } finally {
-      setIsEvaluating(false);
-    }
-  };
+      // If not in preloaded list, query backend directly
+      let isCancelled = false;
+      (async () => {
+        try {
+          const fetchedSub = await assignmentService.fetchSubmissionById(idToOpen, accessToken, activeRole).catch(() => null);
+          if (fetchedSub && !isCancelled) {
+            lastOpenedIdRef.current = idToOpen;
+            setActiveMainTab('evaluations');
+            handleOpenReview(fetchedSub);
+            return;
+          }
+          const fetchedAssign = await assignmentService.fetchAssignmentById(idToOpen, accessToken).catch(() => null);
+          if (fetchedAssign && !isCancelled) {
+            lastOpenedIdRef.current = idToOpen;
+            setActiveMainTab('assignments');
+            setExpandedAssignmentId(fetchedAssign.id);
+          }
+        } catch (err) {
+          console.error('Failed to resolve target for trainer:', err);
+        }
+      })();
 
+      return () => {
+        isCancelled = true;
+      };
+    }
+  }, [pendingSubmissions, assignments, searchParams, isLoadingSubmissions, isLoadingAssignments, accessToken, activeRole]);
+
+  // ─── Render Parsed Solutions in Assignment Details ──────────────────
   const renderParsedSubmission = (sub: any) => {
     const questions = extractAssignmentQuestions(sub.assignment);
-    const isMcq = sub.assignment?.assignmentType === 'MCQ' || questions.some((q: any) => q.type === 'MCQ' || (q.options && q.options.length > 0));
+    const isMcq =
+      sub.assignment?.assignmentType === 'MCQ' ||
+      questions.some((q: any) => q.type === 'MCQ' || (q.options && q.options.length > 0));
     let parsedAnswers: Record<string, any> = {};
     let isJson = false;
     let rawText = sub.submissionText || '';
@@ -309,13 +398,15 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           isJson = true;
         }
       }
-    } catch { }
+    } catch {}
 
     if (!isJson && questions.length === 0) {
       return (
-        <div className="h-auto min-h-0" style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-          <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Submitted Solution:</strong>
-          <div className="whitespace-pre-wrap break-words min-h-0 h-auto" style={{ fontSize: '13px', color: '#0f172a', whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.5' }}>
+        <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+          <strong style={{ fontSize: '12px', color: '#475569', display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>
+            Submitted Solution:
+          </strong>
+          <div style={{ fontSize: '13px', color: '#0f172a', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: '1.5' }}>
             {rawText || 'No answer provided.'}
           </div>
         </div>
@@ -325,48 +416,54 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
     return (
-      <div className="h-auto min-h-0" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         {questions.map((q: any, idx: number) => {
-          const traineeAnswer = parsedAnswers[q.id] ?? parsedAnswers[idx] ?? parsedAnswers[String(idx)] ?? (idx === 0 && rawText ? rawText : null);
+          const traineeAnswer =
+            parsedAnswers[q.id] ??
+            parsedAnswers[idx] ??
+            parsedAnswers[String(idx)] ??
+            (idx === 0 && rawText ? rawText : null);
           const questionPoints = q.points || q.maxPoints || 10;
           const questionPrompt = q.text || q.questionText || q.question || `Question ${idx + 1}`;
 
           if (isMcq && q.options?.length > 0) {
-            const traineeChoiceIdx = traineeAnswer !== null && traineeAnswer !== '' && !isNaN(Number(traineeAnswer)) ? Number(traineeAnswer) : null;
-            const correctChoiceIdx = q.correctIndex !== null && !isNaN(Number(q.correctIndex)) ? Number(q.correctIndex) : null;
-            const isCorrect = traineeChoiceIdx !== null && correctChoiceIdx !== null && traineeChoiceIdx === correctChoiceIdx;
+            const traineeChoiceIdx =
+              traineeAnswer !== null && traineeAnswer !== '' && !isNaN(Number(traineeAnswer))
+                ? Number(traineeAnswer)
+                : null;
+            const correctChoiceIdx =
+              q.correctIndex !== null && !isNaN(Number(q.correctIndex)) ? Number(q.correctIndex) : null;
+            const isCorrect =
+              traineeChoiceIdx !== null && correctChoiceIdx !== null && traineeChoiceIdx === correctChoiceIdx;
 
             return (
               <div
                 key={q.id || idx}
-                className="h-auto min-h-0"
                 style={{
-                  padding: '16px',
+                  padding: '14px',
                   background: isCorrect ? '#f0fdf4' : traineeChoiceIdx !== null ? '#fff5f5' : '#f8fafc',
                   border: `1px solid ${isCorrect ? '#86efac' : traineeChoiceIdx !== null ? '#fca5a5' : '#e2e8f0'}`,
                   borderRadius: '10px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '12px',
+                  gap: '10px',
                 }}
               >
-                {/* 1. Full Question Text at Top */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: 1 }}>
-                    <span style={{ background: '#e2e8f0', color: '#334155', fontSize: '11px', fontWeight: 800, padding: '3px 7px', borderRadius: '5px', whiteSpace: 'nowrap' }}>
+                    <span style={{ background: '#e2e8f0', color: '#334155', fontSize: '11px', fontWeight: 800, padding: '2px 6px', borderRadius: '4px' }}>
                       Q{idx + 1}
                     </span>
-                    <strong style={{ fontSize: '14px', color: '#0f172a', lineHeight: '1.45', wordBreak: 'break-word' }}>
+                    <strong style={{ fontSize: '13.5px', color: '#0f172a', lineHeight: '1.45', wordBreak: 'break-word' }}>
                       {questionPrompt}
                     </strong>
                   </div>
-                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#fff', padding: '2px 7px', borderRadius: '4px', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                     {questionPoints} Pts
                   </span>
                 </div>
 
-                {/* 2. List ALL Available Options with Visual Highlighting */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                   {q.options.map((opt: string, optIdx: number) => {
                     const isTraineePick = traineeChoiceIdx === optIdx;
                     const isThisCorrect = correctChoiceIdx === optIdx;
@@ -383,8 +480,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                       badgeBg = '#16a34a';
                       badgeColor = '#ffffff';
                       statusPill = (
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#bbf7d0', padding: '2px 8px', borderRadius: '4px' }}>
-                          ✓ Trainee Selected (Correct)
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#bbf7d0', padding: '2px 7px', borderRadius: '4px' }}>
+                          ✓ Selected (Correct)
                         </span>
                       );
                     } else if (isTraineePick && !isThisCorrect) {
@@ -393,8 +490,8 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                       badgeBg = '#dc2626';
                       badgeColor = '#ffffff';
                       statusPill = (
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#b91c1c', background: '#fecaca', padding: '2px 8px', borderRadius: '4px' }}>
-                          ✗ Trainee Selected (Incorrect)
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#b91c1c', background: '#fecaca', padding: '2px 7px', borderRadius: '4px' }}>
+                          ✗ Selected (Incorrect)
                         </span>
                       );
                     } else if (isThisCorrect) {
@@ -403,7 +500,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                       badgeBg = '#dcfce7';
                       badgeColor = '#15803d';
                       statusPill = (
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 8px', borderRadius: '4px', border: '1px solid #86efac' }}>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', background: '#dcfce7', padding: '2px 7px', borderRadius: '4px', border: '1px solid #86efac' }}>
                           ✓ Correct Answer
                         </span>
                       );
@@ -412,27 +509,26 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                     return (
                       <div
                         key={optIdx}
-                        className="h-auto min-h-0"
                         style={{
                           background: optBg,
                           border: optBorder,
-                          borderRadius: '8px',
-                          padding: '8px 12px',
+                          borderRadius: '6px',
+                          padding: '7px 10px',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
                           gap: '10px',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                           <span
                             style={{
-                              width: '22px',
-                              height: '22px',
+                              width: '20px',
+                              height: '20px',
                               borderRadius: '50%',
                               background: badgeBg,
                               color: badgeColor,
-                              fontSize: '11px',
+                              fontSize: '10px',
                               fontWeight: 800,
                               display: 'flex',
                               alignItems: 'center',
@@ -442,7 +538,7 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                           >
                             {optionLetters[optIdx] || optIdx + 1}
                           </span>
-                          <span style={{ fontSize: '13px', color: '#1e293b', fontWeight: isTraineePick || isThisCorrect ? 700 : 500, wordBreak: 'break-word' }}>
+                          <span style={{ fontSize: '12.5px', color: '#1e293b', fontWeight: isTraineePick || isThisCorrect ? 700 : 500, wordBreak: 'break-word' }}>
                             {opt}
                           </span>
                         </div>
@@ -451,66 +547,34 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                     );
                   })}
                 </div>
-
-                {/* Trainee Answer Summary */}
-                <div style={{ fontSize: '12px', color: isCorrect ? '#15803d' : '#b91c1c', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {isCorrect ? (
-                    <span>✓ Trainee answered correctly (+{questionPoints} Pts)</span>
-                  ) : traineeChoiceIdx !== null ? (
-                    <span>✗ Trainee selected wrong answer (Correct: Option {optionLetters[correctChoiceIdx ?? -1] || (correctChoiceIdx !== null ? correctChoiceIdx + 1 : 'N/A')})</span>
-                  ) : (
-                    <span style={{ color: '#b45309' }}>⚪ No option selected by trainee</span>
-                  )}
-                </div>
               </div>
             );
           }
 
-          {/* Subjective Question Rendering */}
+          // Subjective question
           return (
-            <div key={idx} className="h-auto min-h-0" style={{ padding: '16px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', flex: 1 }}>
-                  <span style={{ background: '#eff6ff', color: '#2563eb', fontSize: '11px', fontWeight: 800, padding: '3px 7px', borderRadius: '5px', whiteSpace: 'nowrap' }}>
-                    Q{idx + 1}
-                  </span>
-                  <div>
-                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', marginBottom: '2px' }}>
-                      Question Prompt
-                    </div>
-                    <strong style={{ fontSize: '14px', color: '#0f172a', lineHeight: '1.45', wordBreak: 'break-word', display: 'block' }}>
-                      {questionPrompt}
-                    </strong>
-                  </div>
-                </div>
-                <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb', background: '#eff6ff', padding: '3px 8px', borderRadius: '5px', whiteSpace: 'nowrap' }}>
-                  Max: {questionPoints} Pts
+            <div
+              key={q.id || idx}
+              style={{
+                padding: '14px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                <span style={{ fontSize: '13.5px', fontWeight: 700, color: '#0f172a' }}>
+                  Q{idx + 1}: {questionPrompt}
+                </span>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#4f46e5', background: '#eef2ff', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                  {questionPoints} Pts
                 </span>
               </div>
-
-              <div>
-                <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '6px' }}>
-                  Trainee Submitted Answer:
-                </div>
-                <div
-                  className="whitespace-pre-wrap break-words min-h-0 h-auto"
-                  style={{
-                    background: '#f8fafc',
-                    padding: '12px 14px',
-                    borderRadius: '8px',
-                    fontSize: '13px',
-                    color: '#1e293b',
-                    border: '1px solid #e2e8f0',
-                    borderLeft: '4px solid #2563eb',
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    overflowWrap: 'break-word',
-                    lineHeight: '1.6',
-                    minHeight: '36px',
-                  }}
-                >
-                  {traineeAnswer ? String(traineeAnswer) : <em style={{ color: '#94a3b8' }}>No answer written.</em>}
-                </div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#1e293b', whiteSpace: 'pre-wrap' }}>
+                {traineeAnswer ? String(traineeAnswer) : <em style={{ color: '#94a3b8' }}>No answer written.</em>}
               </div>
             </div>
           );
@@ -519,264 +583,578 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
     );
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────
-  return (
-    <div style={{ padding: '24px 32px', width: '100%', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+  // ─── Evaluations Queue Filter Logic ────────────────────────────────────
+  const filteredSubs = useMemo(() => {
+    return pendingSubmissions.filter((sub: any) => {
+      if (!searchQuery.trim()) return true;
+      const query = searchQuery.toLowerCase();
+      const traineeName = `${sub.trainee?.firstName || ''} ${sub.trainee?.lastName || ''}`.toLowerCase();
+      const titleMatch = (sub.assignment?.title || '').toLowerCase().includes(query);
+      const emailMatch = (sub.trainee?.email || '').toLowerCase().includes(query);
+      return traineeName.includes(query) || titleMatch || emailMatch;
+    });
+  }, [pendingSubmissions, searchQuery]);
 
-      {/* ── TOP HEADER ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '28px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0', letterSpacing: '-0.5px' }}>
-            {currentTab === 'evaluations' ? 'Trainee Evaluations' : 'Assignments'}
+  const aiEvaluated = useMemo(() => {
+    return filteredSubs.filter((s: any) => s.status === 'ai_evaluated_pending_review' || s.aiTotalScore != null);
+  }, [filteredSubs]);
+
+  const manualPending = useMemo(() => {
+    return filteredSubs.filter((s: any) => s.status !== 'ai_evaluated_pending_review' && s.aiTotalScore == null);
+  }, [filteredSubs]);
+
+  const activeMode = localFiltersState['evaluationMode'] || undefined;
+  const setEvaluationMode = (mode: string | null) => {
+    const newFilters = { ...localFiltersState };
+    if (!mode) {
+      delete newFilters.evaluationMode;
+    } else {
+      newFilters.evaluationMode = mode;
+    }
+    setSearchParams(newFilters);
+  };
+
+  return (
+    <div className="trainer-evaluation-container">
+      {/* ── 1. PAGE HEADER ── */}
+      <header className="eval-header-row">
+        <div className="eval-header-left">
+          {/* <div className="eval-eyebrow-badge">
+            <GraduationCap size={13} />
+            <span>Assessment & Review Workspace · {activeRole || 'Trainer'}</span>
+          </div> */}
+          <h1 className="eval-main-title">
+            {activeMainTab === 'evaluations' ? 'Evaluation Queue' : 'Assignment Catalog'}
           </h1>
-          <p style={{ margin: 0, color: '#64748b', fontSize: '13px' }}>
-            {currentTab === 'evaluations' ? 'Review and grade trainee submissions' : 'Manage, assign, and evaluate trainee tasks'}
+          <p className="eval-sub-heading">
+            {activeMainTab === 'evaluations'
+              ? 'Review pending trainee submissions, verify AI-assisted grading, and provide qualitative feedback.'
+              : 'Inspect curriculum tasks, monitor completion statuses, and evaluate assignments across cohorts.'}
           </p>
         </div>
-      </div>
+      </header>
 
-      {/* ═══ TAB 1: ASSIGNMENTS ═══ */}
-      {currentTab === 'assignments' && (
-        <>
-          {/* SUMMARY CARDS */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
-            {summaryCards.map((card) => (
-              <div
-                key={card.key}
-                onClick={() => setStatusFilter(card.key)}
-                className={`trainer-metric-card ${statusFilter === card.key ? 'metric-card-active' : ''}`}
-              >
-                <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: card.title === 'Approved' ? '#22c55e' : (card.title === 'Submitted' ? '#eab308' : '#cbd5e1') }} />
-                  {card.title}
-                </div>
-                <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a', marginTop: '8px' }}>{card.count}</div>
-              </div>
-            ))}
+      {/* ── 2. PRIMARY WORKSPACE NAVIGATION TABS ── */}
+      <nav className="eval-workspace-tabs-bar" aria-label="Evaluation workspace sections">
+        <button
+          type="button"
+          className={`eval-workspace-tab-btn ${activeMainTab === 'evaluations' ? 'is-active' : ''}`}
+          onClick={() => {
+            setActiveMainTab('evaluations');
+            const newFilters = { ...localFiltersState };
+            newFilters.tab = 'evaluations';
+            setSearchParams(newFilters);
+          }}
+        >
+          <ClipboardList size={16} />
+          <span>Evaluation Queue</span>
+          <span
+            className={`eval-tab-badge-counter ${
+              pendingSubmissions.length > 0 ? 'badge-pending' : ''
+            }`}
+          >
+            {pendingSubmissions.length}
+          </span>
+        </button>
 
-            {/* "All" Reset Card */}
+        <button
+          type="button"
+          className={`eval-workspace-tab-btn ${activeMainTab === 'assignments' ? 'is-active' : ''}`}
+          onClick={() => {
+            setActiveMainTab('assignments');
+            const newFilters = { ...localFiltersState };
+            newFilters.tab = 'assignments';
+            setSearchParams(newFilters);
+          }}
+        >
+          <Layers size={16} />
+          <span>All Assignments & Tasks</span>
+          <span className="eval-tab-badge-counter">{assignments.length}</span>
+        </button>
+      </nav>
+
+      {/* ── 3. INTERACTIVE METRIC STRIP ── */}
+      <section className="eval-metrics-grid" aria-label="Quick metrics">
+        {summaryCards.map((card) => {
+          const isActive =
+            (card.key === 'All' && activeMainTab === 'assignments' && (!localFiltersState.status || localFiltersState.status.toLowerCase() === 'all')) ||
+            (localFiltersState.status && localFiltersState.status.toLowerCase() === card.key.toLowerCase());
+
+          return (
             <div
-              onClick={() => setStatusFilter('All')}
-              className={`trainer-metric-card ${statusFilter === 'All' ? 'metric-card-active' : ''}`}
-            >
-              <div style={{ fontSize: '13px', color: '#64748b', fontWeight: 500 }}>All Assignments</div>
-              <div style={{ fontSize: '28px', fontWeight: 800, color: '#0f172a', marginTop: '8px' }}>{roleFilteredAssignments.length}</div>
-            </div>
-          </div>
-
-          {/* Search and Filters */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', alignItems: 'stretch' }}>
-            <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <span style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#64748b', display: 'flex', alignItems: 'center' }}>
-                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-              </span>
-              <input
-                type="text"
-                placeholder="Search assignments or tasks..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ 
-                  width: '100%', 
-                  padding: '12px 16px 12px 40px', 
-                  borderRadius: '8px', 
-                  border: '1px solid #e2e8f0', 
-                  fontSize: '14px', 
-                  outline: 'none',
-                  boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-                  transition: 'border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
-                  color: '#0f172a',
-                  backgroundColor: '#fff'
-                }}
-                onFocus={(e) => { e.target.style.borderColor = '#4f46e5'; e.target.style.boxShadow = '0 0 0 3px rgba(79, 70, 229, 0.1)'; }}
-                onBlur={(e) => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = '0 1px 2px 0 rgba(0, 0, 0, 0.05)'; }}
-              />
-            </div>
-            <button
-              onClick={() => setIsFilterPanelOpen(true)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px',
-                padding: '0 16px', borderRadius: '8px', border: '1px solid #e2e8f0',
-                background: '#fff', color: '#334155', fontWeight: 600, fontSize: '14px',
-                cursor: 'pointer', transition: 'all 0.15s ease-in-out',
-                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)'
+              key={card.key}
+              className={`eval-metric-card ${isActive ? 'active-metric-filter' : ''}`}
+              onClick={() => {
+                setActiveMainTab('assignments');
+                setStatusFilter(card.key);
               }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8fafc'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  setActiveMainTab('assignments');
+                  setStatusFilter(card.key);
+                }
+              }}
+              title={`Filter by ${card.title}`}
             >
-              <Filter size={18} />
-              Filters
-              {activeFilterCount > 0 && (
-                <span style={{
-                  background: '#4f46e5', color: '#fff', padding: '2px 8px',
-                  borderRadius: '99px', fontSize: '12px', marginLeft: '2px',
-                  fontWeight: 700
-                }}>
-                  {activeFilterCount}
-                </span>
-              )}
+              <div className="eval-metric-icon-box">
+                {card.key === 'All' ? (
+                  <Layers size={18} />
+                ) : card.key === 'Approved' ? (
+                  <CheckCircle2 size={18} />
+                ) : (
+                  <AlertCircle size={18} />
+                )}
+              </div>
+              <div className="eval-metric-content">
+                <span className="eval-metric-label">{card.title}</span>
+                <div className="eval-metric-value-row">
+                  <span className="eval-metric-number">
+                    {isLoadingAssignments ? '—' : card.count}
+                  </span>
+                  <span className="eval-metric-subtext">{card.key === 'All' ? 'total' : 'submissions'}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      {/* ── 4. SEARCH, SUBMODE & FILTER CONTROLS BAR ── */}
+      <section className="eval-controls-bar" aria-label="Controls and filters">
+        {/* Left Sub-tabs (when in Evaluations Queue) */}
+        {activeMainTab === 'evaluations' ? (
+          <div className="eval-submode-pill-row" role="tablist">
+            <button
+              type="button"
+              className={`eval-submode-pill ${!activeMode ? 'is-active' : ''}`}
+              onClick={() => setEvaluationMode(null)}
+            >
+              <span>All Pending</span>
+              <span className="eval-tab-badge-counter">{filteredSubs.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`eval-submode-pill ${activeMode === 'ai-assisted' ? 'is-active' : ''}`}
+              onClick={() => setEvaluationMode('ai-assisted')}
+            >
+              <Bot size={13} strokeWidth={1.75} />
+              <span>AI Evaluated</span>
+              <span className="eval-tab-badge-counter">{aiEvaluated.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`eval-submode-pill ${activeMode === 'manual' ? 'is-active' : ''}`}
+              onClick={() => setEvaluationMode('manual')}
+            >
+              <FileCheck size={13} />
+              <span>Manual Review</span>
+              <span className="eval-tab-badge-counter">{manualPending.length}</span>
             </button>
           </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600, color: '#475569' }}>
+            <span>Showing:</span>
+            <span style={{ color: '#0f172a', fontWeight: 700 }}>
+              {statusFilter === 'All' ? 'All Assignments' : `${statusFilter} Tasks`} ({filteredAssignments.length})
+            </span>
+          </div>
+        )}
 
-          <AssignmentsFilterPanel
-            isOpen={isFilterPanelOpen}
-            onClose={() => setIsFilterPanelOpen(false)}
-            categories={[
-              {
-                id: 'status', label: 'Status', options: [
-                  { label: 'Pending Evaluation', value: 'pending' },
-                  { label: 'Approved', value: 'approved' },
-                  { label: 'Needs Improvement', value: 'needs improvement' },
-                  { label: 'Rejected', value: 'rejected' }
-                ]
-              },
-              {
-                id: 'type', label: 'Type', options: [
-                  { label: 'Learning Path', value: 'learning path' },
-                  { label: 'External', value: 'external' }
-                ]
-              },
-              {
-                id: 'difficulty', label: 'Difficulty', options: [
-                  { label: 'Basic', value: 'basic' },
-                  { label: 'Medium', value: 'medium' },
-                  { label: 'Hard', value: 'hard' }
-                ]
+        {/* Right Search & Filter Action */}
+        <div className="eval-search-and-actions">
+          <div className="eval-search-field-wrapper">
+            <span className="eval-search-icon">
+              <Search size={14} />
+            </span>
+            <input
+              type="text"
+              className="eval-search-input"
+              placeholder={
+                activeMainTab === 'evaluations'
+                  ? 'Search by trainee, email, or task...'
+                  : 'Search assignments or tasks...'
               }
-            ]}
-            initialFilters={localFiltersState}
-            onApply={(newFilters: Record<string, string>) => setSearchParams(newFilters)}
-          />
-
-          {/* Active Filter Chips */}
-          {activeFilterCount > 0 && (
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
-              {Object.entries(localFiltersState).map(([key, value]) => {
-                if (!value || key === 'status' || key === 'evaluationMode') return null;
-
-                if (key === 'id') {
-                  const targetAssign = assignments.find(a => a.id === value);
-                  let title = targetAssign?.title;
-                  if (!title) {
-                    const targetSub = pendingSubmissions.find(s => s.id === value);
-                    title = targetSub?.assignment?.title || 'Specific Assignment';
-                  }
-                  return (
-                    <div key={`id-${value}`} style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5',
-                      borderRadius: '99px', fontSize: '12px', fontWeight: 600
-                    }}>
-                      <span>Viewing: {title}</span>
-                      <button 
-                        onClick={() => {
-                          const newFilters = { ...localFiltersState };
-                          delete newFilters.id;
-                          setSearchParams(newFilters);
-                        }}
-                        style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex' }}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  );
-                }
-
-                // Map category labels manually since filterCategories is hardcoded in the panel component above
-                let categoryLabel = key;
-                if (key === 'type') categoryLabel = 'Type';
-                if (key === 'difficulty') categoryLabel = 'Difficulty';
-                
-                const filterOptions: Record<string, { label: string, value: string }[]> = {
-                  difficulty: [
-                    { label: 'Basic', value: 'basic' },
-                    { label: 'Medium', value: 'medium' },
-                    { label: 'Hard', value: 'hard' }
-                  ],
-                  type: [
-                    { label: 'Learning Path', value: 'learning path' },
-                    { label: 'External', value: 'external' }
-                  ]
-                };
-                
-                return value.split(',').map(v => {
-                  const opt = filterOptions[key]?.find(o => String(o.value).toLowerCase() === String(v).toLowerCase().trim());
-                  const valLabel = opt ? opt.label : v;
-                  return (
-                    <div key={`${key}-${v}`} style={{
-                      display: 'flex', alignItems: 'center', gap: '6px',
-                      padding: '4px 10px', background: '#e0e7ff', color: '#4f46e5',
-                      borderRadius: '99px', fontSize: '12px', fontWeight: 600
-                    }}>
-                      <span>{categoryLabel}: {valLabel}</span>
-                      <button 
-                        onClick={() => {
-                          const currentVals = value.split(',');
-                          const newVals = currentVals.filter(val => val !== v);
-                          const newFilters = { ...localFiltersState };
-                          if (newVals.length > 0) {
-                            newFilters[key] = newVals.join(',');
-                          } else {
-                            delete newFilters[key];
-                          }
-                          setSearchParams(newFilters);
-                        }}
-                        style={{ background: 'transparent', border: 'none', color: '#4f46e5', cursor: 'pointer', padding: 0, display: 'flex' }}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  );
-                });
-              })}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search submissions or assignments"
+            />
+            {searchQuery && (
               <button
-                onClick={() => setSearchParams({})}
-                style={{ background: 'transparent', border: 'none', color: '#64748b', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}
+                type="button"
+                className="eval-search-clear-btn"
+                onClick={() => setSearchQuery('')}
+                title="Clear search"
+                aria-label="Clear search"
               >
-                Clear all
+                <X size={14} />
               </button>
+            )}
+          </div>
+
+          {activeMainTab === 'assignments' && (
+            <button
+              type="button"
+              className="btn-eval-filters-panel-trigger"
+              onClick={() => setIsFilterPanelOpen(true)}
+            >
+              <Filter size={15} />
+              <span>Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="eval-filters-active-badge">{activeFilterCount}</span>
+              )}
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* ── Active Filters Chips ── */}
+      {activeFilterCount > 0 && activeMainTab === 'assignments' && (
+        <div className="eval-active-chips-strip">
+          {Object.entries(localFiltersState).map(([key, value]) => {
+            if (!value || key === 'status' || key === 'evaluationMode' || key === 'tab') return null;
+
+            if (key === 'id') {
+              const targetAssign = assignments.find((a) => a.id === value);
+              let title = targetAssign?.title;
+              if (!title) {
+                const targetSub = pendingSubmissions.find((s) => s.id === value);
+                title = targetSub?.assignment?.title || 'Specific Assignment';
+              }
+              return (
+                <div key={`id-${value}`} className="eval-chip-tag">
+                  <span>Viewing: {title}</span>
+                  <button
+                    type="button"
+                    className="eval-chip-remove-btn"
+                    onClick={() => {
+                      const newFilters = { ...localFiltersState };
+                      delete newFilters.id;
+                      setSearchParams(newFilters);
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              );
+            }
+
+            let categoryLabel = key;
+            if (key === 'type') categoryLabel = 'Type';
+            if (key === 'difficulty') categoryLabel = 'Difficulty';
+
+            return value.split(',').map((v) => (
+              <div key={`${key}-${v}`} className="eval-chip-tag">
+                <span>
+                  {categoryLabel}: {v}
+                </span>
+                <button
+                  type="button"
+                  className="eval-chip-remove-btn"
+                  onClick={() => {
+                    const currentVals = value.split(',');
+                    const newVals = currentVals.filter((val) => val !== v);
+                    const newFilters = { ...localFiltersState };
+                    if (newVals.length > 0) {
+                      newFilters[key] = newVals.join(',');
+                    } else {
+                      delete newFilters[key];
+                    }
+                    setSearchParams(newFilters);
+                  }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ));
+          })}
+          <button
+            type="button"
+            className="eval-chip-clear-all-link"
+            onClick={() => setSearchParams({})}
+          >
+            Clear all filters
+          </button>
+        </div>
+      )}
+
+      {/* Assignments Filter Modal Panel */}
+      <AssignmentsFilterPanel
+        isOpen={isFilterPanelOpen}
+        onClose={() => setIsFilterPanelOpen(false)}
+        categories={[
+          {
+            id: 'status',
+            label: 'Status',
+            options: [
+              { label: 'All', value: 'all' },
+              { label: 'Approved', value: 'approved' },
+              { label: 'Rejected', value: 'rejected' },
+            ],
+          },
+          {
+            id: 'type',
+            label: 'Type',
+            options: [
+              { label: 'Learning Path', value: 'learning path' },
+              { label: 'External', value: 'external' },
+            ],
+          },
+          {
+            id: 'difficulty',
+            label: 'Difficulty',
+            options: [
+              { label: 'Basic', value: 'basic' },
+              { label: 'Medium', value: 'medium' },
+              { label: 'Hard', value: 'hard' },
+            ],
+          },
+        ]}
+        initialFilters={localFiltersState}
+        onApply={(newFilters: Record<string, string>) => setSearchParams(newFilters)}
+      />
+
+      {/* ═══ VIEW 1: EVALUATION QUEUE ═══ */}
+      {activeMainTab === 'evaluations' && (
+        <>
+          {isLoadingSubmissions ? (
+            /* Skeleton Loading Grid for Queue */
+            <div className="eval-queue-grid" aria-busy="true" aria-label="Loading submissions...">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div key={idx} className="eval-skeleton-queue-card">
+                  <div className="eval-skeleton-header">
+                    <div className="eval-skeleton-identity">
+                      <div className="eval-skeleton-shimmer eval-skeleton-avatar" />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div className="eval-skeleton-shimmer eval-skeleton-bar-title" style={{ width: '110px' }} />
+                        <div className="eval-skeleton-shimmer eval-skeleton-bar-sub" style={{ width: '150px' }} />
+                      </div>
+                    </div>
+                    <div className="eval-skeleton-shimmer eval-skeleton-time" />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', margin: '6px 0' }}>
+                    <div className="eval-skeleton-shimmer eval-skeleton-bar-title" />
+                    <div className="eval-skeleton-shimmer eval-skeleton-bar-sub" />
+                  </div>
+                  <div className="eval-skeleton-badges">
+                    <div className="eval-skeleton-shimmer eval-skeleton-badge" />
+                    <div className="eval-skeleton-shimmer eval-skeleton-badge" />
+                  </div>
+                  <div className="eval-skeleton-shimmer eval-skeleton-btn" />
+                </div>
+              ))}
+            </div>
+          ) : filteredSubs.length === 0 ? (
+            /* Empty Queue State */
+            <div className="eval-empty-state">
+              <div className="eval-empty-icon-box">
+                <CheckCircle2 size={28} />
+              </div>
+              <h3 className="eval-empty-title">All Caught Up!</h3>
+              <p className="eval-empty-desc">
+                {searchQuery || activeMode
+                  ? `No pending evaluations matched your criteria (${activeMode ? `Mode: ${activeMode}` : ''}${searchQuery ? `, Query: "${searchQuery}"` : ''}).`
+                  : 'There are no pending submissions awaiting review. Great work!'}
+              </p>
+              {searchQuery || activeMode ? (
+                <button
+                  type="button"
+                  className="eval-chip-clear-all-link"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setEvaluationMode(null);
+                  }}
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            /* Render Queue Cards */
+            <div className="eval-queue-grid">
+              {filteredSubs
+                .filter((sub: any) => {
+                  if (activeMode === 'ai-assisted') {
+                    return sub.status === 'ai_evaluated_pending_review' || sub.aiTotalScore != null;
+                  }
+                  if (activeMode === 'manual') {
+                    return sub.status !== 'ai_evaluated_pending_review' && sub.aiTotalScore == null;
+                  }
+                  return true;
+                })
+                .map((sub: any) => {
+                  const traineeFullName =
+                    `${sub.trainee?.firstName || ''} ${sub.trainee?.lastName || ''}`.trim() ||
+                    sub.trainee?.email ||
+                    'Trainee';
+                  const taskTitle = sub.assignment?.title || 'Assignment Task';
+                  const maxScore = sub.assignment?.maxScore || 100;
+                  const isAiEvaluated = sub.status === 'ai_evaluated_pending_review' || sub.aiTotalScore != null;
+                  const aiScore = sub.aiEvaluationResult?.totalScore ?? sub.aiTotalScore;
+
+                  const pathCrumb = [
+                    sub.assignment?.learningPath?.title || sub.assignment?.module?.learningPath?.title,
+                    sub.assignment?.module?.title,
+                  ]
+                    .filter(Boolean)
+                    .join(' › ');
+
+                  const traineeInitials = getTraineeInitials(
+                    sub.trainee?.firstName,
+                    sub.trainee?.lastName,
+                    traineeFullName,
+                    sub.trainee?.email
+                  );
+                  const traineeAvatarUrl: string | undefined =
+                    sub.trainee?.avatarUrl || sub.trainee?.profileImage || sub.trainee?.avatar || undefined;
+
+                  return (
+                    <article key={sub.id} className="eval-submission-card">
+                      {/* Top: Trainee Profile & Submitted Timestamp */}
+                      <div className="eval-card-header">
+                        <div className="eval-trainee-identity">
+                          <div className="eval-trainee-avatar-wrapper">
+                            {traineeAvatarUrl ? (
+                              <img
+                                src={traineeAvatarUrl}
+                                alt={traineeFullName}
+                                className="eval-trainee-avatar-img"
+                                onError={(e) => {
+                                  const wrapper = e.currentTarget.parentElement;
+                                  if (wrapper) {
+                                    e.currentTarget.style.display = 'none';
+                                    const initEl = wrapper.querySelector('.eval-trainee-avatar-fallback') as HTMLElement | null;
+                                    if (initEl) initEl.style.display = 'flex';
+                                  }
+                                }}
+                              />
+                            ) : null}
+                            <div
+                              className="eval-trainee-avatar-fallback eval-trainee-avatar"
+                              style={{ display: traineeAvatarUrl ? 'none' : 'flex' }}
+                            >
+                              {traineeInitials}
+                            </div>
+                          </div>
+                          <div className="eval-trainee-meta-text">
+                            <span className="eval-trainee-fullname">{traineeFullName}</span>
+                            <span className="eval-trainee-email">{sub.trainee?.email}</span>
+                          </div>
+                        </div>
+
+                        <span className="eval-time-badge" title={new Date(sub.submittedAt).toLocaleString()}>
+                          <Clock size={11} />
+                          <span>{getRelativeTime(sub.submittedAt)}</span>
+                        </span>
+                      </div>
+
+                      {/* Body: Task Context, Title, Assessment Type */}
+                      <div className="eval-card-body">
+                        {pathCrumb && (
+                          <span className="eval-hierarchy-crumb" title={pathCrumb}>
+                            <BookOpen size={11} />
+                            <span>{pathCrumb}</span>
+                          </span>
+                        )}
+
+                        <h3 className="eval-assignment-title">{taskTitle}</h3>
+
+                        <div className="eval-badges-row">
+                          {isAiEvaluated ? (
+                            <span className="eval-badge-pill eval-badge-ai">
+                              <Bot size={11} strokeWidth={1.75} />
+                              <span>AI-Assisted {aiScore != null ? `(${aiScore}/${maxScore})` : ''}</span>
+                            </span>
+                          ) : (
+                            <span className="eval-badge-pill eval-badge-manual">
+                              <FileCheck size={11} />
+                              <span>Manual Review Required</span>
+                            </span>
+                          )}
+
+                          <span className="eval-badge-pill" style={{ background: '#f1f5f9', color: '#475569' }}>
+                            Max: {maxScore} pts
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Footer: Direct Primary Review & Grade CTA */}
+                      <div className="eval-card-footer">
+                        <button
+                          type="button"
+                          className="btn-eval-review-action"
+                          onClick={async () => {
+                            try {
+                              const fullSub = await curriculumService.fetchSubmissionDetails(accessToken, sub.id);
+                              handleOpenReview(fullSub);
+                            } catch {
+                              handleOpenReview(sub);
+                            }
+                          }}
+                        >
+                          <span>Review & Grade</span>
+                          <ArrowRight size={14} />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
             </div>
           )}
+        </>
+      )}
 
-          {/* Assignment cards */}
+      {/* ═══ VIEW 2: ALL ASSIGNMENTS & TASKS ═══ */}
+      {activeMainTab === 'assignments' && (
+        <>
           {isLoadingAssignments ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading assignments...</div>
+            /* Skeleton Loading Rows for Assignment Catalog */
+            <div className="eval-assignments-list" aria-busy="true" aria-label="Loading assignments...">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div key={idx} className="eval-skeleton-row-item">
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div className="eval-skeleton-shimmer" style={{ width: '50%', height: '18px' }} />
+                    <div className="eval-skeleton-shimmer" style={{ width: '30%', height: '14px' }} />
+                  </div>
+                  <div className="eval-skeleton-shimmer" style={{ width: '120px', height: '34px' }} />
+                </div>
+              ))}
+            </div>
           ) : filteredAssignments.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', color: '#0f172a' }}>
-                {localFiltersState.difficulty ? `No assignments available at the ${
-                  localFiltersState.difficulty.split(',').map(d => [
-                    { label: 'Basic', value: 'basic' },
-                    { label: 'Medium', value: 'medium' },
-                    { label: 'Hard', value: 'hard' }
-                  ].find(o => String(o.value).toLowerCase() === String(d).toLowerCase().trim())?.label || d).join(', ')
-                } level.` : 'No assignments match these filters'}
-              </h3>
-              <p style={{ margin: '0 0 16px 0', color: '#64748b', fontSize: '14px' }}>Try adjusting or clearing your filters to see more assignments.</p>
-              <button 
+            /* Empty State */
+            <div className="eval-empty-state">
+              <div className="eval-empty-icon-box">
+                <FileText size={28} />
+              </div>
+              <h3 className="eval-empty-title">No Assignments Found</h3>
+              <p className="eval-empty-desc">
+                No curriculum tasks matched your current filter selection. Try resetting or adjusting your search.
+              </p>
+              <button
+                type="button"
+                className="eval-chip-clear-all-link"
                 onClick={() => setSearchParams({})}
-                style={{ padding: '8px 16px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', color: '#0f172a', fontWeight: 600, cursor: 'pointer' }}
               >
-                Clear Filters
+                Reset filters
               </button>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            /* Assignments List */
+            <div className="eval-assignments-list">
               {filteredAssignments.map((assign: any) => {
                 const rawStatus = (assign.status || 'Pending').toLowerCase();
                 let displayStatus = 'Pending';
-                if (rawStatus === 'accepted' || rawStatus === 'approved') {
+                if (rawStatus === 'accepted' || rawStatus === 'approved' || rawStatus === 'evaluated') {
                   displayStatus = 'Approved';
-                } else if (rawStatus === 'needs_improvement') {
-                  displayStatus = 'Needs Improvement';
-                } else if (rawStatus === 'rejected') {
+                } else if (rawStatus === 'rejected' || rawStatus === 'needs_improvement') {
                   displayStatus = 'Rejected';
                 }
 
-                // If it's pending, let's use the 'Submitted' yellow color as it means pending evaluation
                 const colorKey = displayStatus === 'Pending' ? 'Submitted' : displayStatus;
                 const sc = STATUS_COLORS[colorKey] || STATUS_COLORS.Pending;
-                
                 const pc = PRIORITY_COLORS[assign.priority || 'Medium'] || PRIORITY_COLORS.Medium;
+
                 let traineeName = 'Unassigned';
                 if (assign.trainee || assign.assignedTo) {
                   const t = assign.trainee || assign.assignedTo;
@@ -793,178 +1171,256 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
                 const isExpanded = expandedAssignmentId === assign.id;
 
                 return (
-                  <div key={assign.id} className="trainer-list-card">
-
-                    {/* LEFT SIDE: Task Details */}
-                    <div style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }}>{assign.title}</span>
-                          <span style={{ ...pc, padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, border: '1px solid' }}>{assign.priority || 'Medium'}</span>
-                          <span style={{ ...sc, padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, border: '1px solid', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: sc.dot, display: 'inline-block' }} />
+                  <article key={assign.id} className="eval-assignment-item">
+                    <div className="eval-assignment-main-row">
+                      {/* Left: Title, Priority, Status, Context */}
+                      <div className="eval-assignment-left">
+                        <div className="eval-assignment-title-row">
+                          <span className="eval-assignment-title-text">{assign.title}</span>
+                          <span
+                            style={{
+                              ...pc,
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              border: '1px solid',
+                            }}
+                          >
+                            {assign.priority || 'Medium'}
+                          </span>
+                          <span
+                            style={{
+                              ...sc,
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              border: '1px solid',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: '6px',
+                                height: '6px',
+                                borderRadius: '50%',
+                                background: sc.dot,
+                                display: 'inline-block',
+                              }}
+                            />
                             {displayStatus}
                           </span>
                         </div>
-                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                          {assign.module?.title && <span>📦 {assign.module.title}</span>}
-                          <span>👤 {traineeName}</span>
-                          {(assign.durationDays > 0 || assign.durationHours > 0 || assign.durationMinutes > 0) && <span>⏱️ Duration: {formatDuration(assign.durationDays, assign.durationHours, assign.durationMinutes)}</span>}
+
+                        <div className="eval-assignment-meta-strip">
+                          {assign.module?.title && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <Layers size={12} />
+                              <span>{assign.module.title}</span>
+                            </span>
+                          )}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Users size={12} />
+                            <span>{traineeName}</span>
+                          </span>
+                          {(assign.durationDays > 0 || assign.durationHours > 0 || assign.durationMinutes > 0) && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <Clock size={12} />
+                              <span>{formatDuration(assign.durationDays, assign.durationHours, assign.durationMinutes)}</span>
+                            </span>
+                          )}
                         </div>
                       </div>
 
-                      {/* RIGHT SIDE: Scores and Action Buttons */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        {/* Show Score if Evaluated */}
+                      {/* Right: Scores & Action Buttons */}
+                      <div className="eval-assignment-actions-right">
                         {assign.score != null && (
-                          <div style={{ fontSize: '13px', fontWeight: 700, color: '#4f46e5', minWidth: '60px', textAlign: 'right' }}>
+                          <span className="eval-score-badge">
                             {assign.score}/{assign.maxScore || 100}
-                          </div>
+                          </span>
                         )}
 
-                        {/* Action Buttons */}
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          {displayStatus === 'Pending' && assign.latestSubmission && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  const fullSub = await curriculumService.fetchSubmissionDetails(accessToken, assign.latestSubmission.id);
-                                  setSelectedSub(fullSub);
-                                } catch (err) {
-                                  console.error("Failed to load submission details", err);
-                                  setSelectedSub(assign.latestSubmission);
-                                }
-                              }}
-                              className="btn-trainer-action-primary"
-                            >
-                              Review & Grade
-                            </button>
-                          )}
+                        {displayStatus === 'Pending' && assign.latestSubmission && (
                           <button
                             type="button"
-                            onClick={() => setExpandedAssignmentId(isExpanded ? null : assign.id)}
-                            className={isExpanded ? "btn-trainer-action-primary" : "btn-trainer-action-secondary"}
+                            className="btn-trainer-action-primary"
+                            onClick={async () => {
+                              try {
+                                const fullSub = await curriculumService.fetchSubmissionDetails(
+                                  accessToken,
+                                  assign.latestSubmission.id
+                                );
+                                handleOpenReview(fullSub);
+                              } catch {
+                                handleOpenReview(assign.latestSubmission);
+                              }
+                            }}
                           >
-                            {isExpanded ? '⯅ Hide Details' : '⯆ View Details'}
+                            <span>Review & Grade</span>
                           </button>
-                        </div>
+                        )}
+
+                        <button
+                          type="button"
+                          className="btn-eval-toggle-details"
+                          onClick={() => setExpandedAssignmentId(isExpanded ? null : assign.id)}
+                          aria-expanded={isExpanded}
+                        >
+                          <span>{isExpanded ? 'Hide Details' : 'View Details'}</span>
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
                       </div>
                     </div>
 
-                    {/* EXPANDED DETAILS INLINE */}
+                    {/* Inline Expanded Panel */}
                     {isExpanded && (
-                      <div style={{ borderTop: '1px solid #f1f5f9', padding: '20px', background: '#f8fafc' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-
-                          <div style={{ background: '#fff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Task Path</span>
-                              <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                {[
-                                  assign.learningPath?.title || assign.module?.learningPath?.title || assign.lesson?.module?.learningPath?.title,
-                                  assign.module?.title || assign.lesson?.module?.title,
-                                  assign.lesson?.title,
-                                ].filter(Boolean).join(' ➔ ') || (assign.learningPath?.title || 'External Task')}
-                              </span>
-                            </div>
-                            <div>
-                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Submitted By (Latest)</span>
-                              <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                {assign.latestSubmission?.trainee ? `${assign.latestSubmission.trainee.firstName} ${assign.latestSubmission.trainee.lastName}`.trim() : 'No submissions yet'}
-                              </span>
-                            </div>
-                            <div>
-                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Duration</span>
-                              <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                {formatDuration(assign.durationDays, assign.durationHours, assign.durationMinutes)} (Anchor: {assign.anchorType === 'LP_ASSIGNED' ? 'When LP is Assigned' : assign.anchorType === 'TASK_UNLOCKED' ? 'When Task is Unlocked' : assign.anchorType})
-                              </span>
-                            </div>
-                            <div>
-                              <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Submitted At (Latest)</span>
-                              <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                {assign.latestSubmission?.submittedAt ? new Date(assign.latestSubmission.submittedAt).toLocaleString() : 'N/A'}
-                              </span>
-                            </div>
-                            {isAdminView && assign.latestSubmission?.evaluatedBy && (
-                              <div>
-                                <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Evaluated By</span>
-                                <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                  {assign.latestSubmission.evaluatedBy.firstName} {assign.latestSubmission.evaluatedBy.lastName}
-                                </span>
-                              </div>
-                            )}
-                            {isAdminView && assign.createdBy && (
-                              <div>
-                                <span style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Assigned By</span>
-                                <span style={{ fontSize: '13px', color: '#0f172a', fontWeight: 500 }}>
-                                  {assign.createdBy.firstName} {assign.createdBy.lastName}
-                                </span>
-                              </div>
-                            )}
+                      <div className="eval-assignment-expanded-panel">
+                        <div className="eval-meta-grid-box">
+                          <div className="eval-meta-item">
+                            <span className="eval-meta-item-label">Curriculum Track Hierarchy</span>
+                            <span className="eval-meta-item-val">
+                              {[
+                                assign.learningPath?.title ||
+                                  assign.module?.learningPath?.title ||
+                                  assign.lesson?.module?.learningPath?.title,
+                                assign.module?.title || assign.lesson?.module?.title,
+                                assign.lesson?.title,
+                              ]
+                                .filter(Boolean)
+                                .join(' ➔ ') || 'External Task'}
+                            </span>
                           </div>
 
-                          {assign.instructions && (
-                            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '12px' }}>
-                              <div style={{ fontSize: '11px', fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', marginBottom: '4px' }}>Instructions</div>
-                              <div 
-                                style={{ fontSize: '13px', color: '#0c4a6e', margin: 0 }} 
-                                dangerouslySetInnerHTML={{ __html: assign.instructions }} 
-                              />
-                            </div>
-                          )}
+                          <div className="eval-meta-item">
+                            <span className="eval-meta-item-label">Latest Submitter</span>
+                            <span className="eval-meta-item-val">
+                              {assign.latestSubmission?.trainee
+                                ? `${assign.latestSubmission.trainee.firstName || ''} ${
+                                    assign.latestSubmission.trainee.lastName || ''
+                                  }`.trim()
+                                : 'No submissions yet'}
+                            </span>
+                          </div>
 
-                          {/* Trainee Answer Rendering */}
-                          {assign.latestSubmission ? (
-                            <div style={{ marginTop: '10px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                                <strong style={{ fontSize: '13px', color: '#0f172a', display: 'block' }}>Latest Trainee Solution Breakdown:</strong>
-                                {assign.score != null && (
-                                  <span style={{ background: '#dcfce7', color: '#166534', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>Score: {assign.score} / {assign.maxScore}</span>
-                                )}
-                              </div>
-                              {renderParsedSubmission(assign.latestSubmission)}
-                            </div>
-                          ) : assign.mcqConfig?.questions?.length > 0 ? (
-                            <div className="h-auto min-h-0" style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                              <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block', marginBottom: '10px' }}>Assignment Questions:</strong>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                {assign.mcqConfig.questions.map((q: any, qIdx: number) => {
-                                  const qText = q.text || q.questionText || q.question || `Question ${qIdx + 1}`;
-                                  const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-                                  return (
-                                    <div key={qIdx} className="h-auto min-h-0" style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                                        <span>Q{qIdx + 1}: {qText}</span>
-                                        <span style={{ fontSize: '11px', color: '#4f46e5', background: '#eef2ff', padding: '2px 8px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
-                                          {q.points || q.maxPoints || 10} pts
-                                        </span>
-                                      </div>
-                                      {q.options?.length > 0 && (
-                                        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                          {q.options.map((opt: string, optIdx: number) => (
-                                            <div key={optIdx} style={{ fontSize: '12px', color: '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                              <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#e2e8f0', color: '#334155', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                {optionLetters[optIdx] || optIdx + 1}
-                                              </span>
-                                              <span>{opt}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          ) : (
-                            <div style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic', padding: '10px 0' }}>No questions or submissions yet.</div>
-                          )}
+                          <div className="eval-meta-item">
+                            <span className="eval-meta-item-label">Duration & Pacing Anchor</span>
+                            <span className="eval-meta-item-val">
+                              {formatDuration(assign.durationDays, assign.durationHours, assign.durationMinutes)} (
+                              {assign.anchorType === 'LP_ASSIGNED'
+                                ? 'When LP is Assigned'
+                                : assign.anchorType === 'TASK_UNLOCKED'
+                                ? 'When Task is Unlocked'
+                                : assign.anchorType || 'Default'}
+                              )
+                            </span>
+                          </div>
 
+                          <div className="eval-meta-item">
+                            <span className="eval-meta-item-label">Submitted Timestamp</span>
+                            <span className="eval-meta-item-val">
+                              {assign.latestSubmission?.submittedAt
+                                ? new Date(assign.latestSubmission.submittedAt).toLocaleString()
+                                : 'N/A'}
+                            </span>
+                          </div>
                         </div>
+
+                        {assign.instructions && (
+                          <div className="eval-instructions-box">
+                            <div className="eval-instructions-label">Task Instructions</div>
+                            <div
+                              className="eval-instructions-content"
+                              dangerouslySetInnerHTML={{ __html: assign.instructions }}
+                            />
+                          </div>
+                        )}
+
+                        {/* Trainee Answer or Questions Breakdown */}
+                        {assign.latestSubmission ? (
+                          <div style={{ marginTop: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                              <strong style={{ fontSize: '13px', color: '#0f172a' }}>Latest Trainee Solution Breakdown:</strong>
+                              {assign.score != null && (
+                                <span style={{ background: '#dcfce7', color: '#166534', padding: '3px 8px', borderRadius: '6px', fontSize: '12px', fontWeight: 700 }}>
+                                  Score: {assign.score} / {assign.maxScore}
+                                </span>
+                              )}
+                            </div>
+                            {renderParsedSubmission(assign.latestSubmission)}
+                          </div>
+                        ) : assign.mcqConfig?.questions?.length > 0 ? (
+                          <div style={{ background: '#fff', padding: '14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                            <strong style={{ fontSize: '13px', color: '#1e293b', display: 'block', marginBottom: '8px' }}>
+                              Assignment Questions Breakdown:
+                            </strong>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {assign.mcqConfig.questions.map((q: any, qIdx: number) => {
+                                const qText = q.text || q.questionText || q.question || `Question ${qIdx + 1}`;
+                                const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+                                return (
+                                  <div
+                                    key={qIdx}
+                                    style={{
+                                      background: '#f8fafc',
+                                      padding: '10px 12px',
+                                      borderRadius: '6px',
+                                      border: '1px solid #e2e8f0',
+                                    }}
+                                  >
+                                    <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                                      <span>
+                                        Q{qIdx + 1}: {qText}
+                                      </span>
+                                      <span style={{ fontSize: '11px', color: '#4f46e5', background: '#eef2ff', padding: '1px 6px', borderRadius: '4px', whiteSpace: 'nowrap' }}>
+                                        {q.points || q.maxPoints || 10} pts
+                                      </span>
+                                    </div>
+                                    {q.options?.length > 0 && (
+                                      <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                        {q.options.map((opt: string, optIdx: number) => (
+                                          <div
+                                            key={optIdx}
+                                            style={{
+                                              fontSize: '11.5px',
+                                              color: '#475569',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '6px',
+                                            }}
+                                          >
+                                            <span
+                                              style={{
+                                                width: '16px',
+                                                height: '16px',
+                                                borderRadius: '50%',
+                                                background: '#e2e8f0',
+                                                color: '#334155',
+                                                fontSize: '9.5px',
+                                                fontWeight: 700,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                              }}
+                                            >
+                                              {optionLetters[optIdx] || optIdx + 1}
+                                            </span>
+                                            <span>{opt}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     )}
-                  </div>
+                  </article>
                 );
               })}
             </div>
@@ -972,189 +1428,16 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
         </>
       )}
 
-      {/* ═══ TAB 2: EVALUATIONS ═══ */}
-      {currentTab === 'evaluations' && (
-        <>
-          <div style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }}>Pending Trainee Evaluations</span>
-            {filteredPendingSubmissions.length > 0 && (
-              <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', borderRadius: '9999px', padding: '2px 10px', fontSize: '12px', fontWeight: 700 }}>
-                {filteredPendingSubmissions.length > 5 ? '5+' : filteredPendingSubmissions.length} awaiting review
-              </span>
-            )}
-          </div>
-
-          {isLoadingSubmissions ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading submissions...</div>
-          ) : filteredPendingSubmissions.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '60px', background: '#f8fafc', borderRadius: '12px', border: '2px dashed #e2e8f0' }}>
-              <div style={{ fontSize: '32px', marginBottom: '12px' }}>✅</div>
-              <div style={{ fontWeight: 700, color: '#475569' }}>All caught up!</div>
-              <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>No pending submissions to evaluate.</div>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              {(() => {
-                const filteredSubs = filteredPendingSubmissions.filter((sub: any) => {
-                  if (!searchQuery.trim()) return true;
-                  const query = searchQuery.toLowerCase();
-                  const traineeName = `${sub.trainee?.firstName || ''} ${sub.trainee?.lastName || ''}`.toLowerCase();
-                  const titleMatch = (sub.assignment?.title || '').toLowerCase().includes(query);
-                  const emailMatch = (sub.trainee?.email || '').toLowerCase().includes(query);
-                  return traineeName.includes(query) || titleMatch || emailMatch;
-                });
-
-                if (filteredSubs.length === 0) {
-                  return <div style={{ fontSize: '13px', color: '#64748b', padding: '10px' }}>No matches found for "{searchQuery}".</div>;
-                }
-
-                const aiEvaluated = filteredSubs.filter((s: any) => s.status === 'ai_evaluated_pending_review' || s.aiTotalScore != null);
-                const manualPending = filteredSubs.filter((s: any) => s.status !== 'ai_evaluated_pending_review' && s.aiTotalScore == null);
-
-                const renderSubmissionList = (subs: any[], actionText: string) => (
-                  <div className="evaluations-grid">
-                    {subs.map((sub: any) => (
-                      <div key={sub.id} className="trainer-list-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: '15px', color: '#0f172a' }} className="text-truncate">
-                            👤 {sub.trainee?.firstName} {sub.trainee?.lastName || ''}
-                            <span style={{ color: '#64748b', fontSize: '12px', fontWeight: 400, marginLeft: '8px' }}>({sub.trainee?.email})</span>
-                          </div>
-                          <div style={{ fontSize: '13px', color: '#334155', marginTop: '6px' }}>
-                            Submitted: <strong className="text-truncate" style={{ display: 'inline-block', maxWidth: '100%', verticalAlign: 'bottom' }}>"{sub.assignment?.title}"</strong><br/>
-                            Max Score: {sub.assignment?.maxScore || 100} pts
-                          </div>
-                          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '4px' }}>
-                            {sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'Date unknown'}
-                          </div>
-                        </div>
-                        <div style={{ marginTop: 'auto' }}>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const fullSub = await curriculumService.fetchSubmissionDetails(accessToken, sub.id);
-                                setSelectedSub(fullSub);
-                              } catch (err) {
-                                console.error("Failed to load submission details", err);
-                                setSelectedSub(sub);
-                              }
-                            }}
-                            className="btn-trainer-action-primary"
-                            style={{ width: '100%', padding: '10px 0' }}
-                          >
-                            {actionText}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-
-                const activeMode = localFiltersState['evaluationMode'] || undefined;
-                const setEvaluationMode = (mode: string | null) => {
-                  const newFilters = { ...localFiltersState };
-                  if (!mode) {
-                    delete newFilters.evaluationMode;
-                  } else {
-                    newFilters.evaluationMode = mode;
-                  }
-                  setSearchParams(newFilters);
-                };
-
-                return (
-                  <div className="pending-evaluations">
-                    <div className="filter-pill-row" role="tablist" aria-label="Filter pending evaluations">
-                      <button
-                        role="tab"
-                        aria-selected={!activeMode}
-                        className={`filter-pill ${!activeMode ? 'active' : ''}`}
-                        onClick={() => setEvaluationMode(null)}
-                      >
-                        All ({filteredSubs.length})
-                      </button>
-                      <button
-                        role="tab"
-                        aria-selected={activeMode === 'ai-assisted'}
-                        className={`filter-pill ${activeMode === 'ai-assisted' ? 'active' : ''}`}
-                        onClick={() => setEvaluationMode('ai-assisted')}
-                      >
-                        AI Evaluated ({aiEvaluated.length})
-                      </button>
-                      <button
-                        role="tab"
-                        aria-selected={activeMode === 'manual'}
-                        className={`filter-pill ${activeMode === 'manual' ? 'active' : ''}`}
-                        onClick={() => setEvaluationMode('manual')}
-                      >
-                        Direct Evaluation ({manualPending.length})
-                      </button>
-                    </div>
-
-                    {filteredSubs.length === 0 ? (
-                      <div style={{ fontSize: '13px', color: '#64748b', padding: '10px' }}>No matches found for "{searchQuery}".</div>
-                    ) : (
-                      <>
-                        {(!activeMode || activeMode === 'ai-assisted') && (
-                          <div style={{ marginBottom: '32px' }}>
-                            {aiEvaluated.length > 0 ? (
-                              <>
-                                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#3730a3', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  🤖 AI Evaluated (Needs Trainer Review)
-                                </h4>
-                                {renderSubmissionList(aiEvaluated, 'Review & Grade')}
-                              </>
-                            ) : (
-                              activeMode === 'ai-assisted' && (
-                                <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#475569', fontSize: '14px' }}>
-                                  No AI-evaluated submissions pending review.
-                                </div>
-                              )
-                            )}
-                          </div>
-                        )}
-
-                        {(!activeMode || activeMode === 'manual') && (
-                          <div style={{ marginBottom: '32px' }}>
-                            {manualPending.length > 0 ? (
-                              <>
-                                <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#b45309', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                  ✍️ Pending Manual Evaluation
-                                </h4>
-                                {renderSubmissionList(manualPending, 'Evaluate')}
-                              </>
-                            ) : (
-                              activeMode === 'manual' && (
-                                <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#475569', fontSize: '14px' }}>
-                                  No direct submissions pending evaluation.
-                                </div>
-                              )
-                            )}
-                          </div>
-                        )}
-                        
-                        {!activeMode && aiEvaluated.length === 0 && manualPending.length === 0 && (
-                          <div style={{ padding: '24px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1', textAlign: 'center', color: '#475569', fontSize: '14px' }}>
-                            All caught up! No pending evaluations.
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ═══ EVALUATION MODAL ═══ */}
+      {/* ═══ 5. EVALUATION MODAL (SUBMISSION DETAIL VIEW) ═══ */}
       {selectedSub && (
-        <SubmissionDetailView 
+        <SubmissionDetailView
           submission={selectedSub}
           accessToken={accessToken}
           isAdminView={isAdminView}
-          onClose={() => { setSelectedSub(null); clearIdParam(); }}
+          onClose={() => {
+            setSelectedSub(null);
+            clearIdParam();
+          }}
           onEvaluated={() => {
             setSelectedSub(null);
             clearIdParam();
@@ -1163,8 +1446,6 @@ export function TrainerEvaluationDashboard({ accessToken, currentUser, activeSec
           }}
         />
       )}
-
-
     </div>
   );
 }

@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import "../../App.css";
+import "./UserManagement.css";
 import { API_BASE_URL } from '../../api';
 import { analyticsService } from '../../services/lmsApi';
 import { UserProfileDrawer } from './UserProfileDrawer';
 import { useScrollLock } from '../../hooks/useScrollLock';
+import { RefreshCw, Users, GraduationCap, UserCheck, Search, Plus } from 'lucide-react';
 
 export type UserStatus = 'Active' | 'Inactive' | 'At Risk';
 export type AppRole = 'Admin' | 'Trainer' | 'Trainee';
@@ -234,60 +236,53 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
     }
   };
 
+  const handleUserUpdated = (updatedUser: UserDetail) => {
+    setUsers((prev) => prev.map((u) => (u.id === updatedUser.id ? updatedUser : u)));
+    setSelectedUser(updatedUser);
+  };
+
+  const handleUserDeleted = (userId: string) => {
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    setSelectedUser(null);
+    setActiveModal('NONE');
+  };
+
   return (
     <div className="users-management-wrapper">
-      {/* 1. Header Area */}
+      {/* 1. Header Area with Action Controls */}
       <div className="section-header-meta">
-        <div className="section-header-row">
+        <div className="section-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h1 className="main-section-title">User Management</h1>
             <p className="sub-heading-text">{metrics.total} total users • {metrics.atRisk} at risk</p>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              type="button"
+              className="btn-refresh-users"
+              onClick={() => loadUsers()}
+              title="Refresh users directory"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <RefreshCw size={13} strokeWidth={2} /> Refresh
+            </button>
+            <button
+              type="button"
+              className="btn-primary-invite"
+              onClick={handleOpenAddUserModal}
+            >
+              <Plus size={14} strokeWidth={2.5} /> Invite User
+            </button>
+          </div>
         </div>
       </div>
-
-      {/* Floating Action Button (FAB) for Inviting Users */}
-      <button
-        type="button"
-        className="invite-user-fab"
-        onClick={handleOpenAddUserModal}
-        style={{
-          position: 'fixed',
-          bottom: '32px',
-          right: '32px',
-          zIndex: 1000,
-          background: '#4f46e5',
-          color: '#ffffff',
-          border: 'none',
-          borderRadius: '30px',
-          padding: '16px 24px',
-          fontSize: '15px',
-          fontWeight: 700,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          boxShadow: '0 10px 25px -5px rgba(79, 70, 229, 0.4)',
-          cursor: 'pointer',
-          transition: 'transform 0.2s, box-shadow 0.2s'
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'translateY(-3px)';
-          e.currentTarget.style.boxShadow = '0 15px 30px -5px rgba(79, 70, 229, 0.5)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(79, 70, 229, 0.4)';
-        }}
-      >
-        <span style={{ fontSize: '20px', lineHeight: 1 }}>+</span> Invite User
-      </button>
 
       {/* 2. Top Metric Cards Row */}
       <section className="metrics-grid-row">
         <div className="metric-panel-card card-primary clickable" onClick={() => { setSelectedRoleFilter('All'); setStatusFilter('All'); }}>
           <div className="card-header-info">
             <h3>{metrics.total}</h3>
-            <span className="card-icon">👤</span>
+            <span className="card-icon" style={{ display: 'inline-flex', alignItems: 'center' }}><Users size={18} strokeWidth={1.75} /></span>
           </div>
           <p className="card-label">Total Users <span className="fade-text">across all roles</span></p>
         </div>
@@ -295,7 +290,7 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
         <div className="metric-panel-card card-success clickable" onClick={() => { setSelectedRoleFilter('Trainee'); setStatusFilter('All'); }}>
           <div className="card-header-info">
             <h3>{metrics.activeTrainees}</h3>
-            <span className="card-icon">🎓</span>
+            <span className="card-icon" style={{ display: 'inline-flex', alignItems: 'center' }}><GraduationCap size={18} strokeWidth={1.75} /></span>
           </div>
           <p className="card-label">Active Trainees <span className="fade-text">in platform</span></p>
         </div>
@@ -303,7 +298,7 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
         <div className="metric-panel-card card-info clickable" onClick={() => { setSelectedRoleFilter('Trainer'); setStatusFilter('All'); }}>
           <div className="card-header-info">
             <h3>{metrics.activeTrainers}</h3>
-            <span className="card-icon">👥</span>
+            <span className="card-icon" style={{ display: 'inline-flex', alignItems: 'center' }}><UserCheck size={18} strokeWidth={1.75} /></span>
           </div>
           <p className="card-label">Active Trainers <span className="fade-text">in platform</span></p>
         </div>
@@ -313,7 +308,7 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
       <section className="filter-action-strip">
         <div className="filter-left-group">
           <div className="search-box-container">
-            <span className="search-icon">🔍</span>
+            <span className="search-icon" style={{ display: 'inline-flex', alignItems: 'center' }}><Search size={15} strokeWidth={2} /></span>
             <input
               type="text"
               className="search-input-field"
@@ -343,12 +338,22 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
       {/* 4. High Fidelity Data Table */}
       <section className="table-viewport-container">
         {isLoading && (
-          <div className="table-status-message">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {[1, 2, 3].map(i => (
-                <div key={i} className="skeleton-row" style={{ height: '56px', background: '#f1f5f9', borderRadius: '8px', animation: 'pulse 1.5s infinite' }} />
-              ))}
-            </div>
+          <div className="table-status-message" style={{ padding: 0 }}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="table-skeleton-row">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div className="skeleton-shimmer-cell" style={{ width: '40px', height: '40px', borderRadius: '50%' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div className="skeleton-shimmer-cell" style={{ width: '130px', height: '14px' }} />
+                    <div className="skeleton-shimmer-cell" style={{ width: '180px', height: '12px' }} />
+                  </div>
+                </div>
+                <div className="skeleton-shimmer-cell" style={{ width: '70px', height: '24px', borderRadius: '999px' }} />
+                <div className="skeleton-shimmer-cell" style={{ width: '65px', height: '22px', borderRadius: '999px' }} />
+                <div className="skeleton-shimmer-cell" style={{ width: '85px', height: '14px' }} />
+                <div className="skeleton-shimmer-cell" style={{ width: '95px', height: '32px', borderRadius: '8px' }} />
+              </div>
+            ))}
           </div>
         )}
 
@@ -363,7 +368,9 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
 
         {!isLoading && !loadError && filteredUsers.length === 0 && (
           <div className="empty-state-container" style={{ textAlign: 'center', padding: '64px 24px' }}>
-            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🔍</div>
+            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Search size={22} strokeWidth={1.75} />
+            </div>
             <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#0f172a', margin: '0 0 8px' }}>No users found</h3>
             <p style={{ color: '#64748b', margin: '0 0 24px' }}>Try adjusting your search or role filters to find who you're looking for.</p>
             <button type="button" className="retry-load-btn" onClick={() => { setSearchTerm(''); setSelectedRoleFilter('All'); setStatusFilter('All'); }}>
@@ -387,7 +394,10 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
                         <span className="email-string">{user.email}</span>
                       </div>
                     </div>
-                    <button type="button" className="row-ellipsis-menu" onClick={(e) => e.stopPropagation()}>•••</button>
+                    <span className={`status-badge-inline ${user.status.toLowerCase().replace(' ', '-')}`}>
+                      <span className="status-dot-inline" />
+                      {user.status}
+                    </span>
                   </div>
                   <div className="mobile-user-meta">
                     <span className={`role-pill-badge role-${user.primaryRole.toLowerCase()}`}>
@@ -407,8 +417,9 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
                 <tr>
                   <th>NAME</th>
                   <th>ROLE</th>
+                  <th>STATUS</th>
                   <th>JOINED</th>
-                  <th className="text-right-aligned">View Details</th>
+                  <th className="text-right-aligned">ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -428,10 +439,15 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
                         {user.primaryRole}
                       </span>
                     </td>
+                    <td>
+                      <span className={`status-badge-inline ${user.status.toLowerCase().replace(' ', '-')}`}>
+                        <span className="status-dot-inline" />
+                        {user.status}
+                      </span>
+                    </td>
                     <td><span className="registry-date-label">{user.joinedDisplay}</span></td>
                     <td className="text-right-aligned">
                       <div className="actions-button-wrapper">
-                        <button type="button" className="row-ellipsis-menu" onClick={(e) => e.stopPropagation()}>•••</button>
                         <button
                           type="button"
                           className="view-details-action-btn"
@@ -455,6 +471,9 @@ export function UsersSection({ onOpenInviteModal, accessToken }: UsersSectionPro
           user={selectedUser}
           isOpen={activeModal === 'VIEW_DETAILS'}
           onClose={handleCloseAnyModal}
+          onUserUpdated={handleUserUpdated}
+          onUserDeleted={handleUserDeleted}
+          accessToken={accessToken}
         />
       )}
 

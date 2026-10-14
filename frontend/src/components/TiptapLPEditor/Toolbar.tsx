@@ -3,7 +3,7 @@ import { Editor } from '@tiptap/react';
 import { 
   Bold, Italic, List, ListOrdered, Heading2, 
   Layers, PlaySquare, FileText, Video, Headphones, Link2, HelpCircle,
-  Sparkles
+  Command
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -281,8 +281,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
       </div>
 
       <div className="toolbar-tip">
-        <Sparkles size={12} color="#6366f1" />
-        <span>Type <strong>/</strong> in document for fast commands</span>
+        <Command size={12} color="#64748b" />
+        <span>Type <strong>/</strong> in document for quick commands</span>
       </div>
     </div>
   );

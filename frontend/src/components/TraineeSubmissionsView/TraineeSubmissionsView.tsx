@@ -67,19 +67,19 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
       };
     }
 
-    if (percentage >= 45) {
+    if (percentage >= 35) {
       return {
-        statusText: 'EVALUATED - GOOD',
+        statusText: 'EVALUATED - PASSED',
         scoreText: `${score} / ${maxScore} Points (${percentage}%)`,
         percentage,
-        color: '#c2410c',
-        bgColor: '#ffedd5',
-        borderColor: '#fed7aa',
+        color: '#166534',
+        bgColor: '#dcfce7',
+        borderColor: '#86efac',
       };
     }
 
     return {
-      statusText: 'EVALUATED - NEEDS IMPROVEMENT',
+      statusText: 'EVALUATED - NEED IMPROVEMENT',
       scoreText: `${score} / ${maxScore} Points (${percentage}%)`,
       percentage,
       color: '#b91c1c',
@@ -227,7 +227,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {submissions.map((sub) => {
             const metrics = getSubmissionMetrics(sub);
-            const canResubmit = sub.status === 'Rejected' || (metrics.percentage !== null && metrics.percentage < 50);
+            const canResubmit = (metrics.percentage !== null && metrics.percentage < 35) || (sub.status === 'Rejected' && (metrics.percentage === null || metrics.percentage < 35));
 
             return (
               <div
@@ -305,7 +305,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
                 {canResubmit && (
                   <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fef2f2', padding: '12px', borderRadius: '6px', border: '1px solid #fecaca' }}>
                     <span style={{ fontSize: '12px', color: '#991b1b', fontWeight: 500 }}>
-                      ⚠️ Task was rejected or score is under 50%. You can resubmit an updated response!
+                      ⚠️ Assignment score is below 35% (Fail). You can resubmit an updated response!
                     </span>
                     <button
                       type="button"

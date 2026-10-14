@@ -213,11 +213,11 @@ export class UserEntityService extends BaseService<UserEntity> {
     return await this.repository.softRemove(user);
   }
 
-  async getUserProfileStats(id: string): Promise<any> {
+  async getUserProfileStats(id: string, requestedRole?: string): Promise<any> {
     const user = await this.findOne(id);
     if (!user) throw new NotFoundException('User not found');
 
-    const primaryRole = user.primaryRole?.name || 'Trainee';
+    const primaryRole = requestedRole || user.primaryRole?.name || 'Trainee';
     const em = this.repository.manager;
 
     const stats: any = {};

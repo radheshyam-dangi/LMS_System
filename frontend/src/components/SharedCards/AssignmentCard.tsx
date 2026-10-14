@@ -39,39 +39,46 @@ export const AssignmentCard: React.FC<Props> = ({
   const isExpired = submission?.deadline && new Date(submission.deadline).getTime() < Date.now();
   
   const maxScore = (task as any).maxScore || 100;
-  const isBelowCutoff = status.toUpperCase() === 'APPROVED' && typeof submission?.score === 'number' && (submission.score / maxScore) * 100 < 35;
+  const scorePct = typeof submission?.score === 'number' ? (submission.score / maxScore) * 100 : null;
+  const isBelow35 = scorePct !== null && scorePct < 35;
   
   const rawStatus = (submission?.status || 'Pending').trim();
   let displayStatus = 'Pending';
-  if (isLocked || rawStatus.toUpperCase() === 'LOCKED') {
+  if (isLocked || status === 'LOCKED') {
     displayStatus = 'Locked';
-  } else if (rawStatus.toLowerCase() === 'approved') {
-    displayStatus = 'Approved';
-  } else if (rawStatus.toUpperCase() === 'NEEDS_IMPROVEMENT' || rawStatus.toLowerCase() === 'needs_improvement') {
-    displayStatus = 'Needs Improvement';
-  } else if (rawStatus.toLowerCase() === 'evaluating') {
-    displayStatus = 'Evaluating';
-  } else if (rawStatus === 'ai_evaluated_pending_review' || rawStatus === 'pending_manual_review') {
-    displayStatus = 'Under Review';
   } else if (rawStatus.toUpperCase() === 'AVAILABLE') {
     displayStatus = 'Available';
   } else if (rawStatus.toUpperCase() === 'SUBMITTED' || rawStatus.toLowerCase() === 'submitted') {
     displayStatus = 'Submitted';
-  } else if (rawStatus.toUpperCase() === 'REJECTED' || rawStatus.toLowerCase() === 'rejected') {
-    displayStatus = 'Rejected';
+  } else if (rawStatus === 'ai_evaluated_pending_review' || rawStatus === 'pending_manual_review') {
+    displayStatus = 'Under Review';
+  } else if (rawStatus.toLowerCase() === 'evaluating') {
+    displayStatus = 'Evaluating';
+  } else if (isTrainee) {
+    // Trainee Role: Conditionally display 'Need Improvement' only if assignment score is below 35% (Fail)
+    if (isBelow35 || (rawStatus.toUpperCase() === 'REJECTED' && scorePct === null)) {
+      displayStatus = 'Need Improvement';
+    } else if (rawStatus.toLowerCase() === 'approved' || rawStatus.toLowerCase() === 'evaluated' || rawStatus.toUpperCase() === 'NEEDS_IMPROVEMENT') {
+      displayStatus = 'Approved';
+    } else {
+      displayStatus = 'Pending';
+    }
   } else {
-    displayStatus = rawStatus.replace(/_/g, ' ');
-    displayStatus = displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1);
-  }
-
-  if (isBelowCutoff) {
-    displayStatus = 'Needs Improvement';
+    // Trainer Role: Trainers should only see 'All', 'Approved', and 'Rejected'
+    if (rawStatus.toLowerCase() === 'approved' || rawStatus.toLowerCase() === 'evaluated') {
+      displayStatus = 'Approved';
+    } else if (rawStatus.toLowerCase() === 'rejected' || isBelow35 || rawStatus.toUpperCase() === 'NEEDS_IMPROVEMENT') {
+      displayStatus = 'Rejected';
+    } else {
+      displayStatus = 'Pending';
+    }
   }
 
   const getBadgeStyle = (st: string) => {
     switch (st) {
       case 'Approved':
         return { bg: '#dcfce7', color: '#166534', border: '#bbf7d0' };
+      case 'Need Improvement':
       case 'Needs Improvement':
         return { bg: '#ffedd5', color: '#c2410c', border: '#fed7aa' };
       case 'Under Review':
@@ -163,7 +170,7 @@ export const AssignmentCard: React.FC<Props> = ({
           {displayStatus}
           {typeof submission?.score === 'number' ? ` · ${submission.score}` : ''}
         </span>
-        {isTrainee && displayStatus !== 'Approved' && !isLocked && status !== 'LOCKED' && !isExpired && (
+        {isTrainee && displayStatus !== 'Approved' && displayStatus !== 'Submitted' && !isLocked && status !== 'LOCKED' && !isExpired && (
           <button
             type="button"
             onClick={(e) => {
@@ -172,7 +179,7 @@ export const AssignmentCard: React.FC<Props> = ({
             }}
             style={{ 
               padding: '6px 14px', 
-              background: '#4f46e5', 
+              background: displayStatus === 'Need Improvement' ? '#c2410c' : '#4f46e5', 
               color: '#fff', 
               border: 'none', 
               borderRadius: 6, 
@@ -183,10 +190,10 @@ export const AssignmentCard: React.FC<Props> = ({
               transition: 'background 0.15s',
               boxShadow: '0 1px 2px rgba(79,70,229,0.2)'
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = '#4338ca'}
-            onMouseLeave={(e) => e.currentTarget.style.background = '#4f46e5'}
+            onMouseEnter={(e) => e.currentTarget.style.background = displayStatus === 'Need Improvement' ? '#9a3412' : '#4338ca'}
+            onMouseLeave={(e) => e.currentTarget.style.background = displayStatus === 'Need Improvement' ? '#c2410c' : '#4f46e5'}
           >
-            {isTaskSubmitted ? 'Resubmit' : 'Submit'}
+            {displayStatus === 'Need Improvement' ? 'Resubmit' : 'Submit'}
           </button>
         )}
       </div>

@@ -1,7 +1,35 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer
+} from "recharts";
+import {
+  BookOpen,
+  Layers,
+  Users,
+  Clock,
+  ArrowRight,
+  Search,
+  X,
+  Plus,
+  Edit,
+  Trash2,
+  UserPlus,
+  BarChart2,
+  ChevronRight,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  FileText,
+  UserCheck,
+  TrendingUp,
+  Award
+} from "lucide-react";
 import "./LearningPaths.css";
 import { learningPathService } from "../../services/learningPathService";
 import { userService } from "../../services/userService";
@@ -19,7 +47,10 @@ import type {
 interface LearningPathsSectionProps {
   currentUser: {
     id: string;
-    name: string;
+    name?: string;
+    firstName?: string;
+    lastName?: string;
+    email?: string;
     role: RoleName;
   };
   accessToken: string;
@@ -34,120 +65,113 @@ interface TraineeUser {
   firstName?: string;
   lastName?: string;
   email: string;
+  avatarUrl?: string;
+  imageUrl?: string;
   roles?: any[];
   primaryRole?: any;
 }
 
-const DescriptionModal = ({ description, onClose }: { description: string; onClose: () => void }) => {
-  useScrollLock(true);
+type FilterScope = "All" | "Mine" | "Active" | "Upcoming" | "Completed";
+type SortOption = "recent" | "title" | "trainees" | "progress";
 
-  // Focus trap / escape key handling
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+/* ==========================================================================
+   HELPER UTILITIES
+   ========================================================================== */
 
-  const modalContent = (
-    <div className="modal-overlay" onClick={onClose} style={{ zIndex: 1000, position: 'fixed', inset: 0, background: 'rgba(15, 15, 20, 0.55)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)' }}>
-      <div 
-        className="modal-content" 
-        onClick={(e) => e.stopPropagation()} 
-        role="dialog" 
-        aria-modal="true"
-        aria-labelledby="desc-modal-title"
-        style={{ zIndex: 1001, width: '90vw', maxWidth: '480px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', background: '#fff', borderRadius: '16px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}
-      >
-        <div style={{ padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
-          <h2 id="desc-modal-title" style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#1e293b' }}>Full Description</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
-        </div>
-        <div style={{ padding: '24px', flex: 1 }}>
-          <p style={{ margin: 0, whiteSpace: 'pre-wrap', color: '#334155', fontSize: '15px', lineHeight: 1.6, wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-            {description}
-          </p>
-        </div>
-        <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', position: 'sticky', bottom: 0, background: '#fff', zIndex: 10 }}>
-          <button onClick={onClose} style={{ padding: '10px 20px', background: '#f1f5f9', color: '#475569', borderRadius: '8px', border: 'none', fontWeight: 600, cursor: 'pointer' }}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
-
-  return createPortal(modalContent, document.body);
+const formatDuration = (d?: string) => {
+  if (!d) return "12 weeks";
+  const trimmed = d.trim();
+  if (/^1\s*weeks?$/i.test(trimmed)) return "1 week";
+  return trimmed;
 };
 
-const ExpandableDescription = ({ description }: { description: string }) => {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const textRef = React.useRef<HTMLParagraphElement>(null);
-  const buttonRef = React.useRef<HTMLButtonElement>(null);
+const getTraineeInitials = (
+  firstName?: string,
+  lastName?: string,
+  fullName?: string,
+  email?: string
+): string => {
+  const f = firstName && firstName !== "undefined" ? firstName.trim() : "";
+  const l = lastName && lastName !== "undefined" ? lastName.trim() : "";
 
-  const plainTextDescription = React.useMemo(() => {
-    if (!description) return "";
-    return description.replace(/<[^>]*>?/gm, '').replace(/&nbsp;/g, ' ').trim();
-  }, [description]);
+  // 1. If distinct first and last names exist: first character of each
+  if (f && l) {
+    return `${f[0]}${l[0]}`.toUpperCase();
+  }
+  if (f) {
+    return f.length >= 2 ? f.slice(0, 2).toUpperCase() : f.toUpperCase();
+  }
+  if (l) {
+    return l.length >= 2 ? l.slice(0, 2).toUpperCase() : l.toUpperCase();
+  }
 
-  useEffect(() => {
-    const el = textRef.current;
-    if (el) {
-      if (el.scrollHeight > el.clientHeight) {
-        setIsOverflowing(true);
-      } else {
-        setIsOverflowing(false);
-      }
+  // 2. Parse from fullName if distinct fields were not provided
+  const cleanName =
+    fullName &&
+    fullName !== "undefined" &&
+    fullName !== "undefined undefined"
+      ? fullName.trim()
+      : "";
+
+  if (cleanName) {
+    const parts = cleanName
+      .split(/\s+/)
+      .filter((p) => p && p.toLowerCase() !== "undefined");
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
     }
-  }, [plainTextDescription]);
-
-  useEffect(() => {
-    if (!isModalOpen && buttonRef.current) {
-      // Focus return
-      buttonRef.current.focus();
+    if (parts.length === 1 && parts[0].length >= 2) {
+      return parts[0].slice(0, 2).toUpperCase();
     }
-  }, [isModalOpen]);
+    if (parts.length === 1) {
+      return parts[0][0].toUpperCase();
+    }
+  }
 
-  if (!plainTextDescription) return null;
+  // 3. Fallback to email handle (e.g. catherine.fritsch@ethereal.email -> CF)
+  if (email && email.includes("@")) {
+    const handle = email.split("@")[0] || "";
+    const emailParts = handle
+      .split(/[._-]/)
+      .filter((p) => p && p.toLowerCase() !== "undefined");
+    if (emailParts.length >= 2 && emailParts[0] && emailParts[1]) {
+      return `${emailParts[0][0]}${emailParts[1][0]}`.toUpperCase();
+    }
+    if (handle.length >= 2) {
+      return handle.slice(0, 2).toUpperCase();
+    }
+    if (handle.length === 1) {
+      return handle.toUpperCase();
+    }
+  }
 
-  return (
-    <div className="expandable-description-container" onClick={(e) => e.stopPropagation()}>
-      <p
-        ref={textRef}
-        className="card-description-string"
-      >
-        {plainTextDescription}
-      </p>
-      {isOverflowing && (
-        <button 
-          ref={buttonRef}
-          className="expand-toggle-btn" 
-          onClick={(e) => { e.stopPropagation(); setIsModalOpen(true); }}
-          aria-haspopup="dialog"
-        >
-          Show more
-        </button>
-      )}
-      
-      {isModalOpen && (
-        <DescriptionModal description={plainTextDescription} onClose={() => setIsModalOpen(false)} />
-      )}
-    </div>
-  );
+  return "TR";
 };
 
+// Backwards-compatible alias
+const getInitials = (name?: string, email?: string): string =>
+  getTraineeInitials(undefined, undefined, name, email);
 
 const highlightMatch = (text: string, highlight: string) => {
   if (!highlight.trim() || !text) {
     return <span>{text}</span>;
   }
-  const regex = new RegExp(`(${highlight})`, 'gi');
+  const regex = new RegExp(`(${highlight.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, "gi");
   const parts = text.split(regex);
   return (
     <span>
       {parts.map((part, i) =>
         regex.test(part) ? (
-          <mark key={i} style={{ padding: '0 2px', borderRadius: '2px', backgroundColor: 'rgba(79, 70, 229, 0.15)', color: '#4f46e5' }}>
+          <mark
+            key={i}
+            style={{
+              padding: "0 2px",
+              borderRadius: "3px",
+              backgroundColor: "rgba(79, 70, 229, 0.15)",
+              color: "#4f46e5",
+              fontWeight: 600,
+            }}
+          >
             {part}
           </mark>
         ) : (
@@ -158,6 +182,216 @@ const highlightMatch = (text: string, highlight: string) => {
   );
 };
 
+/* ==========================================================================
+   MODAL: FULL DESCRIPTION VIEWER
+   ========================================================================== */
+
+const DescriptionModal = ({
+  title,
+  description,
+  onClose,
+}: {
+  title: string;
+  description: string;
+  onClose: () => void;
+}) => {
+  useScrollLock(true);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const modalContent = (
+    <div className="cohort-modal-overlay" onClick={onClose}>
+      <div
+        className="cohort-modal-card"
+        style={{ maxWidth: "560px" }}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="desc-modal-title"
+      >
+        <div className="cohort-modal-header">
+          <div className="cohort-modal-title-group">
+            <h2 id="desc-modal-title">{title}</h2>
+            <p className="cohort-modal-subtitle">Full Track Description & Overview</p>
+          </div>
+          <button
+            className="cohort-modal-close-btn"
+            onClick={onClose}
+            aria-label="Close modal"
+          >
+            &times;
+          </button>
+        </div>
+        <div className="cohort-modal-body">
+          <p
+            style={{
+              margin: 0,
+              whiteSpace: "pre-wrap",
+              color: "#334155",
+              fontSize: "14px",
+              lineHeight: 1.65,
+              wordBreak: "break-word",
+            }}
+          >
+            {description}
+          </p>
+        </div>
+        <div style={{ padding: "14px 22px", borderTop: "1px solid #e2e8f0", display: "flex", justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "8px 16px",
+              background: "#f1f5f9",
+              color: "#334155",
+              borderRadius: "8px",
+              border: "1px solid #cbd5e1",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modalContent, document.body);
+};
+
+/* ==========================================================================
+   COMPONENT: EXPANDABLE CARD DESCRIPTION
+   Smooth, content-adaptive toggle that expands and shrinks with text
+   ========================================================================== */
+
+const ExpandableDescription = ({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const plainText = useMemo(() => {
+    if (!description) return "";
+    return description.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ").trim();
+  }, [description]);
+
+  const textToDisplay = plainText || "No track description provided.";
+  const isLong = textToDisplay.length > 130;
+
+  return (
+    <div className="expandable-description-container" onClick={(e) => e.stopPropagation()}>
+      <p className={`card-description-string ${!isExpanded && isLong ? "is-clamped" : ""}`}>
+        {textToDisplay}
+      </p>
+      {isLong && (
+        <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
+          <button
+            type="button"
+            className="expand-toggle-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(!isExpanded);
+            }}
+          >
+            {isExpanded ? "Show less ↑" : "Show more ↓"}
+          </button>
+          {textToDisplay.length > 250 && (
+            <button
+              type="button"
+              className="expand-toggle-btn"
+              style={{ color: "#64748b" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsModalOpen(true);
+              }}
+            >
+              Full dialog ↗
+            </button>
+          )}
+        </div>
+      )}
+
+      {isModalOpen && (
+        <DescriptionModal
+          title={title}
+          description={textToDisplay}
+          onClose={() => setIsModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+/* ==========================================================================
+   SKELETON LOADERS
+   ========================================================================== */
+
+const LearningPathSkeletonCard = () => (
+  <div className="learning-path-skeleton-card" aria-hidden="true">
+    <div className="skeleton-header-row">
+      <div className="skeleton-shimmer skeleton-icon-box" />
+      <div className="skeleton-badges-box">
+        <div className="skeleton-shimmer skeleton-pill" />
+        <div className="skeleton-shimmer skeleton-pill" />
+      </div>
+    </div>
+    <div className="skeleton-shimmer skeleton-title-bar" />
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+      <div className="skeleton-shimmer skeleton-desc-bar" />
+      <div className="skeleton-shimmer skeleton-desc-bar-short" />
+    </div>
+    <div className="skeleton-tags-cluster">
+      <div className="skeleton-shimmer skeleton-tag-pill" />
+      <div className="skeleton-shimmer skeleton-tag-pill" />
+      <div className="skeleton-shimmer skeleton-tag-pill" />
+    </div>
+    <div className="skeleton-shimmer skeleton-scope-box" />
+    <div className="skeleton-shimmer skeleton-cohort-box" />
+    <div className="skeleton-action-toolbar">
+      <div className="skeleton-shimmer skeleton-btn-primary" />
+      <div className="skeleton-shimmer skeleton-btn-icon" />
+      <div className="skeleton-shimmer skeleton-btn-icon" />
+    </div>
+  </div>
+);
+
+const TraineeRowSkeleton = () => (
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "10px 12px",
+      borderRadius: "6px",
+      border: "1px solid #e2e8f0",
+      marginBottom: "6px",
+    }}
+  >
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
+      <div className="skeleton-shimmer" style={{ width: "16px", height: "16px", borderRadius: "4px" }} />
+      <div style={{ display: "flex", flexDirection: "column", gap: "4px", flex: 1 }}>
+        <div className="skeleton-shimmer" style={{ width: "120px", height: "14px" }} />
+        <div className="skeleton-shimmer" style={{ width: "180px", height: "11px" }} />
+      </div>
+    </div>
+  </div>
+);
+
+/* ==========================================================================
+   MAIN COMPONENT: LearningPathsSection
+   ========================================================================== */
+
 export function LearningPathsSection({
   currentUser,
   accessToken,
@@ -166,57 +400,16 @@ export function LearningPathsSection({
 }: LearningPathsSectionProps) {
   const navigate = useNavigate();
   const toast = useToast();
-  const [paths, setPaths] = useState<LearningPath[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const [activeTabFilter, setActiveTabFilter] = useState<"All" | PathStatus>(
-    "All",
-  );
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
-  const [selectedPathForTrainees, setSelectedPathForTrainees] = useState<string | null>(null);
-  const [lpTraineesProgress, setLpTraineesProgress] = useState<any>(null);
-  const [isLoadingLpProgress, setIsLoadingLpProgress] = useState(false);
-  const [expandedTraineeId, setExpandedTraineeId] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Assign Trainee Modal States
-  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [selectedPath, setSelectedPath] = useState<LearningPath | null>(null);
-  const [allTrainees, setAllTrainees] = useState<TraineeUser[]>([]);
-  const [newlySelectedTraineeIds, setNewlySelectedTraineeIds] = useState<
-    string[]
-  >([]);
-  const [traineeSearchQuery, setTraineeSearchQuery] = useState("");
-  const [isLoadingTrainees, setIsLoadingTrainees] = useState(false);
-  const [openDropdownPathId, setOpenDropdownPathId] = useState<string | null>(null);
-
-  // Form Inputs
-  const [formName, setFormName] = useState("");
-  const [formDifficulty, setFormDifficulty] =
-    useState<PathDifficulty>("Intermediate");
-  const [formStatus, setFormStatus] = useState<PathStatus>("Active");
-  const [formDuration, setFormDuration] = useState("12 weeks");
-  const [formImageUrl, setFormImageUrl] = useState("");
-  const [formDescription, setFormDescription] = useState("");
-  const [formTags, setFormTags] = useState("");
-  const [formDefaultLessonLocking, setFormDefaultLessonLocking] = useState<boolean>(false);
-  const [formDefaultTaskLocking, setFormDefaultTaskLocking] = useState<boolean>(false);
+  const { refresh: refreshNotifications } = useNotifications();
 
   const isAdmin = currentUser.role === "Admin";
   const isTrainer = currentUser.role === "Trainer";
   const isTrainee = currentUser.role === "Trainee";
-  const { refresh: refreshNotifications } = useNotifications();
 
+  // Data States
+  const [paths, setPaths] = useState<LearningPath[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [progressSummary, setProgressSummary] = useState<
     Record<
       string,
@@ -226,24 +419,124 @@ export function LearningPathsSection({
         enrolledCount: number;
         totalModules?: number;
         moduleProgresses?: Record<string, number>;
+        totalLessons?: number;
+        totalAssignments?: number;
       }
     >
   >({});
 
-  /**
-   * Calculates Learning Path progress:
-   * LP Progress (%) = (sum of all module progresses in Learning Path) / (total number of modules in Learning Path)
-   * Example: 2 modules in Learning Path, one is 25%, other is 25% -> LP progress = (25 + 25) / 2 = 50 / 2 = 25%
-   */
+  // Filter, Search & Sort
+  const [activeScope, setActiveScope] = useState<FilterScope>("All");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("recent");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Cohort Inspection Modal States
+  const [selectedPathForTrainees, setSelectedPathForTrainees] = useState<string | null>(null);
+  const [lpTraineesProgress, setLpTraineesProgress] = useState<any>(null);
+  const [isLoadingLpProgress, setIsLoadingLpProgress] = useState(false);
+  const [cohortSearchQuery, setCohortSearchQuery] = useState("");
+  const [expandedTraineeId, setExpandedTraineeId] = useState<string | null>(null);
+
+  // Trainee Assignment Modal States
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedPathForAssignment, setSelectedPathForAssignment] = useState<LearningPath | null>(null);
+  const [allTrainees, setAllTrainees] = useState<TraineeUser[]>([]);
+  const [newlySelectedTraineeIds, setNewlySelectedTraineeIds] = useState<string[]>([]);
+  const [traineeSearchQuery, setTraineeSearchQuery] = useState("");
+  const [isLoadingTrainees, setIsLoadingTrainees] = useState(false);
+  const [isSubmittingAssignment, setIsSubmittingAssignment] = useState(false);
+
+  /* ==========================================================================
+     DATA FETCHING
+     ========================================================================== */
+
+  const loadDatabasePaths = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const [data, summary] = await Promise.all([
+        learningPathService.fetchAllPaths(accessToken),
+        progressService.fetchPathProgressSummary(accessToken).catch(() => ({})),
+      ]);
+      setPaths(data || []);
+      setProgressSummary(summary || {});
+    } catch (err: any) {
+      setErrorMessage(
+        err.message ?? "Failed to synchronize learning paths with database."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDatabasePaths();
+  }, [accessToken]);
+
+  // Load eligible trainees for Trainer / Admin assignment
+  useEffect(() => {
+    if (isAdmin || isTrainer) {
+      userService
+        .fetchAllUsers(accessToken)
+        .then((rawUsersList) => {
+          const eligible = (rawUsersList || []).filter((user: any) => {
+            const userRoles: string[] = [];
+            if (typeof user.role === "string") userRoles.push(user.role.toLowerCase());
+            if (typeof user.primaryRole === "string") userRoles.push(user.primaryRole.toLowerCase());
+            if (user.primaryRole?.name) userRoles.push(user.primaryRole.name.toLowerCase());
+            if (Array.isArray(user.roles)) {
+              user.roles.forEach((r: any) => {
+                if (typeof r === "string") userRoles.push(r.toLowerCase());
+                if (r?.name) userRoles.push(r.name.toLowerCase());
+              });
+            }
+            return userRoles.includes("trainee");
+          });
+          setAllTrainees(eligible);
+        })
+        .catch(() => {});
+    }
+  }, [accessToken, isAdmin, isTrainer]);
+
+  // Load Cohort details when a specific path modal is triggered
+  useEffect(() => {
+    if (selectedPathForTrainees) {
+      setIsLoadingLpProgress(true);
+      setCohortSearchQuery("");
+      setExpandedTraineeId(null);
+      learningPathService
+        .fetchLearningPathTraineesProgress(selectedPathForTrainees, accessToken)
+        .then((data) => setLpTraineesProgress(data))
+        .catch((err) => {
+          console.error("Failed to fetch LP cohort progress", err);
+          toast.error("Unable to load cohort progression data.");
+        })
+        .finally(() => setIsLoadingLpProgress(false));
+    } else {
+      setLpTraineesProgress(null);
+      setExpandedTraineeId(null);
+    }
+  }, [selectedPathForTrainees, accessToken]);
+
+  /* ==========================================================================
+     CALCULATIONS & ATTRIBUTION HELPERS
+     ========================================================================== */
+
+  // Trainee role calculation (Preserved 100% without regression)
   const calculateLPProgress = (path: LearningPath): number => {
     const summary = progressSummary[path.id];
     const totalModules = path.modules?.length ?? summary?.totalModules ?? 0;
 
-    if (totalModules === 0) {
-      return 0;
-    }
+    if (totalModules === 0) return 0;
 
-    // 1. If backend summary provided moduleProgresses map, sum them up and divide by totalModules
     if (summary?.moduleProgresses && path.modules && Array.isArray(path.modules) && path.modules.length > 0) {
       const sum = path.modules.reduce((acc: number, mod: any) => {
         return acc + (summary.moduleProgresses?.[mod.id] ?? 0);
@@ -251,12 +544,10 @@ export function LearningPathsSection({
       return Math.min(100, Math.round(sum / totalModules));
     }
 
-    // 2. If summary has precomputed userProgressPercent, use it
-    if (typeof summary?.userProgressPercent === 'number') {
+    if (typeof summary?.userProgressPercent === "number") {
       return summary.userProgressPercent;
     }
 
-    // 3. Fallback: if modules have local completion/progress percent
     if (path.modules && Array.isArray(path.modules) && path.modules.length > 0) {
       const sum = path.modules.reduce((acc: number, mod: any) => {
         return acc + Number(mod.progressPercent ?? mod.completionPercent ?? 0);
@@ -267,226 +558,135 @@ export function LearningPathsSection({
     return (path as any).progressPercent ?? 0;
   };
 
-  const loadDatabasePaths = async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      const [data, summary] = await Promise.all([
-        learningPathService.fetchAllPaths(accessToken),
-        progressService.fetchPathProgressSummary(accessToken).catch(() => ({})),
-      ]);
-      setPaths(data);
-      setProgressSummary(summary || {});
-    } catch (err: any) {
-      setErrorMessage(
-        err.message ?? "Failed to synchronize with backend database.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleTraineeRowClick = (traineeId: string) => {
-    if (expandedTraineeId === traineeId) {
-      setExpandedTraineeId(null);
-    } else {
-      setExpandedTraineeId(traineeId);
-    }
-  };
-
-  useEffect(() => {
-    if (selectedPathForTrainees) {
-      setIsLoadingLpProgress(true);
-      learningPathService.fetchLearningPathTraineesProgress(selectedPathForTrainees, accessToken)
-      .then(data => setLpTraineesProgress(data))
-      .catch(err => console.error("Failed to fetch LP progress", err))
-      .finally(() => setIsLoadingLpProgress(false));
-    } else {
-      setLpTraineesProgress(null);
-      setExpandedTraineeId(null);
-    }
-  }, [selectedPathForTrainees, accessToken]);
-
-  useEffect(() => {
-    loadDatabasePaths();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (isAdmin || isTrainer) {
-      userService.fetchAllUsers(accessToken).then((rawUsersList) => {
-        const eligibleTrainees = (rawUsersList || []).filter((user: any) => {
-          const userRoles: string[] = [];
-          if (typeof user.role === "string") userRoles.push(user.role.toLowerCase());
-          if (typeof user.primaryRole === "string") userRoles.push(user.primaryRole.toLowerCase());
-          if (user.primaryRole?.name) userRoles.push(user.primaryRole.name.toLowerCase());
-          if (Array.isArray(user.roles)) {
-            user.roles.forEach((r: any) => {
-              if (typeof r === "string") userRoles.push(r.toLowerCase());
-              if (r?.name) userRoles.push(r.name.toLowerCase());
-            });
-          }
-          return userRoles.includes("trainee");
-        });
-        setAllTrainees(eligibleTrainees);
-      }).catch(() => {});
-    }
-  }, [accessToken, isAdmin, isTrainer]);
-
-  // Open Edit Route
-  const handleOpenEditModal = (path: LearningPath) => {
-    navigate(`/learning-paths/${path.id}/edit`);
-  };
-
-  // Open Assign Modal
-  const handleOpenAssignModal = async (path: LearningPath) => {
-    setSelectedPath(path);
-    setNewlySelectedTraineeIds([]);
-    setTraineeSearchQuery("");
-    setIsAssignModalOpen(true);
-    setIsLoadingTrainees(true);
-
-    try {
-      const rawUsersList = await userService.fetchAllUsers(accessToken);
-
-      const eligibleTrainees = (rawUsersList || []).filter((user: any) => {
-        const userRoles: string[] = [];
-        if (typeof user.role === "string")
-          userRoles.push(user.role.toLowerCase());
-        if (typeof user.primaryRole === "string")
-          userRoles.push(user.primaryRole.toLowerCase());
-        if (user.primaryRole?.name)
-          userRoles.push(user.primaryRole.name.toLowerCase());
-
-        if (Array.isArray(user.roles)) {
-          user.roles.forEach((r: any) => {
-            if (typeof r === "string") userRoles.push(r.toLowerCase());
-            if (r?.name) userRoles.push(r.name.toLowerCase());
-          });
-        }
-
-        return userRoles.includes("trainee");
-      });
-
-      setAllTrainees(eligibleTrainees);
-    } catch (err: any) {
-      toast.error("Could not fetch eligible trainees.");
-    } finally {
-      setIsLoadingTrainees(false);
-    }
-  };
-
-  const handleToggleTrainee = (traineeId: string) => {
-    setNewlySelectedTraineeIds((prev) =>
-      prev.includes(traineeId)
-        ? prev.filter((id) => id !== traineeId)
-        : [...prev, traineeId],
+  // Check creator identity
+  const getCreatorId = (path: LearningPath): string | null => {
+    return (
+      path.createdBy?.id ||
+      (typeof path.createdBy === "string" ? path.createdBy : null) ||
+      (path as any).createdById ||
+      (path as any).userId ||
+      null
     );
   };
 
-  const handleConfirmAssignment = async () => {
-    if (!selectedPath || newlySelectedTraineeIds.length === 0) return;
-
-    setIsSubmitting(true);
-    try {
-      const updatedPath = await learningPathService.assignTraineeToPath(
-        selectedPath.id,
-        newlySelectedTraineeIds,
-        accessToken,
-      );
-
-      setPaths((prevPaths) =>
-        prevPaths.map((p) =>
-          p.id === selectedPath.id
-            ? {
-                ...p,
-                assignedToTraineeIds: [
-                  ...new Set([
-                    ...(p.assignedToTraineeIds || []),
-                    ...(updatedPath.assignedToTraineeIds || []),
-                    ...newlySelectedTraineeIds,
-                  ]),
-                ],
-              }
-            : p,
-        ),
-      );
-
-      setIsAssignModalOpen(false);
-      await refreshNotifications();
-      toast.success('Learning path assigned successfully!');
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to assign trainees.");
-    } finally {
-      setIsSubmitting(false);
-    }
+  const isCurrentAuthor = (path: LearningPath): boolean => {
+    const cid = getCreatorId(path);
+    if (!cid || !currentUser.id) return false;
+    return String(cid).toLowerCase() === String(currentUser.id).toLowerCase();
   };
 
-  const filteredTrainees = useMemo(() => {
-    return allTrainees.filter((t) => {
-      const fullName =
-        `${t.firstName || ""} ${t.lastName || ""}`.trim() || t.name || "";
-      return (
-        fullName.toLowerCase().includes(traineeSearchQuery.toLowerCase()) ||
-        t.email?.toLowerCase().includes(traineeSearchQuery.toLowerCase())
-      );
+  const getCreatorDisplayName = (path: LearningPath): string => {
+    if (isCurrentAuthor(path)) return "You";
+    if (path.createdBy && typeof path.createdBy === "object") {
+      const name = `${path.createdBy.firstName || ""} ${path.createdBy.lastName || ""}`.trim();
+      if (name) return name;
+      if (path.createdBy.name) return path.createdBy.name;
+      if (path.createdBy.email) return path.createdBy.email;
+    }
+    return "Curriculum Admin";
+  };
+
+  // Cohort Metrics Aggregation
+  const getPathMetrics = (path: LearningPath) => {
+    const summary = progressSummary[path.id];
+    const enrolledCount = path.assignedToTraineeIds?.length ?? summary?.enrolledCount ?? 0;
+    const cohortProgress = summary?.cohortProgressPercent ?? 0;
+
+    const modulesCount = path.modules?.length ?? summary?.totalModules ?? 0;
+
+    const lessonsCount =
+      summary?.totalLessons ??
+      path.modules?.reduce((acc: number, m: any) => acc + (m.lessons?.length || 0), 0) ??
+      0;
+
+    const tasksCount =
+      summary?.totalAssignments ??
+      path.modules?.reduce(
+        (acc: number, m: any) =>
+          acc +
+          (m.assignments?.length || 0) +
+          (m.lessons?.reduce((a: number, l: any) => a + (l.assignments?.length || 0), 0) || 0),
+        0
+      ) ??
+      0;
+
+    return {
+      enrolledCount,
+      cohortProgress,
+      modulesCount,
+      lessonsCount,
+      tasksCount,
+    };
+  };
+
+  /* ==========================================================================
+     FILTERING & SORTING LOGIC
+     ========================================================================== */
+
+  const myAuthoredTracksCount = useMemo(() => {
+    return paths.filter((p) => isCurrentAuthor(p)).length;
+  }, [paths, currentUser.id]);
+
+  const activePathsCount = useMemo(() => {
+    return paths.filter((p) => (p.status || "Active").toLowerCase() === "active").length;
+  }, [paths]);
+
+  const upcomingPathsCount = useMemo(() => {
+    return paths.filter((p) => (p.status || "").toLowerCase() === "upcoming").length;
+  }, [paths]);
+
+  const completedPathsCount = useMemo(() => {
+    if (!isTrainee) return 0;
+    return paths.filter((p) => calculateLPProgress(p) === 100).length;
+  }, [paths, isTrainee, progressSummary]);
+
+  const totalEnrolledAcrossTracks = useMemo(() => {
+    const uniqueIds = new Set<string>();
+    paths.forEach((p) => {
+      (p.assignedToTraineeIds || []).forEach((id) => uniqueIds.add(id));
     });
-  }, [allTrainees, traineeSearchQuery]);
+    return uniqueIds.size;
+  }, [paths]);
 
-  const handleDeletePath = async (path: LearningPath) => {
-    const pathTitle = path.title || path.name || "Untitled Track";
-    const modulesCount = path.modules?.length || 0;
-    const lessonsCount = path.modules?.reduce((acc: number, m: any) => acc + (m.lessons?.length || 0), 0) || 0;
-    const assignmentsCount = path.modules?.reduce((acc: number, m: any) => acc + (m.assignments?.length || 0) + (m.lessons?.reduce((a: number, l: any) => a + (l.assignments?.length || 0), 0) || 0), 0) || 0;
-    const traineesCount = path.assignedToTraineeIds?.length || 0;
-    
-    const message = `Delete "${pathTitle}"?\n\nThis will permanently remove:\n- ${modulesCount} Modules\n- ${lessonsCount} Lessons\n- ${assignmentsCount} Assignments\n- Trainee progress for ${traineesCount} enrolled users\n\nThis action cannot be undone.`;
-
-    if (!window.confirm(message)) return;
-
-    try {
-      await learningPathService.deletePath(path.id, accessToken);
-      setPaths((prev) => prev.filter((p) => p.id !== path.id));
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to delete Learning Path.");
-    }
-  };
+  const avgCohortProgressOverall = useMemo(() => {
+    const activePaths = paths.filter((p) => (p.status || "Active").toLowerCase() === "active");
+    if (activePaths.length === 0) return 0;
+    const sum = activePaths.reduce((acc, p) => acc + (progressSummary[p.id]?.cohortProgressPercent || 0), 0);
+    return Math.round(sum / activePaths.length);
+  }, [paths, progressSummary]);
 
   const filteredPaths = useMemo(() => {
     let result = paths;
 
     if (highlightPathId) {
-      result = result.filter(path => path.id === highlightPathId);
+      result = result.filter((p) => p.id === highlightPathId);
     }
 
-    return result.filter((path) => {
-      if (isTrainee && !path.assignedToTraineeIds?.includes(currentUser.id))
+    result = result.filter((path) => {
+      // Trainee role guard
+      if (isTrainee && !path.assignedToTraineeIds?.includes(currentUser.id)) {
         return false;
-
-      if (isTrainee) {
-        const progress = calculateLPProgress(path);
-
-        if (activeTabFilter === "All") {
-          // pass to search query check
-        } else if (activeTabFilter === "Completed") {
-          if (progress !== 100) return false;
-        } else if (activeTabFilter === "Active") {
-          if (progress === 100 || path.status?.toLowerCase() === "upcoming") return false;
-        } else {
-          return false;
-        }
-      } else {
-        if (
-          activeTabFilter !== "All" &&
-          path.status?.toLowerCase() !== activeTabFilter.toLowerCase()
-        ) {
-          return false;
-        }
       }
 
-      // Dual search by Title/Name AND Skill Tags (plus Description)
-      const query = debouncedSearchQuery.trim().toLowerCase();
-      if (query) {
+      // Scope Tab Filtering
+      if (activeScope === "Mine") {
+        if (!isCurrentAuthor(path)) return false;
+      } else if (activeScope === "Active") {
+        if (isTrainee) {
+          const prog = calculateLPProgress(path);
+          if (prog === 100 || path.status?.toLowerCase() === "upcoming") return false;
+        } else {
+          if (path.status?.toLowerCase() !== "active") return false;
+        }
+      } else if (activeScope === "Upcoming") {
+        if (path.status?.toLowerCase() !== "upcoming") return false;
+      } else if (activeScope === "Completed") {
+        if (isTrainee && calculateLPProgress(path) !== 100) return false;
+      }
+
+      // Search Query Matching
+      const q = debouncedSearchQuery.trim().toLowerCase();
+      if (q) {
         const title = (path.title || path.name || "").toLowerCase();
         const desc = (path.description || "").toLowerCase();
 
@@ -497,9 +697,9 @@ export function LearningPathsSection({
           tags = (path.skillsTags as string).split(",").map((t) => t.trim());
         }
 
-        const titleMatch = title.includes(query);
-        const descMatch = desc.includes(query);
-        const tagsMatch = tags.some((t) => t.toLowerCase().includes(query));
+        const titleMatch = title.includes(q);
+        const descMatch = desc.includes(q);
+        const tagsMatch = tags.some((t) => t.toLowerCase().includes(q));
 
         if (!titleMatch && !descMatch && !tagsMatch) {
           return false;
@@ -508,86 +708,390 @@ export function LearningPathsSection({
 
       return true;
     });
-  }, [paths, activeTabFilter, isTrainee, currentUser.id, progressSummary, debouncedSearchQuery, searchQuery]);
 
+    // Sorting
+    return [...result].sort((a, b) => {
+      if (sortBy === "title") {
+        return (a.title || a.name || "").localeCompare(b.title || b.name || "");
+      }
+      if (sortBy === "trainees") {
+        const aCount = a.assignedToTraineeIds?.length || 0;
+        const bCount = b.assignedToTraineeIds?.length || 0;
+        return bCount - aCount;
+      }
+      if (sortBy === "progress") {
+        const aProg = isTrainee
+          ? calculateLPProgress(a)
+          : progressSummary[a.id]?.cohortProgressPercent || 0;
+        const bProg = isTrainee
+          ? calculateLPProgress(b)
+          : progressSummary[b.id]?.cohortProgressPercent || 0;
+        return bProg - aProg;
+      }
+      // default: recent / original order
+      return 0;
+    });
+  }, [
+    paths,
+    highlightPathId,
+    activeScope,
+    isTrainee,
+    currentUser.id,
+    debouncedSearchQuery,
+    sortBy,
+    progressSummary,
+  ]);
 
-  const currentTrainerName = selectedPath?.createdBy?.firstName
-    ? `${selectedPath.createdBy.firstName} ${selectedPath.createdBy.lastName || ""}`
-    : selectedPath?.createdBy?.name || "Trainer";
+  /* ==========================================================================
+     MUTATION ACTIONS
+     ========================================================================== */
+
+  // Open Assign Modal
+  const handleOpenAssignModal = (path: LearningPath) => {
+    setSelectedPathForAssignment(path);
+    setNewlySelectedTraineeIds([]);
+    setTraineeSearchQuery("");
+    setIsAssignModalOpen(true);
+  };
+
+  const handleToggleTrainee = (traineeId: string) => {
+    setNewlySelectedTraineeIds((prev) =>
+      prev.includes(traineeId)
+        ? prev.filter((id) => id !== traineeId)
+        : [...prev, traineeId]
+    );
+  };
+
+  const handleSelectAllAvailableTrainees = () => {
+    if (!selectedPathForAssignment) return;
+    const availableIds = allTrainees
+      .filter((t) => !selectedPathForAssignment.assignedToTraineeIds?.includes(t.id))
+      .map((t) => t.id);
+    setNewlySelectedTraineeIds(availableIds);
+  };
+
+  const handleDeselectAllTrainees = () => {
+    setNewlySelectedTraineeIds([]);
+  };
+
+  const handleConfirmAssignment = async () => {
+    if (!selectedPathForAssignment || newlySelectedTraineeIds.length === 0) return;
+
+    setIsSubmittingAssignment(true);
+    try {
+      const updatedPath = await learningPathService.assignTraineeToPath(
+        selectedPathForAssignment.id,
+        newlySelectedTraineeIds,
+        accessToken
+      );
+
+      setPaths((prev) =>
+        prev.map((p) =>
+          p.id === selectedPathForAssignment.id
+            ? {
+                ...p,
+                assignedToTraineeIds: [
+                  ...new Set([
+                    ...(p.assignedToTraineeIds || []),
+                    ...(updatedPath.assignedToTraineeIds || []),
+                    ...newlySelectedTraineeIds,
+                  ]),
+                ],
+              }
+            : p
+        )
+      );
+
+      setIsAssignModalOpen(false);
+      await refreshNotifications();
+      toast.success(
+        `Successfully assigned ${newlySelectedTraineeIds.length} ${
+          newlySelectedTraineeIds.length === 1 ? "trainee" : "trainees"
+        } to track.`
+      );
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to assign trainees to track.");
+    } finally {
+      setIsSubmittingAssignment(false);
+    }
+  };
+
+  // Delete Track
+  const handleDeletePath = async (path: LearningPath) => {
+    const pathTitle = path.title || path.name || "Untitled Track";
+    const { modulesCount, lessonsCount, tasksCount, enrolledCount } = getPathMetrics(path);
+
+    const message = `Are you sure you want to permanently delete "${pathTitle}"?\n\nThis will remove:\n• ${modulesCount} Modules\n• ${lessonsCount} Lessons\n• ${tasksCount} Tasks / Assignments\n• Roster progress for ${enrolledCount} enrolled trainees\n\nThis action cannot be undone.`;
+
+    if (!window.confirm(message)) return;
+
+    try {
+      await learningPathService.deletePath(path.id, accessToken);
+      setPaths((prev) => prev.filter((p) => p.id !== path.id));
+      toast.success(`Track "${pathTitle}" has been removed.`);
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to delete Learning Path.");
+    }
+  };
+
+  /* ==========================================================================
+     RENDER
+     ========================================================================== */
 
   return (
     <div className="learning-paths-management-container">
+      {/* 1. INSTRUCTIONAL WORKSPACE HEADER */}
       <header className="learning-paths-header-row">
-        <div>
+        <div className="learning-paths-header-left">
           <h1 className="learning-paths-main-title">Learning Paths</h1>
           <p className="learning-paths-sub-heading">
-            {filteredPaths.length} engineering tracks available.
+            {isTrainee
+              ? "Follow structured engineering curricula to build hands-on skills, complete assessments, and track competencies."
+              : "Design structured curricula, sequence learning modules, and monitor cohort progression across all assigned tracks."}
           </p>
         </div>
+
         {(isAdmin || isTrainer) && (
-          <button
-            type="button"
-            className={isTrainer ? "fab-trainer-primary" : "btn-create-learning-path"}
-            onClick={() => navigate('/learning-paths/new')}
-          >
-            + New Learning Path
-          </button>
+          <div className="learning-paths-header-actions">
+            <button
+              type="button"
+              className="btn-create-learning-path"
+              onClick={() => navigate("/learning-paths/new")}
+              title="Create a new curriculum track"
+            >
+              <Plus size={16} strokeWidth={2} />
+              <span>Create Learning Path</span>
+            </button>
+          </div>
         )}
       </header>
 
-      {/* SEARCH AND FILTER CONTROL STRIP */}
-      <section className="learning-paths-control-strip">
-        <div className="filter-tabs-cluster">
-          {(["All", "Active", "Upcoming", "Completed"] as const)
-            .filter((tab) => {
-              // Role-Based Button Visibility
-              if (tab === "Upcoming" && isTrainee) return false;
-              if (tab === "Completed" && !isTrainee) return false;
-              return true;
-            })
-            .map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              className={`tab-pill-item ${activeTabFilter === tab ? "tab-pill-active" : ""}`}
-              onClick={() => setActiveTabFilter(tab)}
-            >
-              {tab === "All" ? "All Paths" : tab}
-            </button>
-          ))}
+      {/* 2. INTERACTIVE METRICS STRIP (CLICKABLE FILTER COUNTERS) */}
+      <section className="learning-paths-metrics-grid" aria-label="Learning path quick metrics">
+        {/* Metric 1: Total Tracks */}
+        <div
+          className={`lp-metric-card ${activeScope === "All" && !searchQuery ? "active-metric-filter" : ""}`}
+          onClick={() => {
+            setActiveScope("All");
+            setSearchQuery("");
+          }}
+          role="button"
+          tabIndex={0}
+          title="Click to view all tracks"
+        >
+          <div className="lp-metric-icon-box">
+            <BookOpen size={18} />
+          </div>
+          <div className="lp-metric-content">
+            <span className="lp-metric-label">All Tracks</span>
+            <div className="lp-metric-value-row">
+              <span className="lp-metric-number">{paths.length}</span>
+              <span className="lp-metric-subtext">total</span>
+            </div>
+          </div>
         </div>
-        <div className="search-filter-input-wrapper">
-          <span className="search-input-icon">🔍</span>
-          <input
-            type="text"
-            className="paths-search-field"
-            placeholder="Search paths by name or skill tags (e.g. React, Python)..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              className="search-clear-btn"
-              onClick={() => setSearchQuery("")}
-              title="Clear search"
-              aria-label="Clear search"
-            >
-              &times;
-            </button>
-          )}
+
+        {/* Metric 2 (Trainer/Admin): My Authored Tracks */}
+        {!isTrainee && (
+          <div
+            className={`lp-metric-card ${activeScope === "Mine" ? "active-metric-filter" : ""}`}
+            onClick={() => {
+              setActiveScope("Mine");
+              setSearchQuery("");
+            }}
+            role="button"
+            tabIndex={0}
+            title="Click to view tracks created by you"
+          >
+            <div className="lp-metric-icon-box">
+              <Layers size={18} strokeWidth={1.75} />
+            </div>
+            <div className="lp-metric-content">
+              <span className="lp-metric-label">My Authored Tracks</span>
+              <div className="lp-metric-value-row">
+                <span className="lp-metric-number">{myAuthoredTracksCount}</span>
+                <span className="lp-metric-subtext">by you</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Metric 3: Active Cohorts */}
+        <div
+          className={`lp-metric-card ${activeScope === "Active" ? "active-metric-filter" : ""}`}
+          onClick={() => {
+            setActiveScope("Active");
+            setSearchQuery("");
+          }}
+          role="button"
+          tabIndex={0}
+          title="Click to view active cohorts"
+        >
+          <div className="lp-metric-icon-box">
+            <TrendingUp size={18} />
+          </div>
+          <div className="lp-metric-content">
+            <span className="lp-metric-label">{isTrainee ? "In Progress" : "Active Cohorts"}</span>
+            <div className="lp-metric-value-row">
+              <span className="lp-metric-number">{activePathsCount}</span>
+              <span className="lp-metric-subtext">active</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Metric 4 (Trainer/Admin): Enrolled Trainees */}
+        {!isTrainee && (
+          <div
+            className="lp-metric-card"
+            title="Total unique trainees enrolled across your curricula"
+            style={{ cursor: "default" }}
+          >
+            <div className="lp-metric-icon-box">
+              <Users size={18} />
+            </div>
+            <div className="lp-metric-content">
+              <span className="lp-metric-label">Learners Enrolled</span>
+              <div className="lp-metric-value-row">
+                <span className="lp-metric-number">{totalEnrolledAcrossTracks}</span>
+                <span className="lp-metric-subtext">trainees</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Metric 5 (Trainer/Admin): Avg Cohort Progress */}
+        {!isTrainee && (
+          <div
+            className="lp-metric-card"
+            title="Average completion percentage across active cohorts"
+            style={{ cursor: "default" }}
+          >
+            <div className="lp-metric-icon-box">
+              <BarChart2 size={18} />
+            </div>
+            <div className="lp-metric-content">
+              <span className="lp-metric-label">Avg Cohort Completion</span>
+              <div className="lp-metric-value-row">
+                <span className="lp-metric-number">{avgCohortProgressOverall}%</span>
+                <span className="lp-metric-subtext">across tracks</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Trainee Metric: Completed */}
+        {isTrainee && (
+          <div
+            className={`lp-metric-card ${activeScope === "Completed" ? "active-metric-filter" : ""}`}
+            onClick={() => setActiveScope("Completed")}
+            role="button"
+            tabIndex={0}
+          >
+            <div className="lp-metric-icon-box">
+              <Award size={18} />
+            </div>
+            <div className="lp-metric-content">
+              <span className="lp-metric-label">Completed Tracks</span>
+              <div className="lp-metric-value-row">
+                <span className="lp-metric-number">{completedPathsCount}</span>
+                <span className="lp-metric-subtext">finished</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* 3. SEARCH, SCOPE & SORT CONTROLS */}
+      <section className="learning-paths-control-bar" aria-label="Curriculum controls">
+        <div className="lp-filter-tabs-cluster" role="tablist">
+          {(isTrainee
+            ? (["All", "Active", "Completed"] as FilterScope[])
+            : isTrainer
+            ? (["All", "Mine", "Active", "Upcoming"] as FilterScope[])
+            : (["All", "Active", "Upcoming"] as FilterScope[])
+          ).map((scope) => {
+            let count = paths.length;
+            if (scope === "Mine") count = myAuthoredTracksCount;
+            if (scope === "Active") count = activePathsCount;
+            if (scope === "Upcoming") count = upcomingPathsCount;
+            if (scope === "Completed") count = completedPathsCount;
+
+            const isSelected = activeScope === scope;
+            const label =
+              scope === "All"
+                ? "All Tracks"
+                : scope === "Mine"
+                ? "My Tracks"
+                : scope;
+
+            return (
+              <button
+                key={scope}
+                type="button"
+                role="tab"
+                aria-selected={isSelected}
+                className={`lp-tab-button ${isSelected ? "is-active" : ""}`}
+                onClick={() => setActiveScope(scope)}
+              >
+                <span>{label}</span>
+                <span className="lp-tab-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="lp-search-and-sort-group">
+          {/* Search Field */}
+          <div className="lp-search-field-wrapper">
+            <span className="lp-search-icon">
+              <Search size={14} />
+            </span>
+            <input
+              type="text"
+              className="lp-search-input"
+              placeholder="Search by title, description, or tags..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search learning paths"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                className="lp-search-clear-btn"
+                onClick={() => setSearchQuery("")}
+                title="Clear search"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {/* Sort Dropdown */}
+          <select
+            className="lp-sort-select"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as SortOption)}
+            aria-label="Sort tracks by"
+          >
+            <option value="recent">Sort: Recently Created</option>
+            <option value="title">Sort: Title (A - Z)</option>
+            {!isTrainee && <option value="trainees">Sort: Most Trainees</option>}
+            <option value="progress">Sort: Highest Progress</option>
+          </select>
         </div>
       </section>
 
-      {/* ACTIVE SEARCH FILTER PILL */}
+      {/* 4. ACTIVE SEARCH NOTIFICATION PILL */}
       {searchQuery.trim() && (
-        <div className="search-active-pill-strip">
-          <span className="search-active-tag-badge">
-            🔎 Filtering by: <strong>"{searchQuery}"</strong> (matching path title & skill tags)
+        <div className="lp-active-filter-strip">
+          <span className="lp-active-filter-text">
+            <Search size={13} />
+            <span>Filtering tracks by query: <strong>"{searchQuery}"</strong> ({filteredPaths.length} matches)</span>
           </span>
-          <button 
+          <button
             type="button"
-            className="btn-clear-search-pill" 
+            className="lp-active-filter-clear"
             onClick={() => setSearchQuery("")}
           >
             Clear Filter ✕
@@ -595,197 +1099,190 @@ export function LearningPathsSection({
         </div>
       )}
 
-      {/* PATHS GRID */}
+      {/* 5. CARDS GRID WITH CONTENT-ADAPTIVE SIZING OR SKELETON STATES */}
       {isLoading ? (
-        <div className="table-status-message">Fetching records...</div>
+        <section
+          className="learning-paths-grid-layout"
+          aria-busy="true"
+          aria-label="Loading learning paths..."
+        >
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <LearningPathSkeletonCard key={idx} />
+          ))}
+        </section>
       ) : errorMessage ? (
-        <div className="table-status-message table-status-error">
-          {errorMessage}
+        <div
+          style={{
+            padding: "40px 24px",
+            textAlign: "center",
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: "16px",
+            color: "#991b1b",
+          }}
+        >
+          <AlertCircle size={32} style={{ marginBottom: "8px", color: "#dc2626" }} />
+          <h3 style={{ margin: "0 0 6px", fontSize: "17px", fontWeight: 700 }}>
+            Unable to load learning paths
+          </h3>
+          <p style={{ margin: "0 0 16px", fontSize: "13.5px", color: "#b91c1c" }}>
+            {errorMessage}
+          </p>
+          <button
+            type="button"
+            onClick={loadDatabasePaths}
+            style={{
+              padding: "8px 18px",
+              background: "#dc2626",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "8px",
+              fontWeight: 600,
+              fontSize: "13px",
+              cursor: "pointer",
+            }}
+          >
+            Retry Loading
+          </button>
+        </div>
+      ) : filteredPaths.length === 0 ? (
+        /* Empty State */
+        <div className="learning-paths-empty-state">
+          <div className="empty-state-icon-box">
+            <BookOpen size={28} />
+          </div>
+          <h3 className="empty-state-title">No Learning Paths Found</h3>
+          <p className="empty-state-desc">
+            {searchQuery || activeScope !== "All"
+              ? `No tracks matched your filter criteria (${activeScope !== "All" ? `Scope: ${activeScope}` : ""}${searchQuery ? `, Query: "${searchQuery}"` : ""}). Try adjusting or clearing your filters.`
+              : isTrainee
+              ? "You haven't been assigned to any curriculum tracks yet. Once your trainer assigns you, they will appear here."
+              : "No curriculum tracks have been created yet. Launch your first track to sequence modules and start training cohorts."}
+          </p>
+          {searchQuery || activeScope !== "All" ? (
+            <button
+              type="button"
+              className="lp-active-filter-clear"
+              style={{ fontSize: "13px", padding: "6px 14px" }}
+              onClick={() => {
+                setSearchQuery("");
+                setActiveScope("All");
+              }}
+            >
+              Reset Filters
+            </button>
+          ) : !isTrainee ? (
+            <button
+              type="button"
+              className="btn-create-learning-path"
+              onClick={() => navigate("/learning-paths/new")}
+            >
+              <Plus size={16} strokeWidth={2.5} />
+              <span>Create First Learning Path</span>
+            </button>
+          ) : null}
         </div>
       ) : (
-        <section className="learning-paths-grid-layout">
-          {filteredPaths.length === 0 ? (
-            <div style={{
-              gridColumn: '1 / -1',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '80px 20px',
-              background: '#fff',
-              borderRadius: '24px',
-              border: '1px dashed #cbd5e1',
-              boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)',
-              textAlign: 'center',
-              marginTop: '20px'
-            }}>
-              <div style={{
-                width: '80px',
-                height: '80px',
-                background: '#e0e7ff',
-                borderRadius: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '36px',
-                marginBottom: '24px',
-                color: '#4f46e5',
-                boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.2)'
-              }}>
-                🚀
-              </div>
-              <h3 style={{ margin: '0 0 12px 0', fontSize: '24px', fontWeight: 800, color: '#0f172a' }}>
-                No Learning Paths Found
-              </h3>
-              <p style={{ margin: '0 0 32px 0', fontSize: '15px', color: '#64748b', maxWidth: '400px', lineHeight: 1.6 }}>
-                {searchQuery || activeTabFilter !== 'All'
-                  ? "No learning paths match your search."
-                  : isTrainee 
-                    ? "You haven't been assigned to any learning paths yet. Check back later!"
-                    : "It looks like there aren't any learning paths available right now. Once created, they will appear here."}
-              </p>
-              {!isTrainee && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/learning-paths/new')}
-                  style={{
-                    padding: '12px 28px',
-                    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '12px',
-                    fontSize: '15px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-                    transition: 'all 0.2s',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(99, 102, 241, 0.4)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.3)';
-                  }}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                  Create Learning Path
-                </button>
-              )}
-            </div>
-          ) : (
-            filteredPaths.map((path) => {
-              const currentTitle = path.title || path.name || "Untitled Track";
-              const currentStatus = path.status || "Active";
-              const isPathActive = currentStatus.toLowerCase() === "active";
+        /* Render Genuine Learning Path Cards */
+        <section className="learning-paths-grid-layout" aria-label="Curriculum tracks grid">
+          {filteredPaths.map((path) => {
+            const currentTitle = path.title || path.name || "Untitled Track";
+            const currentStatus = path.status || "Active";
+            const isPathActive = currentStatus.toLowerCase() === "active";
+            const isOwner = isCurrentAuthor(path);
+            const isOwnerOrAdmin = !isTrainee && (isAdmin || isOwner);
 
-              // Robust Owner Extraction
-              const creatorId =
-                path.createdBy?.id ||
-                (typeof path.createdBy === "string" ? path.createdBy : null) ||
-                (path as any).createdById;
+            // Tags
+            let currentTags: string[] = [];
+            if (Array.isArray(path.skillsTags)) {
+              currentTags = path.skillsTags;
+            } else if (typeof path.skillsTags === "string") {
+              currentTags = (path.skillsTags as string)
+                .split(",")
+                .map((t) => t.trim())
+                .filter(Boolean);
+            }
 
-              // Trainees never see Edit/Delete. Only Admin or path creator can mutate.
-              const isOwnerOrAdmin =
-                !isTrainee &&
-                (isAdmin ||
-                  (Boolean(creatorId) &&
-                    String(creatorId).toLowerCase() ===
-                      String(currentUser.id).toLowerCase()));
+            const MAX_VISIBLE_TAGS = 4;
+            const visibleTags = currentTags.slice(0, MAX_VISIBLE_TAGS);
+            const remainingTagsCount = currentTags.length - MAX_VISIBLE_TAGS;
 
-              // Parse Tags
-              let currentTags: string[] = [];
-              if (Array.isArray(path.skillsTags)) {
-                currentTags = path.skillsTags;
-              } else if (typeof path.skillsTags === "string") {
-                currentTags = (path.skillsTags as string)
-                  .split(",")
-                  .map((t) => t.trim())
-                  .filter(Boolean);
-              }
-              
-              const matchedTagsRaw = (path as any).matchedTags || [];
-              const matchedTagsLower = matchedTagsRaw.map((t: string) => t.toLowerCase());
+            // Metrics
+            const { enrolledCount, cohortProgress, modulesCount, lessonsCount, tasksCount } =
+              getPathMetrics(path);
+            const traineeProgressVal = isTrainee ? calculateLPProgress(path) : 0;
 
-              return (
-                <div 
-                  key={path.id} 
-                  className="learning-path-card-item"
-                  style={{
-                    transition: 'transform 0.1s ease, box-shadow 0.1s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.01)';
-                    e.currentTarget.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)';
-                  }}
-                  onMouseDown={(e) => {
-                    e.currentTarget.style.transform = 'scale(0.98)';
-                  }}
-                  onMouseUp={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.01)';
-                  }}
-                >
-                  <div className="card-top-badges-row">
-                    {path.imageUrl ? (
-                      <img
-                        src={path.imageUrl}
-                        alt={currentTitle}
-                        style={{
-                          width: "40px",
-                          height: "40px",
-                          borderRadius: "8px",
-                          objectFit: "cover",
-                        }}
-                      />
-                    ) : (
-                      <div className="card-avatar-icon-box">🎒</div>
+            return (
+              <article
+                key={path.id}
+                className={`learning-path-card-item ${
+                  highlightPathId === path.id ? "is-highlighted" : ""
+                }`}
+              >
+                {/* Card Header: Icon/Image + Badges */}
+                <div className="card-top-badges-row">
+                  {path.imageUrl ? (
+                    <img
+                      src={path.imageUrl}
+                      alt={currentTitle}
+                      className="card-avatar-image"
+                    />
+                  ) : (
+                    <div className="card-avatar-box" title={currentTitle}>
+                      <BookOpen size={20} />
+                    </div>
+                  )}
+
+                  <div className="badge-meta-group">
+                    {/* Author Attribution */}
+                    {!isTrainee && (
+                      <span
+                        className={`author-badge-pill ${isOwner ? "is-current-user" : ""}`}
+                        title={`Authored by ${getCreatorDisplayName(path)}`}
+                      >
+                        {isOwner ? "★ You" : `By ${getCreatorDisplayName(path)}`}
+                      </span>
                     )}
 
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <span
-                        className={`difficulty-badge diff-${(path.difficulty || "Intermediate").toLowerCase()}`}
-                      >
-                        {path.difficulty || "Intermediate"}
-                      </span>
-                      <span
-                        className={`status-badge stat-${currentStatus.toLowerCase()}`}
-                      >
-                        {currentStatus}
-                      </span>
-                    </div>
-                  </div>
-
-                  <h2 className="card-title-string">{highlightMatch(currentTitle, debouncedSearchQuery)}</h2>
-                  <ExpandableDescription description={path.description || ""} />
-
-                  {/* SKILLS TAGS CLOUD ROW */}
-                  {currentTags.length > 0 ? (
-                    <div
-                      className="card-tags-cloud-row"
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "6px",
-                        marginTop: "10px",
-                        marginBottom: "10px",
-                      }}
+                    {/* Difficulty Badge */}
+                    <span
+                      className={`difficulty-badge diff-${(path.difficulty || "Intermediate").toLowerCase()}`}
                     >
-                      {currentTags.map((tag, idx) => {
+                      {path.difficulty || "Intermediate"}
+                    </span>
+
+                    {/* Status Badge */}
+                    <span
+                      className={`status-badge stat-${currentStatus.toLowerCase()}`}
+                    >
+                      {isPathActive && <span className="stat-indicator-dot" />}
+                      {currentStatus}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card Title & Content */}
+                <div className="card-content-block">
+                  <h2
+                    className="card-title-string"
+                    onClick={() => onNavigateToModules(path.id, currentTitle)}
+                    title="Click to manage curriculum"
+                  >
+                    {highlightMatch(currentTitle, debouncedSearchQuery)}
+                  </h2>
+
+                  <ExpandableDescription
+                    title={currentTitle}
+                    description={path.description || "No track description provided."}
+                  />
+
+                  {/* Skills Tags (Clickable filter) */}
+                  <div className="card-tags-cloud-row">
+                    {currentTags.length > 0 ? (
+                      visibleTags.map((tag, idx) => {
                         const isMatched =
-                          matchedTagsLower.includes(tag.toLowerCase()) ||
-                          (searchQuery.trim().length > 0 &&
-                            tag.toLowerCase().includes(searchQuery.trim().toLowerCase()));
+                          debouncedSearchQuery.trim().length > 0 &&
+                          tag.toLowerCase().includes(debouncedSearchQuery.trim().toLowerCase());
                         return (
                           <span
                             key={idx}
@@ -794,371 +1291,657 @@ export function LearningPathsSection({
                               e.stopPropagation();
                               setSearchQuery(tag);
                             }}
-                            title={`Click to filter by skill "${tag}"`}
+                            title={`Filter tracks by skill "${tag}"`}
                           >
                             <span className="tag-hash">#</span>
-                            <span className="tag-text">{highlightMatch(tag, searchQuery)}</span>
+                            <span>{highlightMatch(tag, debouncedSearchQuery)}</span>
                           </span>
                         );
-                      })}
-                    </div>
-                  ) : (
-                    isOwnerOrAdmin && (
-                      <div 
-                        className="card-empty-tags-row"
+                      })
+                    ) : (
+                      <span className="card-skill-tag-chip" style={{ opacity: 0.7 }} title="Standard curriculum track">
+                        <span className="tag-hash">#</span>
+                        <span>Curriculum</span>
+                      </span>
+                    )}
+                    {remainingTagsCount > 0 && (
+                      <span
+                        className="card-skill-tag-chip tag-more-count"
+                        title={`${remainingTagsCount} more tags: ${currentTags
+                          .slice(MAX_VISIBLE_TAGS)
+                          .join(", ")}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenEditModal(path);
+                          if (isOwnerOrAdmin) {
+                            navigate(`/learning-paths/${path.id}/edit`);
+                          }
                         }}
-                        title="Click to add skill tags in editor"
                       >
-                        <span className="add-tag-prompt">+ Add Skill Tags</span>
-                      </div>
-                    )
-                  )}
-
-                  <div className="card-counters-flex-strip">
-                    <span>⏱️ {path.duration || "12 weeks"}</span>
-                    <span>📦 {path.modules?.length || 0} modules</span>
-            
+                        +{remainingTagsCount} more
+                      </span>
+                    )}
                   </div>
-                  {/* 🌟 DYNAMIC REAL-TIME PROGRESS BAR (TRAINEE vs TRAINER COHORT RULES) */}
-                  {(() => {
-                    const summary = progressSummary[path.id];
-                    let progressVal = 0;
+                </div>
 
-                    if (isTrainee) {
-                      progressVal = calculateLPProgress(path);
-                      return (
-                        <div style={{ marginTop: "14px", marginBottom: "8px" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px", color: "#475569", marginBottom: "6px" }}>
-                            <span style={{ fontWeight: 600 }}>My Learning Progress</span>
-                            <span style={{ fontWeight: 800, color: progressVal === 100 ? "#16a34a" : "#4f46e5" }}>
-                              {progressVal}% {progressVal === 100 ? "🎉 Complete" : ""}
+                {/* Curriculum Scope Strip (Modules, Lessons, Duration) */}
+                
+
+                {/* Cohort Section (For Trainer/Admin) OR Trainee Progress Bar (For Trainee) */}
+                {isTrainee ? (
+                  <div className="card-trainee-progress-box">
+                    <div className="trainee-progress-header">
+                      <span>My Learning Progress</span>
+                      <strong>
+                        {traineeProgressVal}% {traineeProgressVal === 100 ? "Completed" : ""}
+                      </strong>
+                    </div>
+                    <div className="cohort-progress-track">
+                      <div
+                        className={`cohort-progress-fill ${traineeProgressVal === 100 ? "is-complete" : ""}`}
+                        style={{ width: `${traineeProgressVal}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card-cohort-engagement-box">
+                    {enrolledCount > 0 ? (
+                      <>
+                        <div className="cohort-header-row">
+                          {/* <span className="cohort-enrollment-label">
+                            <Users size={14} />
+                            <span>
+                              {enrolledCount} {enrolledCount === 1 ? "Trainee" : "Trainees"} Enrolled
                             </span>
-                          </div>
-                          <div 
-                            style={{ width: "100%", height: "8px", background: "#e2e8f0", borderRadius: "9999px", overflow: "hidden" }}
-                            role="progressbar"
-                            aria-valuenow={progressVal}
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                          >
-                            <div
-                              style={{
-                                width: `${progressVal}%`,
-                                height: "100%",
-                                background: progressVal === 100
-                                  ? "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)"
-                                  : "linear-gradient(90deg, #6366f1 0%, #4f46e5 100%)",
-                                borderRadius: "9999px",
-                                transition: "width 0.5s ease-in-out",
-                              }}
-                            />
-                          </div>
+                          </span>
+                          <span className="cohort-progress-label">
+                            Cohort Avg: {cohortProgress}%
+                          </span>  */}
                         </div>
-                      );
-                    } else {
-                      return (
-                        <div style={{ marginTop: "14px", marginBottom: "8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span style={{ fontSize: "12px", fontWeight: 600, color: "#475569" }}>Trainee Overview</span>
+                        <div className="cohort-progress-track">
+                          <div
+                            className={`cohort-progress-fill ${cohortProgress === 100 ? "is-complete" : ""}`}
+                            style={{ width: `${cohortProgress}%` }}
+                          />
+                        </div>
+                        <div className="cohort-actions-strip">
                           <button
+                            type="button"
+                            className="btn-cohort-view-progress"
                             onClick={() => setSelectedPathForTrainees(path.id)}
-                            style={{ padding: "4px 10px", background: "#eff6ff", color: "#2563eb", border: "none", borderRadius: "6px", fontSize: "11px", fontWeight: 600, cursor: "pointer" }}
+                            title="Inspect individual trainee roster, scores, and completion"
                           >
-                            See Trainee Progress
+                            <BarChart2 size={12} />
+                            <span>View Cohort Progress ↗</span>
                           </button>
                         </div>
-                      );
-                    }
-                  })()}
+                      </>
+                    ) : (
+                      <div className="cohort-unassigned-prompt">
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                          <Users size={13} />
+                          <span>No trainees assigned yet</span>
+                        </span>
+                        {isPathActive && modulesCount > 0 && (
+                          <button
+                            type="button"
+                            className="btn-prompt-assign"
+                            onClick={() => handleOpenAssignModal(path)}
+                            title="Assign trainees to track"
+                          >
+                            + Assign Now
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-                  {/* 🌟 ACTION BUTTONS CLUSTER - FLEX LAYOUT WRAPPED SAFELY */}
-                  <div
-                    className="card-actions-row-cluster"
-                    style={{
-                      display: "flex",
-                      flexDirection: "row",
-                      flexWrap: "nowrap", // Prevents buttons from wrapping to a second line
-                      alignItems: "center",
-                      gap: "6px",
-                      marginTop: "16px",
-                      width: "100%",
-                    }}
+                {/* Action Toolbar */}
+                <div className="card-action-toolbar">
+                  {/* Primary CTA */}
+                  <button
+                    type="button"
+                    className="btn-card-primary-action"
+                    onClick={() => onNavigateToModules(path.id, currentTitle)}
+                    title={isTrainee ? "Continue coursework" : "Manage and sequence modules"}
                   >
-                    {/* Primary Action Button */}
-                    <button
-                      type="button"
-                      className="btn-card-action-continue"
-                      style={{
-                        flex: "1 1 auto",
-                        minWidth: 0,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        padding: "8px 10px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                      }}
-                      onClick={() => onNavigateToModules(path.id, currentTitle)}
-                    >
+                    <span>
                       {isTrainee
-                        ? "Continue Learning →"
+                        ? traineeProgressVal === 100
+                          ? "Review Curriculum →"
+                          : traineeProgressVal > 0
+                          ? "Continue Learning →"
+                          : "Start Learning →"
                         : "Manage Curriculum →"}
-                    </button>
+                    </span>
+                  </button>
 
-                    {/* Secondary Action Buttons Group */}
-                    <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-                      {/* ASSIGN BUTTON: Visible ONLY when status is Active AND has modules */}
-                      {(isAdmin || isTrainer) && isPathActive && path.modules && path.modules.length > 0 && (
+                  {/* Secondary Quick Actions (Trainer / Admin) */}
+                  {!isTrainee && (
+                    <div className="card-secondary-actions-group">
+                      {/* Assign Trainees */}
+                      {isPathActive && modulesCount > 0 && (
                         <button
                           type="button"
-                          className="btn-card-action-assign"
-                          style={{
-                            padding: "8px 10px",
-                            background: "#e2e8f0",
-                            color: "#334155",
-                            border: "none",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontWeight: 600,
-                            fontSize: "12px",
-                            whiteSpace: "nowrap",
-                          }}
+                          className="btn-card-icon-action is-assign"
                           onClick={() => handleOpenAssignModal(path)}
-                          title="Assign Trainees"
+                          title="Assign trainees to track"
+                          aria-label="Assign trainees"
                         >
-                          👥 Assign
+                          <UserPlus size={15} />
                         </button>
                       )}
 
-                      {/* 🌟 EDIT BUTTON */}
+                      {/* Edit Track Metadata */}
                       {isOwnerOrAdmin && (
                         <button
                           type="button"
-                          style={{
-                            padding: "8px 10px",
-                            background: "#fef3c7",
-                            color: "#b45309",
-                            border: "1px solid #fde68a",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            fontWeight: 600,
-                            fontSize: "12px",
-                            whiteSpace: "nowrap",
-                          }}
-                          onClick={() => navigate('/learning-paths/' + path.id + '/edit')}
-                          title="Edit Learning Path & Activate Status"
+                          className="btn-card-icon-action is-edit"
+                          onClick={() => navigate(`/learning-paths/${path.id}/edit`)}
+                          title="Edit track syllabus & metadata"
+                          aria-label="Edit learning path"
                         >
-                          ✏️ Edit
+                          <Edit size={14} />
                         </button>
                       )}
 
-                      {/* DELETE BUTTON: Always available to Owner & Admin */}
+                      {/* Delete Track */}
                       {isOwnerOrAdmin && (
                         <button
                           type="button"
-                          className="btn-card-action-delete"
+                          className="btn-card-icon-action is-delete"
                           onClick={() => handleDeletePath(path)}
-                          title="Delete Learning Path"
+                          title="Delete learning path"
+                          aria-label="Delete learning path"
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', marginTop: '-2px' }}>
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            <line x1="10" y1="11" x2="10" y2="17"></line>
-                            <line x1="14" y1="11" x2="14" y2="17"></line>
-                          </svg>
+                          <Trash2 size={14} />
                         </button>
                       )}
                     </div>
-                  </div>
+                  )}
                 </div>
-              );
-            })
-          )}
+              </article>
+            );
+          })}
         </section>
       )}
 
-      {/* ASSIGN TRAINEES MODAL */}
-      {isAssignModalOpen && selectedPath && (
+      {/* ==========================================================================
+          MODAL: COHORT PROGRESSION & ROSTER INSPECTION
+          ========================================================================== */}
+      {selectedPathForTrainees && (
         <div
-          className="modal-backdrop-blur-overlay"
-          onClick={() => setIsAssignModalOpen(false)}
+          className="cohort-modal-overlay"
+          onClick={() => setSelectedPathForTrainees(null)}
+          role="dialog"
+          aria-modal="true"
         >
           <div
-            className="modal-popup-container"
-            style={{ width: "520px" }}
+            className="cohort-modal-card"
             onClick={(e) => e.stopPropagation()}
           >
-            <header className="modal-popup-header">
+            {/* Modal Header */}
+            <div className="cohort-modal-header">
+              <div className="cohort-modal-title-group">
+                <h2>
+                  Cohort Progression:{" "}
+                  {paths.find((p) => p.id === selectedPathForTrainees)?.title || "Track"}
+                </h2>
+                <p className="cohort-modal-subtitle">
+                  Roster breakdown, individual learner velocity, and assessment performance
+                </p>
+              </div>
+              <button
+                type="button"
+                className="cohort-modal-close-btn"
+                onClick={() => setSelectedPathForTrainees(null)}
+                aria-label="Close modal"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Modal Body with Skeleton Loading State */}
+            <div className="cohort-modal-body">
+              {isLoadingLpProgress || !lpTraineesProgress ? (
+                /* Skeleton Loader for Cohort Modal */
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                  <div style={{ display: "flex", gap: "16px", background: "#f8fafc", padding: "16px", borderRadius: "12px", border: "1px solid #e2e8f0" }}>
+                    <div className="skeleton-shimmer" style={{ width: "140px", height: "140px", borderRadius: "50%", margin: "0 auto" }} />
+                    <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                      <div className="skeleton-shimmer" style={{ height: "60px", borderRadius: "8px" }} />
+                      <div className="skeleton-shimmer" style={{ height: "60px", borderRadius: "8px" }} />
+                      <div className="skeleton-shimmer" style={{ height: "60px", borderRadius: "8px" }} />
+                      <div className="skeleton-shimmer" style={{ height: "60px", borderRadius: "8px" }} />
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <TraineeRowSkeleton />
+                    <TraineeRowSkeleton />
+                    <TraineeRowSkeleton />
+                  </div>
+                </div>
+              ) : (
+                (() => {
+                  const { cohort, trainees } = lpTraineesProgress;
+
+                  const chartData = [
+                    { name: "Completed", value: cohort.completed, color: "#16a34a" },
+                    { name: "In Progress", value: cohort.inProgress, color: "#4f46e5" },
+                    { name: "Not Started", value: cohort.notStarted, color: "#94a3b8" },
+                  ].filter((d) => d.value > 0);
+
+                  const filteredRoster = (trainees || []).filter((t: any) => {
+                    const q = cohortSearchQuery.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      t.traineeName?.toLowerCase().includes(q) ||
+                      t.email?.toLowerCase().includes(q)
+                    );
+                  });
+
+                  return (
+                    <>
+                      {/* Cohort Overview Donut Chart & Stat Cards */}
+                      {trainees.length > 0 && (
+                        <div className="cohort-overview-cluster">
+                          <div className="cohort-chart-col">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={chartData}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={46}
+                                  outerRadius={70}
+                                  paddingAngle={3}
+                                >
+                                  {chartData.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry.color} />
+                                  ))}
+                                </Pie>
+                                <RechartsTooltip />
+                              </PieChart>
+                            </ResponsiveContainer>
+                            <div className="cohort-chart-center-label">
+                              <div className="cohort-chart-center-num">{trainees.length}</div>
+                              <div className="cohort-chart-center-sub">Learners</div>
+                            </div>
+                          </div>
+
+                          <div className="cohort-stats-col">
+                            <div className="cohort-stat-box">
+                              <span className="cohort-stat-pill">
+                                <span className="cohort-stat-indicator" style={{ background: "#16a34a" }} />
+                                <span>Completed</span>
+                              </span>
+                              <span className="cohort-stat-num">{cohort.completed}</span>
+                            </div>
+
+                            <div className="cohort-stat-box">
+                              <span className="cohort-stat-pill">
+                                <span className="cohort-stat-indicator" style={{ background: "#4f46e5" }} />
+                                <span>In Progress</span>
+                              </span>
+                              <span className="cohort-stat-num">{cohort.inProgress}</span>
+                            </div>
+
+                            <div className="cohort-stat-box">
+                              <span className="cohort-stat-pill">
+                                <span className="cohort-stat-indicator" style={{ background: "#94a3b8" }} />
+                                <span>Not Started</span>
+                              </span>
+                              <span className="cohort-stat-num">{cohort.notStarted}</span>
+                            </div>
+
+                            <div className="cohort-stat-box">
+                              <span className="cohort-stat-pill">
+                                <Award size={12} style={{ color: "#d97706" }} />
+                                <span>Cohort Size</span>
+                              </span>
+                              <span className="cohort-stat-num">{trainees.length} Total</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Search in Roster */}
+                      <div className="cohort-roster-controls">
+                        <span className="cohort-roster-count">
+                          Enrolled Learners ({filteredRoster.length} of {trainees.length})
+                        </span>
+                        <div className="lp-search-field-wrapper cohort-roster-search">
+                          <span className="lp-search-icon">
+                            <Search size={13} />
+                          </span>
+                          <input
+                            type="text"
+                            className="lp-search-input"
+                            placeholder="Filter by trainee name or email..."
+                            value={cohortSearchQuery}
+                            onChange={(e) => setCohortSearchQuery(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Roster Table */}
+                      <div className="cohort-roster-table-wrapper">
+                        {filteredRoster.length === 0 ? (
+                          <div style={{ padding: "32px 16px", textAlign: "center", color: "#64748b" }}>
+                            <p style={{ margin: 0, fontWeight: 600 }}>No trainees matched your filter.</p>
+                          </div>
+                        ) : (
+                          <table className="cohort-table">
+                            <thead>
+                              <tr>
+                                <th>Trainee</th>
+                                <th>Curriculum Progress</th>
+                                <th style={{ textAlign: "right" }}>Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredRoster.map((t: any) => {
+                                const isExpanded = expandedTraineeId === t.traineeId;
+                                const progress = t.pathProgressPercent ?? 0;
+                                let barBg = "#4f46e5";
+                                if (progress === 100) barBg = "#16a34a";
+                                if (progress === 0) barBg = "#94a3b8";
+
+                                const matchedTrainee = allTrainees.find((u) => u.id === t.traineeId);
+                                const avatarSrc = t.avatarUrl || matchedTrainee?.avatarUrl;
+                                const firstName = t.firstName || matchedTrainee?.firstName || "";
+                                const lastName = t.lastName || matchedTrainee?.lastName || "";
+                                const resolvedName = [firstName, lastName].filter(Boolean).join(" ") || t.traineeName || t.email;
+                                const initials = getTraineeInitials(firstName, lastName, resolvedName, t.email);
+
+                                return (
+                                  <React.Fragment key={t.traineeId}>
+                                    <tr
+                                      className={`cohort-row-item ${isExpanded ? "is-expanded" : ""}`}
+                                      onClick={() =>
+                                        setExpandedTraineeId(isExpanded ? null : t.traineeId)
+                                      }
+                                    >
+                                      <td>
+                                        <div className="trainee-identity-cell">
+                                          <div className="trainee-avatar-wrapper">
+                                            {avatarSrc ? (
+                                              <img
+                                                src={avatarSrc}
+                                                alt={resolvedName}
+                                                className="trainee-avatar-img"
+                                                onError={(e) => {
+                                                  (e.currentTarget as HTMLElement).style.display = "none";
+                                                  const fallback = e.currentTarget.parentElement?.querySelector(
+                                                    ".trainee-avatar-initials"
+                                                  ) as HTMLElement;
+                                                  if (fallback) fallback.style.display = "flex";
+                                                }}
+                                              />
+                                            ) : null}
+                                            <div
+                                              className="trainee-avatar-initials"
+                                              style={{ display: avatarSrc ? "none" : "flex" }}
+                                              aria-hidden="true"
+                                            >
+                                              {initials}
+                                            </div>
+                                          </div>
+                                          <div className="trainee-name-box">
+                                            <span className="trainee-fullname">{resolvedName}</span>
+                                            <span className="trainee-email-sub">{t.email}</span>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <div className="trainee-progress-bar-cell">
+                                          <div className="trainee-progress-track">
+                                            <div
+                                              className="trainee-progress-bar"
+                                              style={{ width: `${progress}%`, background: barBg }}
+                                            />
+                                          </div>
+                                          <span style={{ fontSize: "12px", fontWeight: 700, color: "#334155", minWidth: "36px" }}>
+                                            {progress}%
+                                          </span>
+                                        </div>
+                                      </td>
+                                      <td style={{ textAlign: "right" }}>
+                                        <span className={`trainee-expand-toggle ${isExpanded ? "open" : ""}`}>
+                                          <ChevronRight size={16} />
+                                        </span>
+                                      </td>
+                                    </tr>
+
+                                    {/* Expanded Details Sub-Panel */}
+                                    {isExpanded && (
+                                      <tr>
+                                        <td colSpan={3} style={{ padding: 0 }}>
+                                          <div className="trainee-details-panel">
+                                            <div className="trainee-stat-metric">
+                                              <span className="trainee-stat-label">Lessons Completed</span>
+                                              <span className="trainee-stat-val">
+                                                {t.lessonsCompleted} / {t.lessonsTotal}
+                                              </span>
+                                            </div>
+
+                                            <div className="trainee-stat-metric">
+                                              <span className="trainee-stat-label">Tasks Approved</span>
+                                              <span className="trainee-stat-val">
+                                                {t.tasksApproved} / {t.tasksTotal}
+                                              </span>
+                                            </div>
+
+                                            <div className="trainee-stat-metric">
+                                              <span className="trainee-stat-label">Average Score</span>
+                                              <span className="trainee-stat-val">
+                                                {t.avgScorePercent !== null && t.avgScorePercent !== undefined
+                                                  ? `${t.avgScorePercent}%`
+                                                  : "—"}
+                                              </span>
+                                            </div>
+
+                                            <div className="trainee-stat-metric">
+                                              <span className="trainee-stat-label">Resources Visited</span>
+                                              <span className="trainee-stat-val">
+                                                {t.resourcesVisited} / {t.resourcesTotal}
+                                              </span>
+                                            </div>
+
+                                            {/* <button
+                                              type="button"
+                                              className="trainee-profile-link-btn"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/trainer/trainees/${t.traineeId}`);
+                                              }}
+                                              title="View trainee comprehensive progress record"
+                                            >
+                                              <span>View Trainee Record</span>
+                                              <ExternalLink size={12} />
+                                            </button> */}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================================================================
+          MODAL: ASSIGN TRAINEES TO TRACK
+          ========================================================================== */}
+      {isAssignModalOpen && selectedPathForAssignment && (
+        <div
+          className="cohort-modal-overlay"
+          onClick={() => setIsAssignModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="assign-modal-card"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="assign-modal-header">
               <h2>Assign Trainees to Track</h2>
               <button
                 type="button"
-                className="modal-close-icon-btn"
+                className="cohort-modal-close-btn"
                 onClick={() => setIsAssignModalOpen(false)}
+                aria-label="Close modal"
               >
-                ×
+                &times;
               </button>
-            </header>
+            </div>
 
-            <div style={{ padding: "16px 20px" }}>
-              <input
-                type="text"
-                className="invite-form-input"
-                placeholder="🔍 Search trainee by name or email..."
-                value={traineeSearchQuery}
-                onChange={(e) => setTraineeSearchQuery(e.target.value)}
-                style={{ marginBottom: "12px" }}
-              />
+            {/* Body */}
+            <div className="assign-modal-body">
+              <div className="lp-search-field-wrapper" style={{ maxWidth: "100%" }}>
+                <span className="lp-search-icon">
+                  <Search size={14} />
+                </span>
+                <input
+                  type="text"
+                  className="lp-search-input"
+                  placeholder="Search trainees by name or email..."
+                  value={traineeSearchQuery}
+                  onChange={(e) => setTraineeSearchQuery(e.target.value)}
+                />
+              </div>
 
-              <div
-                style={{
-                  maxHeight: "260px",
-                  overflowY: "auto",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "6px",
-                  padding: "8px",
-                }}
-              >
+              {/* Batch Actions */}
+              <div className="assign-batch-actions">
+                <button
+                  type="button"
+                  className="assign-batch-link"
+                  onClick={handleSelectAllAvailableTrainees}
+                >
+                  Select All Available
+                </button>
+                {newlySelectedTraineeIds.length > 0 && (
+                  <button
+                    type="button"
+                    className="assign-batch-link"
+                    style={{ color: "#dc2626" }}
+                    onClick={handleDeselectAllTrainees}
+                  >
+                    Deselect All
+                  </button>
+                )}
+              </div>
+
+              {/* Trainee Checkbox List with Skeleton Loader */}
+              <div className="assign-trainees-list-box">
                 {isLoadingTrainees ? (
-                  <div
-                    style={{
-                      padding: "16px",
-                      textAlign: "center",
-                      color: "#64748b",
-                    }}
-                  >
-                    Loading trainees...
-                  </div>
-                ) : filteredTrainees.length === 0 ? (
-                  <div
-                    style={{
-                      padding: "16px",
-                      textAlign: "center",
-                      color: "#94a3b8",
-                    }}
-                  >
-                    No trainees found.
-                  </div>
+                  <>
+                    <TraineeRowSkeleton />
+                    <TraineeRowSkeleton />
+                    <TraineeRowSkeleton />
+                  </>
                 ) : (
                   (() => {
-                    const sortByName = (a: any, b: any) => {
-                      const nameA = `${a.firstName || ""} ${a.lastName || ""}`.trim() || a.name || a.email || "";
-                      const nameB = `${b.firstName || ""} ${b.lastName || ""}`.trim() || b.name || b.email || "";
-                      return nameA.localeCompare(nameB);
-                    };
+                    const filtered = allTrainees.filter((t) => {
+                      const q = traineeSearchQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      const fullName = `${t.firstName || ""} ${t.lastName || ""}`.trim() || t.name || "";
+                      return fullName.toLowerCase().includes(q) || t.email?.toLowerCase().includes(q);
+                    });
 
-                    const available = filteredTrainees
-                      .filter(t => !selectedPath.assignedToTraineeIds?.includes(t.id))
-                      .sort(sortByName);
-                    const alreadyAssigned = filteredTrainees
-                      .filter(t => selectedPath.assignedToTraineeIds?.includes(t.id))
-                      .sort(sortByName);
-
-                    const renderTraineeRow = (trainee: any, isAlreadyAssigned: boolean) => {
-                      const isNewlyChecked = newlySelectedTraineeIds.includes(trainee.id);
-                      const displayName = `${trainee.firstName || ""} ${trainee.lastName || ""}`.trim() || trainee.name || trainee.email;
-
+                    if (filtered.length === 0) {
                       return (
-                        <div
-                          key={trainee.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "10px 12px",
-                            borderRadius: "6px",
-                            background: isAlreadyAssigned
-                              ? "#f1f5f9"
-                              : isNewlyChecked
-                                ? "#f0f9ff"
-                                : "#fff",
-                            border: "1px solid #e2e8f0",
-                            marginBottom: "6px",
-                            opacity: isAlreadyAssigned ? 0.75 : 1,
-                          }}
-                        >
-                          <label
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "12px",
-                              cursor: isAlreadyAssigned ? "not-allowed" : "pointer",
-                              flex: 1,
-                            }}
-                          >
-                            <input
-                              type="checkbox"
-                              disabled={isAlreadyAssigned}
-                              checked={isAlreadyAssigned || isNewlyChecked}
-                              onChange={() => !isAlreadyAssigned && handleToggleTrainee(trainee.id)}
-                              style={{
-                                width: "16px",
-                                height: "16px",
-                                cursor: isAlreadyAssigned ? "not-allowed" : "pointer",
-                              }}
-                            />
-                            <div>
-                              <div style={{ fontSize: "14px", fontWeight: 600, color: "#1e293b" }}>
-                                {displayName}
-                              </div>
-                              <div style={{ fontSize: "12px", color: "#64748b" }}>
-                                {trainee.email}
-                              </div>
-                            </div>
-                          </label>
-
-                          {isAlreadyAssigned ? (
-                            <span
-                              style={{
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                color: "#475569",
-                                background: "#e2e8f0",
-                                padding: "3px 8px",
-                                borderRadius: "4px",
-                              }}
-                            >
-                              ✓ Already Assigned{
-                                selectedPath.traineeAssigners?.[trainee.id]
-                                  ? ` (${`${selectedPath.traineeAssigners[trainee.id].firstName || ''} ${selectedPath.traineeAssigners[trainee.id].lastName || ''}`.trim() || selectedPath.traineeAssigners[trainee.id].email})`
-                                  : ''
-                              }
-                            </span>
-                          ) : isNewlyChecked ? (
-                            <span
-                              style={{
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                color: "#15803d",
-                                background: "#dcfce7",
-                                padding: "3px 8px",
-                                borderRadius: "4px",
-                              }}
-                            >
-                              Selected
-                            </span>
-                          ) : null}
+                        <div style={{ padding: "24px 16px", textAlign: "center", color: "#64748b" }}>
+                          <p style={{ margin: 0, fontSize: "13px" }}>No eligible trainees found.</p>
                         </div>
                       );
-                    };
+                    }
+
+                    const available = filtered.filter(
+                      (t) => !selectedPathForAssignment.assignedToTraineeIds?.includes(t.id)
+                    );
+                    const alreadyAssigned = filtered.filter((t) =>
+                      selectedPathForAssignment.assignedToTraineeIds?.includes(t.id)
+                    );
 
                     return (
                       <>
                         {available.length > 0 && (
-                          <div style={{ marginBottom: alreadyAssigned.length > 0 ? "16px" : 0 }}>
-                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px", paddingLeft: "4px" }}>
-                              AVAILABLE TO ASSIGN ({available.length})
+                          <div style={{ marginBottom: "8px" }}>
+                            <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em", padding: "4px 6px" }}>
+                              Available to Assign ({available.length})
                             </div>
-                            {available.map(t => renderTraineeRow(t, false))}
+                            {available.map((trainee) => {
+                              const isChecked = newlySelectedTraineeIds.includes(trainee.id);
+                              const displayName = `${trainee.firstName || ""} ${trainee.lastName || ""}`.trim() || trainee.name || trainee.email;
+
+                              return (
+                                <div
+                                  key={trainee.id}
+                                  className={`assign-trainee-item-row ${isChecked ? "is-selected" : ""}`}
+                                >
+                                  <label className="assign-trainee-label">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={() => handleToggleTrainee(trainee.id)}
+                                    />
+                                    <div className="assign-trainee-info">
+                                      <span className="assign-trainee-name">{displayName}</span>
+                                      <span className="assign-trainee-email">{trainee.email}</span>
+                                    </div>
+                                  </label>
+                                  {isChecked && (
+                                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#16a34a", background: "#dcfce7", padding: "2px 7px", borderRadius: "4px" }}>
+                                      Selected
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
+
                         {alreadyAssigned.length > 0 && (
                           <div>
-                            <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "8px", paddingLeft: "4px" }}>
-                              ALREADY ASSIGNED ({alreadyAssigned.length})
+                            <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", padding: "4px 6px" }}>
+                              Already Enrolled ({alreadyAssigned.length})
                             </div>
-                            {alreadyAssigned.map(t => renderTraineeRow(t, true))}
+                            {alreadyAssigned.map((trainee) => {
+                              const displayName = `${trainee.firstName || ""} ${trainee.lastName || ""}`.trim() || trainee.name || trainee.email;
+                              return (
+                                <div
+                                  key={trainee.id}
+                                  className="assign-trainee-item-row is-already-assigned"
+                                >
+                                  <label className="assign-trainee-label" style={{ cursor: "not-allowed" }}>
+                                    <input type="checkbox" checked disabled />
+                                    <div className="assign-trainee-info">
+                                      <span className="assign-trainee-name" style={{ color: "#64748b" }}>
+                                        {displayName}
+                                      </span>
+                                      <span className="assign-trainee-email">{trainee.email}</span>
+                                    </div>
+                                  </label>
+                                  <span className="already-assigned-pill">
+                                    ✓ Enrolled
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </>
@@ -1168,233 +1951,37 @@ export function LearningPathsSection({
               </div>
             </div>
 
-            <footer className="modal-popup-footer">
-              {allTrainees.length > 0 && allTrainees.every(t => selectedPath.assignedToTraineeIds?.includes(t.id)) ? (
-                <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "13px", color: "#64748b", margin: "0 auto", padding: "12px 0", fontWeight: 500 }}>
-                    All trainees are already assigned to this track.
+            {/* Footer */}
+            <div className="assign-modal-footer">
+              <span className="assign-counter-text">
+                {newlySelectedTraineeIds.length} Selected
+              </span>
+              <div className="assign-footer-actions">
+                <button
+                  type="button"
+                  className="btn-assign-cancel"
+                  onClick={() => setIsAssignModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn-assign-confirm"
+                  disabled={newlySelectedTraineeIds.length === 0 || isSubmittingAssignment}
+                  onClick={handleConfirmAssignment}
+                >
+                  <UserPlus size={14} />
+                  <span>
+                    {isSubmittingAssignment
+                      ? "Assigning..."
+                      : `Assign Selected (${newlySelectedTraineeIds.length})`}
                   </span>
-                  <button
-                    type="button"
-                    className="modal-cancel-btn"
-                    onClick={() => setIsAssignModalOpen(false)}
-                  >
-                    Close
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      color: "#64748b",
-                      marginRight: "auto",
-                      paddingLeft: "12px",
-                      fontWeight: 500
-                    }}
-                  >
-                    {newlySelectedTraineeIds.length} Selected · {allTrainees.filter(t => selectedPath.assignedToTraineeIds?.includes(t.id)).length} Already Assigned · {allTrainees.length} Total
-                  </span>
-                  <button
-                    type="button"
-                    className="modal-cancel-btn"
-                    onClick={() => setIsAssignModalOpen(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="modal-confirm-btn"
-                    disabled={newlySelectedTraineeIds.length === 0 || isSubmitting}
-                    onClick={handleConfirmAssignment}
-                  >
-                    {isSubmitting ? "Assigning..." : "Assign Selected"}
-                  </button>
-                </>
-              )}
-            </footer>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
-
-      {selectedPathForTrainees && (() => {
-        const path = paths.find(p => p.id === selectedPathForTrainees);
-        
-        if (isLoadingLpProgress || !lpTraineesProgress) {
-          return (
-            <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ background: '#fff', padding: '24px', borderRadius: '12px', color: '#64748b', fontWeight: 600 }}>Loading cohort data...</div>
-            </div>
-          );
-        }
-
-        const { cohort, trainees } = lpTraineesProgress;
-        
-        const chartData = [
-          { name: 'Completed', value: cohort.completed, color: '#10b981' },
-          { name: 'In Progress', value: cohort.inProgress, color: '#4f46e5' },
-          { name: 'Not Started', value: cohort.notStarted, color: '#94a3b8' }
-        ].filter(d => d.value > 0);
-
-        return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <style>{`
-              .trainee-table-row { display: table-row; }
-              .trainee-table-cell { display: table-cell; }
-              .trainee-table-head { display: table-header-group; }
-              .cohort-overview-flex { flex-direction: row; }
-              @media (max-width: 650px) {
-                .trainee-table-head { display: none; }
-                .trainee-table-row { display: flex; flex-direction: column; padding: 12px; border-bottom: 1px solid #e2e8f0; position: relative; }
-                .trainee-table-cell { display: flex; padding: 6px 0 !important; align-items: center; }
-                .trainee-table-cell[data-label]::before { content: attr(data-label); font-weight: 600; width: 120px; color: #475569; font-size: 12px; text-transform: uppercase; }
-                .cohort-overview-flex { flex-direction: column !important; }
-              }
-              
-              .expandable-row-content {
-                display: grid;
-                grid-template-rows: 0fr;
-                transition: grid-template-rows 0.3s ease-out;
-              }
-              .expandable-row-content.open {
-                grid-template-rows: 1fr;
-              }
-              .expandable-row-inner {
-                overflow: hidden;
-              }
-            `}</style>
-            
-            <div style={{ background: '#fff', borderRadius: '16px', width: '100%', maxWidth: '850px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
-              <div style={{ padding: '20px 24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h2 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: '#0f172a' }}>Trainees Progress: {path?.title}</h2>
-                <button onClick={() => setSelectedPathForTrainees(null)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b', minWidth: '44px', minHeight: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>&times;</button>
-              </div>
-              <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                
-                {/* Graphical Progress Summary */}
-                {trainees.length > 0 && chartData.length > 0 && (
-                  <div className="cohort-overview-flex" style={{ display: 'flex', gap: '20px', alignItems: 'center', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ width: '200px', height: '200px', margin: '0 auto' }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2}>
-                            {chartData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <RechartsTooltip />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <h3 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 600, color: '#334155' }}>Cohort Overview</h3>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {chartData.map((d, i) => (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: d.color }} />
-                              <span style={{ fontSize: '14px', color: '#475569', fontWeight: 500 }}>{d.name}</span>
-                            </div>
-                            <span style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a' }}>{d.value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Trainee Table */}
-                <div style={{ borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff' }}>
-                  {trainees.length === 0 ? (
-                    <div style={{ padding: '40px 24px', textAlign: 'center', color: '#64748b' }}>
-                      <div style={{ fontSize: '32px', marginBottom: '12px' }}>📭</div>
-                      <div style={{ fontWeight: 600, color: '#334155', marginBottom: '4px' }}>No trainees assigned</div>
-                      <div style={{ fontSize: '13px' }}>Assign trainees to this path to track their progress.</div>
-                    </div>
-                  ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', display: 'table' }}>
-                      <thead className="trainee-table-head">
-                        <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                          <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Trainee Name</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Email</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'left', color: '#475569', fontWeight: 600 }}>Path Progress</th>
-                        </tr>
-                      </thead>
-                      <tbody style={{ display: 'table-row-group' }}>
-                        {trainees.map((t: any) => {
-                          const progress = t.pathProgressPercent;
-                          const isExpanded = expandedTraineeId === t.traineeId;
-                          let barColor = '#4f46e5';
-                          if (progress === 100) barColor = '#10b981';
-                          if (progress === 0) barColor = '#94a3b8';
-
-                          return (
-                            <React.Fragment key={t.traineeId}>
-                              <tr 
-                                className="trainee-table-row"
-                                style={{ 
-                                  cursor: 'pointer',
-                                  background: isExpanded ? '#f0f9ff' : 'transparent',
-                                  transition: 'background 0.2s',
-                                  borderBottom: '1px solid #e2e8f0'
-                                }}
-                                onClick={() => handleTraineeRowClick(t.traineeId)}
-                                onMouseEnter={(e) => { if (!isExpanded) e.currentTarget.style.background = '#f8fafc'; }}
-                                onMouseLeave={(e) => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}
-                              >
-                                <td className="trainee-table-cell" data-label="Trainee Name" style={{ padding: '16px', fontWeight: 600, color: '#0f172a', gap: '8px' }}>
-                                  <span style={{ fontSize: '12px', color: '#64748b', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.3s ease', display: 'inline-block', width: '16px' }}>▶</span>
-                                  {t.traineeName}
-                                </td>
-                                <td className="trainee-table-cell" data-label="Email" style={{ padding: '16px', color: '#64748b' }}>{t.email}</td>
-                                <td className="trainee-table-cell" data-label="Path Progress" style={{ padding: '16px', width: '100%', maxWidth: '300px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
-                                    <div style={{ flex: 1, height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                                      <div style={{ height: '100%', background: barColor, width: `${progress}%`, transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)' }} />
-                                    </div>
-                                    <span style={{ fontSize: '13px', fontWeight: 700, color: '#334155', minWidth: '40px', textAlign: 'right' }}>{progress}%</span>
-                                  </div>
-                                </td>
-                              </tr>
-                              
-                              <tr style={{ display: 'table-row' }}>
-                                <td colSpan={3} style={{ padding: 0, border: 'none' }}>
-                                  <div className={`expandable-row-content ${isExpanded ? 'open' : ''}`}>
-                                    <div className="expandable-row-inner" style={{ background: '#f8fafc', borderBottom: isExpanded ? '1px solid #e2e8f0' : 'none' }}>
-                                      <div style={{ padding: '20px 24px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Lessons Completed</div>
-                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.lessonsCompleted} <span style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 500 }}>/ {t.lessonsTotal}</span></div>
-                                        </div>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Tasks Approved</div>
-                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.tasksApproved} <span style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 500 }}>/ {t.tasksTotal}</span></div>
-                                        </div>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Average Score</div>
-                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.avgScorePercent !== null ? `${t.avgScorePercent}%` : '—'}</div>
-                                        </div>
-                                        <div style={{ flex: '1 1 180px' }}>
-                                          <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.05em' }}>Resources Visited</div>
-                                          <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{t.resourcesVisited} <span style={{ color: '#94a3b8', fontSize: '14px', fontWeight: 500 }}>/ {t.resourcesTotal}</span></div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            </React.Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }

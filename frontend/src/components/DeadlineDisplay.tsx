@@ -8,7 +8,10 @@ export const DeadlineDisplay = ({ task, submission }: { task: any; submission?: 
 
   // WITHOUT DEADLINE
   if (!submission || !submission.deadline) {
-    if (task.lockUntilLessonsComplete && submission && !submission.taskUnlockedAt) {
+    const rawStatus = String(submission?.status || '').toUpperCase();
+    const isAlreadyAttempted = ['SUBMITTED', 'EVALUATED', 'APPROVED', 'REJECTED', 'NEEDS_IMPROVEMENT', 'PENDING_MANUAL_REVIEW', 'AI_EVALUATED_PENDING_REVIEW'].includes(rawStatus);
+
+    if (task.lockUntilLessonsComplete && !isAlreadyAttempted && (!submission || !submission.taskUnlockedAt)) {
       return (
         <span style={{ fontSize: 13, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
           <Lock size={14} /> Unlocks after prerequisite lessons

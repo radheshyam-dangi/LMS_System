@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, Bar, Cell } from 'recharts';
+import { Compass } from 'lucide-react';
 import { TraineeSummaryModal } from './TraineeSummaryModal';
 
 type TraineeProgress = {
@@ -42,15 +43,17 @@ export const InteractiveTraineeProgress: React.FC<InteractiveTraineeProgressProp
 
   if (data.length === 0) {
     return (
-      <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #f1f5f9', padding: '48px 24px', textAlign: 'center' }}>
-        <div style={{ fontSize: '48px', marginBottom: '16px' }}>🚀</div>
-        <h3 style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 8px 0', color: '#0f172a' }}>Ready to start training?</h3>
-        <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '24px' }}>You haven't assigned any Learning Paths or Tasks to trainees yet.</p>
+      <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '40px 24px', textAlign: 'center' }}>
+        <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+          <Compass size={24} strokeWidth={1.75} />
+        </div>
+        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 6px 0', color: '#0f172a' }}>Cohort Progress Overview</h3>
+        <p style={{ color: '#64748b', fontSize: '13.5px', marginBottom: '20px' }}>No active trainee enrollments found for current curriculum tracks.</p>
         <button 
           onClick={() => window.location.href = '/learning-paths'}
           className="hover-effect active-effect touch-target"
-          style={{ padding: '8px 16px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
-          Assign Learning Path
+          style={{ padding: '8px 18px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>
+          Manage Learning Paths
         </button>
       </div>
     );

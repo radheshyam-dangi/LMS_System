@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ModuleDescription } from '../../utils/textUtils';
+import { Link2, X } from 'lucide-react';
 
 export const ModuleDescriptionPreview = ({ description, resources, onShowMore }: { description: string, resources: any[], onShowMore: () => void }) => {
   const [isOverflowing, setIsOverflowing] = useState(false);
@@ -64,7 +65,7 @@ export const ModuleShowMoreModal = ({ description, resources, onClose, onVisitRe
       >
         <div style={{ padding: '24px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
           <h2 id="desc-modal-title" style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#1e293b' }}>Module Information</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: '#64748b' }}>&times;</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b' }}><X size={18} /></button>
         </div>
         <div style={{ padding: '24px', flex: 1 }}>
           <h3 style={{ fontSize: '14px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#475569', marginBottom: '12px' }}>Description</h3>
@@ -85,7 +86,7 @@ export const ModuleShowMoreModal = ({ description, resources, onClose, onVisitRe
                     onClick={() => { if (res.id && isTrainee) onVisitResource(res.id); }}
                     style={{ color: '#4f46e5', fontSize: '14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 500, padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}
                   >
-                    <span style={{ fontSize: '16px' }}>🔗</span>
+                    <Link2 size={16} strokeWidth={2} />
                     {res.title || 'Resource'}
                   </a>
                 ))}

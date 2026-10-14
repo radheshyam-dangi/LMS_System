@@ -7,6 +7,7 @@ import {
   Put,
   Delete,
   Req,
+  Query,
   BadRequestException,
 } from '@nestjs/common';
 import { UserEntityService } from './user.service';
@@ -39,8 +40,8 @@ export class UserController {
   }
 
   @Get(':id/profile-stats')
-  async getProfileStats(@Param('id') id: string) {
-    return await this.userService.getUserProfileStats(id);
+  async getProfileStats(@Param('id') id: string, @Query('role') role?: string) {
+    return await this.userService.getUserProfileStats(id, role);
   }
 
   @Put(':id/change-password')

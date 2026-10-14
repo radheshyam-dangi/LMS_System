@@ -128,4 +128,63 @@ export const userService = {
       throw new Error(message);
     }
   },
+
+  /**
+   * 7. FETCH USER PROFILE STATS & METRICS
+   */
+  fetchUserProfileStats: async (userId: string, token: string): Promise<any> => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/users/${userId}/profile-stats`,
+        getAuthHeaders(token)
+      );
+      return response.data;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to fetch user profile stats.';
+      throw new Error(message);
+    }
+  },
+
+  /**
+   * 8. DEACTIVATE USER ACCOUNT
+   */
+  deactivateUser: async (userId: string, token?: string): Promise<any> => {
+    try {
+      const headers = token ? getAuthHeaders(token) : { headers: { 'Content-Type': 'application/json' } };
+      const response = await axios.put(`${API_BASE_URL}/users/${userId}/deactivate`, {}, headers);
+      return response.data;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to deactivate user.';
+      throw new Error(message);
+    }
+  },
+
+  /**
+   * 9. REACTIVATE USER ACCOUNT
+   */
+  reactivateUser: async (userId: string, token?: string): Promise<any> => {
+    try {
+      const headers = token ? getAuthHeaders(token) : { headers: { 'Content-Type': 'application/json' } };
+      const response = await axios.put(`${API_BASE_URL}/users/${userId}/reactivate`, {}, headers);
+      return response.data;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to reactivate user.';
+      throw new Error(message);
+    }
+  },
+
+  /**
+   * 10. UPDATE USER ROLE
+   */
+  updateUserRole: async (userId: string, roleName: string, token?: string): Promise<any> => {
+    try {
+      const headers = token ? getAuthHeaders(token) : { headers: { 'Content-Type': 'application/json' } };
+      const response = await axios.put(`${API_BASE_URL}/users/${userId}/role`, { roleName }, headers);
+      return response.data;
+    } catch (error: any) {
+      const message = error.response?.data?.message || 'Failed to update user role.';
+      throw new Error(message);
+    }
+  },
 };
+

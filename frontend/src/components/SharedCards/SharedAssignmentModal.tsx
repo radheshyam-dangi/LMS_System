@@ -7,6 +7,7 @@ import { AssignmentChatDrawer } from '../TraineeSubmissionsView/AssignmentChatDr
 import { renderMultilineText } from '../../utils/textUtils';
 import { assignmentService } from '../../services/assignmentService';
 import { useToast } from '../../context/ToastContext';
+import '../TraineeSubmissionsView/TraineeAssignments.css';
 
 interface SharedAssignmentModalProps {
   task: any;
@@ -395,19 +396,14 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
   };
 
   return createPortal(
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', zIndex: 1000, backdropFilter: 'blur(4px)', padding: '24px' }} onClick={handleCloseRequest}>
+    <div className="assignment-submit-modal-overlay" onClick={handleCloseRequest}>
       <div 
         ref={containerRef}
+        className="assignment-submit-modal-container"
         style={{ 
           '--chat-panel-width': '420px',
-          width: '100%', 
-          maxWidth: isChatDrawerOpen ? 'calc(100vw - var(--chat-panel-width) - 48px)' : 780, 
-          height: '92dvh', maxHeight: 920, overflowY: 'hidden', 
-          background: '#fff', borderRadius: 24, display: 'flex', flexDirection: 'column', position: 'relative', 
-          boxShadow: '0 25px 80px rgba(0,0,0,0.22)',
-          margin: 'auto',
+          maxWidth: isChatDrawerOpen ? 'calc(100vw - var(--chat-panel-width) - 48px)' : 820, 
           marginRight: isChatDrawerOpen ? 'calc(var(--chat-panel-width) + 24px)' : 'auto',
-          transition: 'max-width 0.3s ease, margin-right 0.3s ease'
         } as React.CSSProperties} 
         onClick={(e) => e.stopPropagation()}
       >

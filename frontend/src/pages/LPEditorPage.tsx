@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { TiptapLPEditor } from '../components/TiptapLPEditor/TiptapLPEditor';
 import { learningPathService } from '../services/learningPathService';
 import { convertLpToTiptap } from '../components/TiptapLPEditor/convertLpToTiptap';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import './LPEditorPage.css';
 
 export default function LPEditorPage() {
@@ -84,9 +84,6 @@ export default function LPEditorPage() {
           <div className="lp-header-divider" />
 
           <div className="lp-header-title-group">
-            <span className="lp-studio-badge">
-              <Sparkles size={11} /> STUDIO
-            </span>
             <h1 className="lp-header-title">
               {pathId ? 'Edit Curriculum' : 'Curriculum Builder'}
             </h1>

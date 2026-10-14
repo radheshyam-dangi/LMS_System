@@ -61,6 +61,17 @@ export const assignmentService = {
   },
 
   /**
+   * 4b. FETCH SUBMISSION BY ID
+   */
+  fetchSubmissionById: async (submissionId: string, token: string, activeRole?: string) => {
+    const response = await axios.get(
+      `${API_BASE_URL}/assignments/submissions/${submissionId}`,
+      getAuthHeaders(token, activeRole)
+    );
+    return response.data;
+  },
+
+  /**
    * 5. FETCH ALL ASSIGNMENTS FOR A SPECIFIC LESSON
    */
   fetchAssignmentsByLesson: async (lessonId: string, token: string) => {

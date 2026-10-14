@@ -2,6 +2,25 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { assignmentService } from '../../services/assignmentService';
 import { useToast } from '../../context/ToastContext';
 
+/** Guards against null/undefined/'undefined' strings */
+const isValidStr = (v?: string | null): v is string =>
+  typeof v === 'string' && v.trim().length > 0 && v.trim().toLowerCase() !== 'undefined';
+
+/** Builds safe initials from firstName/lastName with multiple fallback layers */
+const getSubmissionTraineeInitials = (
+  firstName?: string,
+  lastName?: string,
+  email?: string
+): string => {
+  const fn = isValidStr(firstName) ? firstName!.trim() : '';
+  const ln = isValidStr(lastName) ? lastName!.trim() : '';
+  if (fn && ln) return (fn[0] + ln[0]).toUpperCase();
+  if (fn) return fn.slice(0, 2).toUpperCase();
+  if (ln) return ln.slice(0, 2).toUpperCase();
+  if (isValidStr(email)) return email!.trim().slice(0, 2).toUpperCase();
+  return 'TR';
+};
+
 interface SubmissionDetailViewProps {
   submission: any;
   accessToken: string;
@@ -354,13 +373,94 @@ export function SubmissionDetailView({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px', fontSize: '13px', color: '#475569' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ fontSize: '15px' }}>👤</span>
-                <strong style={{ color: '#1e293b' }}>
-                  {submission.trainee?.firstName} {submission.trainee?.lastName || ''}
-                </strong>
-                <span style={{ color: '#64748b' }}>({submission.trainee?.email})</span>
-              </div>
+              {/* Trainee Avatar */}
+              {(() => {
+                const avatarSrc: string | undefined =
+                  submission.trainee?.avatarUrl ||
+                  submission.trainee?.profileImage ||
+                  submission.trainee?.avatar ||
+                  undefined;
+                const initials = getSubmissionTraineeInitials(
+                  submission.trainee?.firstName,
+                  submission.trainee?.lastName,
+                  submission.trainee?.email
+                );
+                const safeFirstName = isValidStr(submission.trainee?.firstName)
+                  ? submission.trainee!.firstName
+                  : '';
+                const safeLastName = isValidStr(submission.trainee?.lastName)
+                  ? submission.trainee!.lastName
+                  : '';
+                const displayName = `${safeFirstName} ${safeLastName}`.trim() ||
+                  submission.trainee?.email ||
+                  'Trainee';
+
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {/* Avatar circle */}
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '50%',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {avatarSrc ? (
+                        <img
+                          src={avatarSrc}
+                          alt={displayName}
+                          style={{
+                            width: '34px',
+                            height: '34px',
+                            borderRadius: '50%',
+                            objectFit: 'cover',
+                            border: '2px solid #e2e8f0',
+                          }}
+                          onError={(e) => {
+                            const img = e.currentTarget;
+                            img.style.display = 'none';
+                            const fallback = img.nextElementSibling as HTMLElement | null;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div
+                        style={{
+                          display: avatarSrc ? 'none' : 'flex',
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                          color: '#ffffff',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          border: '2px solid #e0e7ff',
+                          flexShrink: 0,
+                          letterSpacing: '0.5px',
+                        }}
+                      >
+                        {initials}
+                      </div>
+                    </div>
+
+                    <div>
+                      <strong style={{ color: '#1e293b', display: 'block', fontSize: '14px' }}>
+                        {displayName}
+                      </strong>
+                      {isValidStr(submission.trainee?.email) && (
+                        <span style={{ color: '#64748b', fontSize: '12px' }}>
+                          {submission.trainee!.email}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <span style={{ color: '#cbd5e1' }}>•</span>
               <div style={{ color: '#64748b', fontSize: '12px' }}>
                 Submitted: {submission.submittedAt ? new Date(submission.submittedAt).toLocaleString() : 'Recent'}
