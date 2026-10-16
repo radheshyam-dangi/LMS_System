@@ -12,7 +12,6 @@ import {
   Trash2,
   CheckCircle2,
   AlertCircle,
-  ShieldCheck,
   Laptop,
   Check,
   Clock,
@@ -259,10 +258,6 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
       {/* ── 1. PAGE HEADER ── */}
       <header className="settings-header-row">
         <div className="settings-header-left">
-          <div className="settings-eyebrow-badge">
-            <ShieldCheck size={13} />
-            <span>Account Workspace · {activeRole}</span>
-          </div>
           <h1 className="settings-main-title">Account Settings</h1>
           <p className="settings-sub-heading">
             Manage your personal profile, notification triggers, login security, and workspace preferences.

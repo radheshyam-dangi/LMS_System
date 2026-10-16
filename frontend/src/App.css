@@ -105,6 +105,17 @@ a:focus-visible {
     outline-offset: 2px;
 }
 
+/* Prevent browser focus outlines on Recharts SVG containers */
+.recharts-wrapper,
+.recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible,
+.recharts-surface,
+.recharts-surface:focus,
+.recharts-surface *:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
 /* Disabled State */
 .disabled-state {
     opacity: 0.5;

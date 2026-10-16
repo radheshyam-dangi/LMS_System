@@ -628,8 +628,8 @@ export function TrainerEvaluationDashboard({
           </h1>
           <p className="eval-sub-heading">
             {activeMainTab === 'evaluations'
-              ? 'Review pending trainee submissions, verify AI-assisted grading, and provide qualitative feedback.'
-              : 'Inspect curriculum tasks, monitor completion statuses, and evaluate assignments across cohorts.'}
+              ? ''
+              : ''}
           </p>
         </div>
       </header>

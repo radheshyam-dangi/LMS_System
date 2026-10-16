@@ -826,9 +826,9 @@
   box-sizing: border-box;
 }
 
-/* Fluid Trainer 5-Card Metrics Grid (shrink & extend naturally) */
+/* Fluid Trainer 3-Card Metrics Grid (shrink & extend naturally) */
 .db-metrics-grid.trainer-grid {
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   align-items: stretch;
 }
@@ -1097,12 +1097,6 @@
 }
 
 /* Responsive queries for trainer-grid */
-@media (max-width: 1399px) {
-  .db-metrics-grid.trainer-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
 @media (max-width: 1023px) {
   .db-metrics-grid.trainer-grid {
     grid-template-columns: repeat(2, 1fr);

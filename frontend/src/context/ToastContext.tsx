@@ -1,7 +1,7 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
-import { Toast, ToastContainer } from 'react-bootstrap';
+/* eslint-disable react-refresh/only-export-components */
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import 'bootstrap/dist/css/bootstrap.min.css';
+import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info';
 
@@ -31,75 +31,219 @@ const AUTOHIDE_MS: Record<ToastVariant, number> = {
 const DEDUPE_WINDOW_MS = 1500;
 const MAX_VISIBLE = 4;
 
-const VARIANT_STYLES: Record<ToastVariant, { bg: string; border: string; accent: string; icon: string; headerColor: string; bodyColor: string }> = {
-  success: { bg: '#ecfdf3', border: '#bbf7d0', accent: '#16a34a', icon: '✓', headerColor: '#16a34a', bodyColor: '#1e293b' },
-  error: { bg: '#fef2f2', border: '#fecaca', accent: '#dc2626', icon: '✕', headerColor: '#dc2626', bodyColor: '#1e293b' },
-  warning: { bg: '#fffbeb', border: '#fde68a', accent: '#d97706', icon: '⚠', headerColor: '#d97706', bodyColor: '#1e293b' },
-  info: { bg: '#eff6ff', border: '#bfdbfe', accent: '#2563eb', icon: 'i', headerColor: '#2563eb', bodyColor: '#1e293b' },
+const VARIANT_CONFIG: Record<
+  ToastVariant,
+  {
+    bg: string;
+    border: string;
+    accent: string;
+    titleColor: string;
+    bodyColor: string;
+    Icon: React.ComponentType<{ size?: number; color?: string; style?: React.CSSProperties }>;
+  }
+> = {
+  success: {
+    bg: '#ffffff',
+    border: '#dcfce7',
+    accent: '#16a34a',
+    titleColor: '#15803d',
+    bodyColor: '#334155',
+    Icon: CheckCircle2,
+  },
+  error: {
+    bg: '#ffffff',
+    border: '#fee2e2',
+    accent: '#dc2626',
+    titleColor: '#b91c1c',
+    bodyColor: '#334155',
+    Icon: AlertCircle,
+  },
+  warning: {
+    bg: '#ffffff',
+    border: '#fef3c7',
+    accent: '#d97706',
+    titleColor: '#b45309',
+    bodyColor: '#334155',
+    Icon: AlertTriangle,
+  },
+  info: {
+    bg: '#ffffff',
+    border: '#dbeafe',
+    accent: '#2563eb',
+    titleColor: '#1d4ed8',
+    bodyColor: '#334155',
+    Icon: Info,
+  },
 };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+function ToastCard({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastItem;
+  onDismiss: (id: string) => void;
+}) {
+  const [isPaused, setIsPaused] = useState(false);
+  const remainingRef = useRef(toast.autohideMs);
+  const startTimeRef = useRef(0);
+
+  useEffect(() => {
+    if (isPaused) return;
+
+    const timer = setTimeout(() => {
+      onDismiss(toast.id);
+    }, remainingRef.current);
+
+    startTimeRef.current = Date.now();
+
+    return () => {
+      clearTimeout(timer);
+      remainingRef.current = Math.max(
+        0,
+        remainingRef.current - (Date.now() - startTimeRef.current)
+      );
+    };
+  }, [toast.id, isPaused, onDismiss]);
+
+  const config = VARIANT_CONFIG[toast.variant];
+  const IconComponent = config.Icon;
+  const title = toast.title || (toast.variant.charAt(0).toUpperCase() + toast.variant.slice(1));
+
+  return (
+    <div
+      role="alert"
+      aria-live="assertive"
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '12px',
+        background: config.bg,
+        border: `1px solid ${config.border}`,
+        borderLeft: `4px solid ${config.accent}`,
+        borderRadius: '10px',
+        padding: '14px 16px',
+        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04)',
+        color: config.bodyColor,
+        pointerEvents: 'auto',
+        position: 'relative',
+        overflow: 'hidden',
+        animation: 'skillforge-toast-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+        minWidth: '280px',
+        maxWidth: '400px',
+        wordBreak: 'break-word',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          marginTop: '2px',
+          color: config.accent,
+        }}
+      >
+        <IconComponent size={20} />
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontWeight: 600,
+            fontSize: '14px',
+            lineHeight: '1.4',
+            color: config.titleColor,
+            marginBottom: '4px',
+          }}
+        >
+          {title}
+        </div>
+        <div
+          style={{
+            fontSize: '13px',
+            lineHeight: '1.45',
+            color: config.bodyColor,
+          }}
+        >
+          {toast.message}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => onDismiss(toast.id)}
+        aria-label="Close"
+        style={{
+          background: 'transparent',
+          border: 'none',
+          padding: '4px',
+          margin: '-4px -4px 0 0',
+          cursor: 'pointer',
+          borderRadius: '4px',
+          color: '#94a3b8',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          transition: 'color 0.15s ease, background-color 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = '#334155';
+          e.currentTarget.style.backgroundColor = '#f1f5f9';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = '#94a3b8';
+          e.currentTarget.style.backgroundColor = 'transparent';
+        }}
+      >
+        <X size={16} />
+      </button>
+    </div>
+  );
+}
+
 function ToastRenderer({ toasts, onDismiss }: { toasts: ToastItem[]; onDismiss: (id: string) => void }) {
   const visible = toasts.length > MAX_VISIBLE ? toasts.slice(-MAX_VISIBLE) : toasts;
 
+  if (typeof document === 'undefined') return null;
+
   return createPortal(
-    <ToastContainer 
-      position="top-end" 
-      className="p-3" 
-      style={{ zIndex: 99999, position: 'fixed' }}
-    >
-      {visible.map((toast) => {
-        const s = VARIANT_STYLES[toast.variant];
-        return (
-          <Toast 
-            key={toast.id} 
-            onClose={() => onDismiss(toast.id)} 
-            delay={toast.autohideMs} 
-            autohide
-            style={{
-              backgroundColor: s.bg,
-              border: `1px solid ${s.border}`,
-              borderLeft: `5px solid ${s.accent}`,
-              borderRadius: '8px',
-              color: s.bodyColor,
-              marginBottom: '10px'
-            }}
-          >
-            <Toast.Header
-              style={{
-                backgroundColor: s.bg,
-                borderBottom: 'none',
-                color: s.headerColor,
-                fontWeight: 'bold'
-              }}
-            >
-              <span
-                aria-hidden="true"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  background: s.accent,
-                  color: '#fff',
-                  fontSize: '11px',
-                  marginRight: '8px'
-                }}
-              >
-                {s.icon}
-              </span>
-              <strong className="me-auto">{toast.title || (toast.variant.charAt(0).toUpperCase() + toast.variant.slice(1))}</strong>
-            </Toast.Header>
-            <Toast.Body style={{ paddingTop: 0 }}>
-              {toast.message}
-            </Toast.Body>
-          </Toast>
-        );
-      })}
-    </ToastContainer>,
+    <>
+      <style>{`
+        @keyframes skillforge-toast-slide-in {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
+      <div
+        style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '10px',
+          maxWidth: '420px',
+          width: 'calc(100vw - 40px)',
+          pointerEvents: 'none',
+        }}
+      >
+        {visible.map((toast) => (
+          <ToastCard key={toast.id} toast={toast} onDismiss={onDismiss} />
+        ))}
+      </div>
+    </>,
     document.body
   );
 }

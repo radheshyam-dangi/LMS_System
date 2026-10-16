@@ -490,16 +490,16 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       {/* Executive Header */}
       <div className="assignments-page-header">
         <div className="assignments-page-title-wrap">
-          <div className="assignments-page-title-row">
             <h1 className="assignments-page-title">Assignments</h1>
-            <span className="assignments-total-badge">
+          <div className="assignments-page-title-row">
+            {/* <span className="assignments-total-badge">
               <Layers size={13} />
               {assignments.length} total tasks
-            </span>
+            </span> */}
           </div>
-          <p className="assignments-page-subtitle">
+          {/* <p className="assignments-page-subtitle">
             Track, complete, and review submissions for curriculum modules and external projects.
-          </p>
+          </p> */}
         </div>
       </div>
 
@@ -519,7 +519,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           className={`status-tab-btn tab-pending ${activeQuickTab === 'pending' ? 'active' : ''}`}
           onClick={() => setActiveQuickTab('pending')}
         >
-          <span>To Do / Pending</span>
+          <span>Pending</span>
           <span className="status-tab-badge">{tabCounts.pending}</span>
         </button>
 

@@ -524,9 +524,9 @@ function TrainerDashboardSkeleton({ firstName = 'Trainer' }: { firstName?: strin
         </div>
       </div>
 
-      {/* 5-Card Metrics Grid Skeleton */}
+      {/* 3-Card Metrics Grid Skeleton */}
       <div className="db-metrics-grid trainer-grid">
-        {Array.from({ length: 5 }).map((_, idx) => (
+        {Array.from({ length: 3 }).map((_, idx) => (
           <div key={idx} className="db-skeleton-metric-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="db-skeleton-shimmer" style={{ width: '40px', height: '40px', borderRadius: '11px' }} />
@@ -1691,23 +1691,9 @@ export function DashboardPage({
           </div>
         </header>
 
-        {/* 5-Card Balanced & Clickable Metrics Grid */}
+        {/* 3-Card Balanced & Clickable Metrics Grid */}
         <section className="db-metrics-grid trainer-grid">
-          {/* 1. Pending Reviews */}
-          <MetricCard
-            icon={<Clock size={19} strokeWidth={1.75} />}
-            iconBg="#fff7ed"
-            iconColor="#ea580c"
-            value={trainerPendingReviews}
-            label="Pending Reviews"
-            hint={trainerPendingReviews > 0 ? "Awaiting your evaluation" : "Queue is fully cleared"}
-            hintType={trainerPendingReviews > 0 ? 'warning' : 'positive'}
-            trend={trainerPendingReviews > 0 ? 'Action Needed' : 'Clear'}
-            onClick={() => navigate('/assignments?status=pending')}
-            actionText="Review"
-          />
-
-          {/* 2. Active Trainees */}
+          {/* 1. Active Trainees */}
           <MetricCard
             icon={<Users size={19} strokeWidth={1.75} />}
             iconBg="#f8fafc"
@@ -1720,7 +1706,7 @@ export function DashboardPage({
             actionText="View"
           />
 
-          {/* 3. Learning Paths */}
+          {/* 2. Learning Paths */}
           <MetricCard
             icon={<Compass size={19} strokeWidth={1.75} />}
             iconBg="#f8fafc"
@@ -1733,7 +1719,7 @@ export function DashboardPage({
             actionText="Manage"
           />
 
-          {/* 4. Total Assignments */}
+          {/* 3. Total Assignments */}
           <MetricCard
             icon={<Layers size={19} strokeWidth={1.75} />}
             iconBg="#f8fafc"
@@ -1744,20 +1730,6 @@ export function DashboardPage({
             hintType="neutral"
             onClick={() => navigate('/assignments')}
             actionText="Browse"
-          />
-
-          {/* 5. Cohort Effectiveness */}
-          <MetricCard
-            icon={<Award size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#059669"
-            value={effectiveness === null || effectiveness === undefined ? '—' : `${effectiveness}%`}
-            label="Cohort Effectiveness"
-            hint={avgScore ? `Avg score: ${avgScore}%` : "Composite cohort health"}
-            hintType="positive"
-            progressPercent={typeof effectiveness === 'number' ? effectiveness : undefined}
-            onClick={() => navigate('/analytics')}
-            actionText="Analytics"
           />
         </section>
 
@@ -1956,54 +1928,6 @@ export function DashboardPage({
                 </div>
                 <button type="button" className="db-btn-link" onClick={(e) => { e.stopPropagation(); navigate('/learning-paths'); }}>
                   Manage
-                </button>
-              </div>
-
-              <div
-                className="db-shortcut-item"
-                onClick={() => navigate('/users')}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    navigate('/users');
-                  }
-                }}
-              >
-                <div className="db-shortcut-icon-box" style={{ background: '#ecfdf5', color: '#059669' }}>
-                  <Users size={18} />
-                </div>
-                <div className="db-shortcut-content">
-                  <span className="db-shortcut-label">Cohort Directory</span>
-                  <span className="db-shortcut-desc">Inspect trainee enrollments</span>
-                </div>
-                <button type="button" className="db-btn-link" onClick={(e) => { e.stopPropagation(); navigate('/users'); }}>
-                  View Users
-                </button>
-              </div>
-
-              <div
-                className="db-shortcut-item"
-                onClick={() => navigate('/analytics')}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    navigate('/analytics');
-                  }
-                }}
-              >
-                <div className="db-shortcut-icon-box" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
-                  <BarChart2 size={18} />
-                </div>
-                <div className="db-shortcut-content">
-                  <span className="db-shortcut-label">Cohort Analytics</span>
-                  <span className="db-shortcut-desc">Progress velocity & scores</span>
-                </div>
-                <button type="button" className="db-btn-link" onClick={(e) => { e.stopPropagation(); navigate('/analytics'); }}>
-                  Analytics
                 </button>
               </div>
             </div>

@@ -867,139 +867,141 @@ export function LearningPathsSection({
       </header>
 
       {/* 2. INTERACTIVE METRICS STRIP (CLICKABLE FILTER COUNTERS) */}
-      <section className="learning-paths-metrics-grid" aria-label="Learning path quick metrics">
-        {/* Metric 1: Total Tracks */}
-        <div
-          className={`lp-metric-card ${activeScope === "All" && !searchQuery ? "active-metric-filter" : ""}`}
-          onClick={() => {
-            setActiveScope("All");
-            setSearchQuery("");
-          }}
-          role="button"
-          tabIndex={0}
-          title="Click to view all tracks"
-        >
-          <div className="lp-metric-icon-box">
-            <BookOpen size={18} />
-          </div>
-          <div className="lp-metric-content">
-            <span className="lp-metric-label">All Tracks</span>
-            <div className="lp-metric-value-row">
-              <span className="lp-metric-number">{paths.length}</span>
-              <span className="lp-metric-subtext">total</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Metric 2 (Trainer/Admin): My Authored Tracks */}
-        {!isTrainee && (
+      {!isTrainer && (
+        <section className="learning-paths-metrics-grid" aria-label="Learning path quick metrics">
+          {/* Metric 1: Total Tracks */}
           <div
-            className={`lp-metric-card ${activeScope === "Mine" ? "active-metric-filter" : ""}`}
+            className={`lp-metric-card ${activeScope === "All" && !searchQuery ? "active-metric-filter" : ""}`}
             onClick={() => {
-              setActiveScope("Mine");
+              setActiveScope("All");
               setSearchQuery("");
             }}
             role="button"
             tabIndex={0}
-            title="Click to view tracks created by you"
+            title="Click to view all tracks"
           >
             <div className="lp-metric-icon-box">
-              <Layers size={18} strokeWidth={1.75} />
+              <BookOpen size={18} />
             </div>
             <div className="lp-metric-content">
-              <span className="lp-metric-label">My Authored Tracks</span>
+              <span className="lp-metric-label">All Tracks</span>
               <div className="lp-metric-value-row">
-                <span className="lp-metric-number">{myAuthoredTracksCount}</span>
-                <span className="lp-metric-subtext">by you</span>
+                <span className="lp-metric-number">{paths.length}</span>
+                <span className="lp-metric-subtext">total</span>
               </div>
             </div>
           </div>
-        )}
 
-        {/* Metric 3: Active Cohorts */}
-        <div
-          className={`lp-metric-card ${activeScope === "Active" ? "active-metric-filter" : ""}`}
-          onClick={() => {
-            setActiveScope("Active");
-            setSearchQuery("");
-          }}
-          role="button"
-          tabIndex={0}
-          title="Click to view active cohorts"
-        >
-          <div className="lp-metric-icon-box">
-            <TrendingUp size={18} />
-          </div>
-          <div className="lp-metric-content">
-            <span className="lp-metric-label">{isTrainee ? "In Progress" : "Active Cohorts"}</span>
-            <div className="lp-metric-value-row">
-              <span className="lp-metric-number">{activePathsCount}</span>
-              <span className="lp-metric-subtext">active</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Metric 4 (Trainer/Admin): Enrolled Trainees */}
-        {!isTrainee && (
-          <div
-            className="lp-metric-card"
-            title="Total unique trainees enrolled across your curricula"
-            style={{ cursor: "default" }}
-          >
-            <div className="lp-metric-icon-box">
-              <Users size={18} />
-            </div>
-            <div className="lp-metric-content">
-              <span className="lp-metric-label">Learners Enrolled</span>
-              <div className="lp-metric-value-row">
-                <span className="lp-metric-number">{totalEnrolledAcrossTracks}</span>
-                <span className="lp-metric-subtext">trainees</span>
+          {/* Metric 2 (Trainer/Admin): My Authored Tracks */}
+          {!isTrainee && (
+            <div
+              className={`lp-metric-card ${activeScope === "Mine" ? "active-metric-filter" : ""}`}
+              onClick={() => {
+                setActiveScope("Mine");
+                setSearchQuery("");
+              }}
+              role="button"
+              tabIndex={0}
+              title="Click to view tracks created by you"
+            >
+              <div className="lp-metric-icon-box">
+                <Layers size={18} strokeWidth={1.75} />
+              </div>
+              <div className="lp-metric-content">
+                <span className="lp-metric-label">My Authored Tracks</span>
+                <div className="lp-metric-value-row">
+                  <span className="lp-metric-number">{myAuthoredTracksCount}</span>
+                  <span className="lp-metric-subtext">by you</span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Metric 5 (Trainer/Admin): Avg Cohort Progress */}
-        {!isTrainee && (
+          {/* Metric 3: Active Cohorts */}
           <div
-            className="lp-metric-card"
-            title="Average completion percentage across active cohorts"
-            style={{ cursor: "default" }}
-          >
-            <div className="lp-metric-icon-box">
-              <BarChart2 size={18} />
-            </div>
-            <div className="lp-metric-content">
-              <span className="lp-metric-label">Avg Cohort Completion</span>
-              <div className="lp-metric-value-row">
-                <span className="lp-metric-number">{avgCohortProgressOverall}%</span>
-                <span className="lp-metric-subtext">across tracks</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Trainee Metric: Completed */}
-        {isTrainee && (
-          <div
-            className={`lp-metric-card ${activeScope === "Completed" ? "active-metric-filter" : ""}`}
-            onClick={() => setActiveScope("Completed")}
+            className={`lp-metric-card ${activeScope === "Active" ? "active-metric-filter" : ""}`}
+            onClick={() => {
+              setActiveScope("Active");
+              setSearchQuery("");
+            }}
             role="button"
             tabIndex={0}
+            title="Click to view active cohorts"
           >
             <div className="lp-metric-icon-box">
-              <Award size={18} />
+              <TrendingUp size={18} />
             </div>
             <div className="lp-metric-content">
-              <span className="lp-metric-label">Completed Tracks</span>
+              <span className="lp-metric-label">{isTrainee ? "In Progress" : "Active Cohorts"}</span>
               <div className="lp-metric-value-row">
-                <span className="lp-metric-number">{completedPathsCount}</span>
-                <span className="lp-metric-subtext">finished</span>
+                <span className="lp-metric-number">{activePathsCount}</span>
+                <span className="lp-metric-subtext">active</span>
               </div>
             </div>
           </div>
-        )}
-      </section>
+
+          {/* Metric 4 (Trainer/Admin): Enrolled Trainees */}
+          {!isTrainee && (
+            <div
+              className="lp-metric-card"
+              title="Total unique trainees enrolled across your curricula"
+              style={{ cursor: "default" }}
+            >
+              <div className="lp-metric-icon-box">
+                <Users size={18} />
+              </div>
+              <div className="lp-metric-content">
+                <span className="lp-metric-label">Learners Enrolled</span>
+                <div className="lp-metric-value-row">
+                  <span className="lp-metric-number">{totalEnrolledAcrossTracks}</span>
+                  <span className="lp-metric-subtext">trainees</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Metric 5 (Trainer/Admin): Avg Cohort Progress */}
+          {!isTrainee && (
+            <div
+              className="lp-metric-card"
+              title="Average completion percentage across active cohorts"
+              style={{ cursor: "default" }}
+            >
+              <div className="lp-metric-icon-box">
+                <BarChart2 size={18} />
+              </div>
+              <div className="lp-metric-content">
+                <span className="lp-metric-label">Avg Cohort Completion</span>
+                <div className="lp-metric-value-row">
+                  <span className="lp-metric-number">{avgCohortProgressOverall}%</span>
+                  <span className="lp-metric-subtext">across tracks</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Trainee Metric: Completed */}
+          {isTrainee && (
+            <div
+              className={`lp-metric-card ${activeScope === "Completed" ? "active-metric-filter" : ""}`}
+              onClick={() => setActiveScope("Completed")}
+              role="button"
+              tabIndex={0}
+            >
+              <div className="lp-metric-icon-box">
+                <Award size={18} />
+              </div>
+              <div className="lp-metric-content">
+                <span className="lp-metric-label">Completed Tracks</span>
+                <div className="lp-metric-value-row">
+                  <span className="lp-metric-number">{completedPathsCount}</span>
+                  <span className="lp-metric-subtext">finished</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* 3. SEARCH, SCOPE & SORT CONTROLS */}
       <section className="learning-paths-control-bar" aria-label="Curriculum controls">
@@ -1234,16 +1236,6 @@ export function LearningPathsSection({
                   )}
 
                   <div className="badge-meta-group">
-                    {/* Author Attribution */}
-                    {!isTrainee && (
-                      <span
-                        className={`author-badge-pill ${isOwner ? "is-current-user" : ""}`}
-                        title={`Authored by ${getCreatorDisplayName(path)}`}
-                      >
-                        {isOwner ? "★ You" : `By ${getCreatorDisplayName(path)}`}
-                      </span>
-                    )}
-
                     {/* Difficulty Badge */}
                     <span
                       className={`difficulty-badge diff-${(path.difficulty || "Intermediate").toLowerCase()}`}
@@ -1345,36 +1337,26 @@ export function LearningPathsSection({
                 ) : (
                   <div className="card-cohort-engagement-box">
                     {enrolledCount > 0 ? (
-                      <>
-                        <div className="cohort-header-row">
-                          {/* <span className="cohort-enrollment-label">
-                            <Users size={14} />
-                            <span>
-                              {enrolledCount} {enrolledCount === 1 ? "Trainee" : "Trainees"} Enrolled
+                      <div className="cohort-actions-strip">
+                        <button
+                          type="button"
+                          className="btn-cohort-view-progress"
+                          onClick={() => setSelectedPathForTrainees(path.id)}
+                          title="Inspect individual trainee roster, scores, and completion"
+                        >
+                          <div className="btn-cohort-left">
+                            <BarChart2 size={15} className="btn-cohort-icon" />
+                            <span className="btn-cohort-title">View Cohort Progress</span>
+                          </div>
+                          <div className="btn-cohort-right">
+                            <span className="btn-cohort-count-chip">
+                              <Users size={12} />
+                              <span>{enrolledCount} {enrolledCount === 1 ? "Trainee" : "Trainees"}</span>
                             </span>
-                          </span>
-                          <span className="cohort-progress-label">
-                            Cohort Avg: {cohortProgress}%
-                          </span>  */}
-                        </div>
-                        <div className="cohort-progress-track">
-                          <div
-                            className={`cohort-progress-fill ${cohortProgress === 100 ? "is-complete" : ""}`}
-                            style={{ width: `${cohortProgress}%` }}
-                          />
-                        </div>
-                        <div className="cohort-actions-strip">
-                          <button
-                            type="button"
-                            className="btn-cohort-view-progress"
-                            onClick={() => setSelectedPathForTrainees(path.id)}
-                            title="Inspect individual trainee roster, scores, and completion"
-                          >
-                            <BarChart2 size={12} />
-                            <span>View Cohort Progress ↗</span>
-                          </button>
-                        </div>
-                      </>
+                            <ChevronRight size={14} className="btn-cohort-arrow" />
+                          </div>
+                        </button>
+                      </div>
                     ) : (
                       <div className="cohort-unassigned-prompt">
                         <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -1397,6 +1379,7 @@ export function LearningPathsSection({
                 )}
 
                 {/* Action Toolbar */}
+                
                 <div className="card-action-toolbar">
                   {/* Primary CTA */}
                   <button
@@ -1407,7 +1390,7 @@ export function LearningPathsSection({
                   >
                     <span>
                       {isTrainee
-                        ? traineeProgressVal === 100
+                        ? traineeProgressVal === 100  
                           ? "Review Curriculum →"
                           : traineeProgressVal > 0
                           ? "Continue Learning →"
