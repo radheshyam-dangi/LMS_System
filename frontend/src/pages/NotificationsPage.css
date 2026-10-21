@@ -25,9 +25,9 @@
 
 .notifications-page-container {
   width: 100%;
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 8px 0 32px 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 0 32px 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -140,6 +140,84 @@
   border-color: var(--notif-primary-hover);
   color: #ffffff;
   transform: translateY(-1px);
+}
+
+.btn-notif-danger {
+  background: #ffffff;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.btn-notif-danger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #b91c1c;
+  transform: translateY(-1px);
+}
+
+/* ── Confirmation Modal ── */
+.notif-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: notifFadeIn 0.2s ease-out;
+}
+
+.notif-confirm-modal {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.notif-confirm-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.notif-confirm-icon-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #fee2e2;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.notif-confirm-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.notif-confirm-desc {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.notif-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 /* ── 2. CARD CONTAINER ── */

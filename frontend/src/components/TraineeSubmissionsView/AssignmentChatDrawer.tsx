@@ -20,21 +20,37 @@ interface Props {
   onClose: () => void;
   isOpen: boolean;
   questions: any[];
+  focusedQuestionId?: string | null;
 }
 
-export function AssignmentChatDrawer({ assignmentId, assignmentTitle, accessToken, onClose, isOpen, questions }: Props) {
-
+export function AssignmentChatDrawer({
+  assignmentId,
+  assignmentTitle,
+  accessToken,
+  onClose,
+  isOpen,
+  questions,
+  focusedQuestionId,
+}: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const effectiveToken = accessToken || localStorage.getItem('skillforge_access_token') || localStorage.getItem('token') || '';
+
   useEffect(() => {
     if (isOpen) {
       fetchHistory();
     }
   }, [isOpen, assignmentId]);
+
+  useEffect(() => {
+    if (focusedQuestionId !== undefined && focusedQuestionId !== null) {
+      setSelectedQuestions([String(focusedQuestionId)]);
+    }
+  }, [focusedQuestionId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -44,36 +60,36 @@ export function AssignmentChatDrawer({ assignmentId, assignmentTitle, accessToke
     try {
       const res = await axios.get(`${API_BASE_URL}/assignments/${assignmentId}/chat`, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${effectiveToken}`
         }
       });
-      setMessages(res.data);
+      setMessages(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       console.error('Failed to fetch chat history', e);
     }
   };
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-    const userMsg = input;
+  const sendMessage = async (overridePrompt?: string) => {
+    const textToSend = overridePrompt || input;
+    if (!textToSend.trim() || isLoading) return;
     setInput('');
     setIsLoading(true);
 
     const tempId = Date.now().toString();
-    setMessages(prev => [...prev, { id: tempId, role: 'user', content: userMsg, questionIds: selectedQuestions }]);
+    setMessages(prev => [...prev, { id: tempId, role: 'user', content: textToSend, questionIds: selectedQuestions }]);
 
     try {
       const res = await axios.post(`${API_BASE_URL}/assignments/${assignmentId}/chat`, {
-        message: userMsg, 
+        message: textToSend, 
         focusQuestionIds: selectedQuestions
       }, {
         headers: {
-          'Authorization': `Bearer ${accessToken}`
+          'Authorization': `Bearer ${effectiveToken}`
         }
       });
 
       setMessages(prev => [...prev.filter(m => m.id !== tempId), res.data]);
-      fetchHistory(); // sync full history to be safe
+      void fetchHistory(); // sync full history to be safe
     } catch (e: any) {
       console.error(e);
       const errMsg = e.response?.data?.message || 'Failed to send message';
@@ -88,26 +104,34 @@ export function AssignmentChatDrawer({ assignmentId, assignmentTitle, accessToke
       return <div className="chat-blocked-message">{content}</div>;
     }
     try {
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed)) {
+      let parsed = JSON.parse(content);
+      if (parsed && !Array.isArray(parsed)) {
+        parsed = parsed.responses || parsed.data || [parsed];
+      }
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return (
           <div className="chat-structured-response">
             {parsed.map((ans: any, idx: number) => {
-              const qObj = questions.find(q => q.id === ans.questionId || String(questions.indexOf(q)) === ans.questionId);
-              const qNum = qObj ? questions.indexOf(qObj) + 1 : (ans.questionNumber || '?');
+              const qObj = questions.find(
+                q => String(q.id) === String(ans.questionId) || String(questions.indexOf(q)) === String(ans.questionId)
+              );
+              const qNum = qObj ? questions.indexOf(qObj) + 1 : (ans.questionNumber || (idx + 1));
+              const title = ans.questionId === 'general' ? 'Assignment Overview Guidance' : `Question ${qNum} Guidance`;
 
               return (
                 <div key={idx} className="chat-answer-block">
-                  <div className="chat-answer-header">Question {qNum}</div>
-                  <div className="chat-answer-body">{ans.content}</div>
+                  <div className="chat-answer-header">{title}</div>
+                  <div className="chat-answer-body" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
+                    {ans.content}
+                  </div>
                   
                   {ans.coverage === 'weak' && (
-                    <div className="chat-coverage-warning">Note: The lessons don't explicitly cover this in depth.</div>
+                    <div className="chat-coverage-warning">Note: The module lessons don't explicitly cover this in depth.</div>
                   )}
                   {ans.suggestedLessons && ans.suggestedLessons.length > 0 && (
                     <div className="chat-lesson-suggestions">
                       <span className="chat-lesson-icon"><BookOpen size={14} /></span>
-                      Review lessons: {ans.suggestedLessons.join(', ')}
+                      <span style={{ fontWeight: 600 }}>Prerequisite Lessons:</span> {ans.suggestedLessons.join(', ')}
                     </div>
                   )}
                 </div>
@@ -119,7 +143,7 @@ export function AssignmentChatDrawer({ assignmentId, assignmentTitle, accessToke
     } catch (e) {
       // not JSON
     }
-    return <div>{content}</div>;
+    return <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{content}</div>;
   };
 
   if (!isOpen) return null;
@@ -189,6 +213,66 @@ export function AssignmentChatDrawer({ assignmentId, assignmentTitle, accessToke
               ))}
             </div>
           )}
+
+          {/* Quick Prompts */}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                const targetQ = selectedQuestions.length > 0 ? `for ${selectedQuestions.map(id => {
+                  const qIdx = questions.findIndex(q => String(q.id) === String(id) || String(questions.indexOf(q)) === String(id));
+                  return qIdx >= 0 ? `Question ${qIdx + 1}` : id;
+                }).join(', ')}` : '';
+                sendMessage(`What are the key requirements and concepts ${targetQ}?`);
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                background: '#f1f5f9',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: '#475569',
+              }}
+            >
+              💡 Concepts
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                sendMessage('Which dependent lessons should I review for this?');
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                background: '#f1f5f9',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: '#475569',
+              }}
+            >
+              📚 Dependent Lessons
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                sendMessage('How should I structure my answer?');
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                background: '#f1f5f9',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                color: '#475569',
+              }}
+            >
+              📝 Approach
+            </button>
+          </div>
+
           <div className="chat-input-wrapper">
             <textarea
               placeholder="Ask for an explanation of concepts..."
@@ -202,7 +286,7 @@ export function AssignmentChatDrawer({ assignmentId, assignmentTitle, accessToke
               }}
               rows={2}
             />
-            <button className="chat-send-btn" onClick={sendMessage} disabled={isLoading || !input.trim()}>
+            <button className="chat-send-btn" onClick={() => sendMessage()} disabled={isLoading || !input.trim()}>
               <Send size={18} />
             </button>
           </div>

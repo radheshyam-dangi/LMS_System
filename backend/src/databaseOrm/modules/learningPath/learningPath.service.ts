@@ -48,6 +48,8 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       const q = `%${search}%`;
       const builder = this.repository.createQueryBuilder('lp')
         .leftJoinAndSelect('lp.createdBy', 'createdBy')
+        .leftJoinAndSelect('createdBy.roles', 'creatorRoles')
+        .leftJoinAndSelect('createdBy.primaryRole', 'creatorPrimaryRole')
         .leftJoinAndSelect('lp.modules', 'modules')
         .leftJoinAndSelect('modules.lessons', 'lessons')
         .leftJoinAndSelect('modules.assignments', 'assignments')
@@ -75,7 +77,14 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       }
     } else {
       paths = await this.repository.find({
-        relations: ['createdBy', 'modules', 'modules.lessons', 'modules.assignments'],
+        relations: [
+          'createdBy',
+          'createdBy.roles',
+          'createdBy.primaryRole',
+          'modules',
+          'modules.lessons',
+          'modules.assignments',
+        ],
         order: { createdAt: 'DESC' },
       });
     }
@@ -94,10 +103,24 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
     for (const p of paths) {
       (p as any).traineeAssigners = {};
       for (const tId of (p.assignedToTraineeIds || [])) {
-         const assigner = enrollMap.get(`${p.id}_${tId}`);
-         if (assigner) {
-           (p as any).traineeAssigners[tId] = assigner;
-         }
+        const assigner = enrollMap.get(`${p.id}_${tId}`);
+        if (assigner) {
+          (p as any).traineeAssigners[tId] = {
+            id: assigner.id,
+            firstName: assigner.firstName,
+            lastName: assigner.lastName,
+            email: assigner.email,
+            name: `${assigner.firstName || ''} ${assigner.lastName || ''}`.trim() || (assigner as any).name || assigner.email,
+          };
+        } else if (p.createdBy) {
+          (p as any).traineeAssigners[tId] = {
+            id: p.createdBy.id,
+            firstName: p.createdBy.firstName,
+            lastName: p.createdBy.lastName,
+            email: p.createdBy.email,
+            name: `${p.createdBy.firstName || ''} ${p.createdBy.lastName || ''}`.trim() || (p.createdBy as any).name || p.createdBy.email,
+          };
+        }
       }
     }
 
@@ -115,6 +138,32 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
 
     if (!path) {
       throw new NotFoundException(`Learning Path with ID "${id}" not found.`);
+    }
+
+    const enrollments = await this.enrollmentRepository.find({
+      where: { learningPath: { id } },
+      relations: ['user', 'assignedBy'],
+    });
+
+    (path as any).traineeAssigners = {};
+    for (const e of enrollments) {
+      if (e.user?.id && e.assignedBy) {
+        (path as any).traineeAssigners[e.user.id] = {
+          id: e.assignedBy.id,
+          firstName: e.assignedBy.firstName,
+          lastName: e.assignedBy.lastName,
+          email: e.assignedBy.email,
+          name: `${e.assignedBy.firstName || ''} ${e.assignedBy.lastName || ''}`.trim() || (e.assignedBy as any).name || e.assignedBy.email,
+        };
+      } else if (e.user?.id && path.createdBy) {
+        (path as any).traineeAssigners[e.user.id] = {
+          id: path.createdBy.id,
+          firstName: path.createdBy.firstName,
+          lastName: path.createdBy.lastName,
+          email: path.createdBy.email,
+          name: `${path.createdBy.firstName || ''} ${path.createdBy.lastName || ''}`.trim() || (path.createdBy as any).name || path.createdBy.email,
+        };
+      }
     }
 
     return path;

@@ -397,120 +397,128 @@ export class AnalyticsEntityService {
     }
 
     // Module completion from lesson progress, resources, and assignments
-    const moduleCompletion = scopedModules.map((mod) => {
-      const lessonIds = (mod.lessons || []).map((l) => l.id);
-      const resourceIds = (mod.resources || []).map((r) => r.id);
-      const modAssignments = allAssignments.filter(
-        (a) => a.module?.id === mod.id || a.lesson?.module?.id === mod.id,
-      );
-      const assignmentIds = modAssignments.map((a) => a.id);
+    const moduleCompletion = await Promise.all(
+      scopedModules.map(async (mod) => {
+        const lessonIds = (mod.lessons || []).map((l) => l.id);
+        const resourceIds = (mod.resources || []).map((r) => r.id);
+        const modAssignments = allAssignments.filter(
+          (a) => a.module?.id === mod.id || a.lesson?.module?.id === mod.id,
+        );
+        const assignmentIds = modAssignments.map((a) => a.id);
 
-      const totalItemsPerUser =
-        lessonIds.length + resourceIds.length + assignmentIds.length;
-
-      const pathEnrollments = enrollments.filter(
-        (e) => e.learningPath?.id === mod.learningPath?.id && e.user?.id,
-      );
-      let enrolledUserIds = Array.from(
-        new Set(pathEnrollments.map((e) => e.user.id)),
-      );
-
-      if (isTrainee && !isAdmin && !isTrainer && userId) {
-        enrolledUserIds = [userId];
-      }
-
-      let totalCompletedItems = 0;
-      let sumPercents = 0;
-
-      if (enrolledUserIds.length > 0 && totalItemsPerUser > 0) {
-        for (const uid of enrolledUserIds) {
-          const uLessons = new Set(
-            progressRows
-              .filter(
-                (p) =>
-                  p.user?.id === uid &&
-                  p.isCompleted &&
-                  lessonIds.includes(p.lesson?.id),
-              )
-              .map((p) => p.lesson?.id),
-          ).size;
-          const uResources = new Set(
-            visitRows
-              .filter(
-                (v) =>
-                  v.user?.id === uid && resourceIds.includes(v.resource?.id),
-              )
-              .map((v) => v.resource?.id),
-          ).size;
-          const uAssignments = new Set(
-            allSubmissions
-              .filter(
-                (s) =>
-                  (s.trainee?.id === uid || (s as any).traineeId === uid) &&
-                  ['Accepted', 'Evaluated', 'Approved'].includes(String(s.status)) &&
-                  assignmentIds.includes(s.assignment?.id),
-              )
-              .map((s) => s.assignment?.id),
-          ).size;
-
-          const uCompleted = uLessons + uResources + uAssignments;
-          totalCompletedItems += uCompleted;
-          sumPercents +=
-            totalItemsPerUser > 0
-              ? (uCompleted / totalItemsPerUser) * 100
-              : 0;
-        }
-      }
-
-      const totalExpected = enrolledUserIds.length * totalItemsPerUser;
-      const percent =
-        totalExpected > 0 ? (totalCompletedItems / totalExpected) * 100 : 0;
-
-      const moduleScores = allSubmissions
-        .filter(
-          (s) =>
-            ['Accepted', 'Evaluated', 'Approved'].includes(String(s.status)) &&
-            assignmentIds.includes(s.assignment?.id) &&
-            (enrolledUserIds.includes(s.trainee?.id) ||
-              enrolledUserIds.includes((s as any).traineeId) ||
-              enrolledUserIds.includes((s as any).user?.id)),
-        )
-        .map((s) => Number(s.score))
-        .filter((n) => Number.isFinite(n));
-      const avg =
-        moduleScores.length > 0
-          ? Math.round(
-              moduleScores.reduce((a, b) => a + b, 0) / moduleScores.length,
+        let modLastActivity = 0;
+        if (isTrainee && userId) {
+          progressRows
+            .filter((p) => p.user?.id === userId && lessonIds.includes(p.lesson?.id))
+            .forEach((p) => {
+              const d = new Date(p.updatedAt || p.createdAt).getTime();
+              if (d > modLastActivity) modLastActivity = d;
+            });
+          visitRows
+            .filter((v) => v.user?.id === userId && resourceIds.includes(v.resource?.id))
+            .forEach((v) => {
+              const d = new Date(v.visitedAt || v.createdAt).getTime();
+              if (d > modLastActivity) modLastActivity = d;
+            });
+          allSubmissions
+            .filter(
+              (s) =>
+                (s.trainee?.id === userId || (s as any).traineeId === userId) &&
+                assignmentIds.includes(s.assignment?.id),
             )
-          : 0;
+            .forEach((s) => {
+              const d = new Date(s.submittedAt || s.updatedAt || s.createdAt).getTime();
+              if (d > modLastActivity) modLastActivity = d;
+            });
+        }
 
-      let modLastActivity = 0;
-      if (isTrainee && userId) {
-         progressRows.filter(p => p.user?.id === userId && lessonIds.includes(p.lesson?.id)).forEach(p => {
-             const d = new Date(p.updatedAt || p.createdAt).getTime();
-             if (d > modLastActivity) modLastActivity = d;
-         });
-         visitRows.filter(v => v.user?.id === userId && resourceIds.includes(v.resource?.id)).forEach(v => {
-             const d = new Date(v.visitedAt || v.createdAt).getTime();
-             if (d > modLastActivity) modLastActivity = d;
-         });
-         allSubmissions.filter(s => (s.trainee?.id === userId || (s as any).traineeId === userId) && assignmentIds.includes(s.assignment?.id)).forEach(s => {
-             const d = new Date(s.submittedAt || s.updatedAt || s.createdAt).getTime();
-             if (d > modLastActivity) modLastActivity = d;
-         });
-      }
+        if (isTrainee && !isAdmin && !isTrainer && userId) {
+          const modStats = await this.progressService.getModuleProgress(userId, mod.id);
+          const completed = modStats.completedLessons + modStats.tasksAccepted;
+          const total = modStats.totalLessons + modStats.totalAssignments;
+          return {
+            id: mod.id,
+            title: mod.title,
+            pathTitle: mod.learningPath?.title || '',
+            completed,
+            total,
+            percent: modStats.completionPercent,
+            averageScore: modStats.averageScore,
+            lastActivity: modLastActivity,
+          };
+        }
 
-      return {
-        id: mod.id,
-        title: mod.title,
-        pathTitle: mod.learningPath?.title || '',
-        completed: totalCompletedItems,
-        total: totalExpected,
-        percent: Math.min(100, percent),
-        averageScore: avg,
-        lastActivity: modLastActivity,
-      };
-    });
+        const totalItemsPerUser = lessonIds.length + assignmentIds.length;
+        const pathEnrollments = enrollments.filter(
+          (e) => e.learningPath?.id === mod.learningPath?.id && e.user?.id,
+        );
+        const enrolledUserIds = Array.from(
+          new Set(pathEnrollments.map((e) => e.user.id)),
+        );
+
+        let totalCompletedItems = 0;
+        if (enrolledUserIds.length > 0 && totalItemsPerUser > 0) {
+          for (const uid of enrolledUserIds) {
+            const uLessons = new Set(
+              progressRows
+                .filter(
+                  (p) =>
+                    p.user?.id === uid &&
+                    p.isCompleted &&
+                    lessonIds.includes(p.lesson?.id),
+                )
+                .map((p) => p.lesson?.id),
+            ).size;
+            const uAssignments = new Set(
+              allSubmissions
+                .filter(
+                  (s) =>
+                    (s.trainee?.id === uid || (s as any).traineeId === uid) &&
+                    ['Accepted', 'Evaluated', 'Approved', 'Submitted'].includes(String(s.status)) &&
+                    assignmentIds.includes(s.assignment?.id),
+                )
+                .map((s) => s.assignment?.id),
+            ).size;
+
+            const uCompleted = uLessons + uAssignments;
+            totalCompletedItems += uCompleted;
+          }
+        }
+
+        const totalExpected = enrolledUserIds.length * totalItemsPerUser;
+        const percent =
+          totalExpected > 0 ? (totalCompletedItems / totalExpected) * 100 : 0;
+
+        const moduleScores = allSubmissions
+          .filter(
+            (s) =>
+              ['Accepted', 'Evaluated', 'Approved'].includes(String(s.status)) &&
+              assignmentIds.includes(s.assignment?.id) &&
+              (enrolledUserIds.includes(s.trainee?.id) ||
+                enrolledUserIds.includes((s as any).traineeId) ||
+                enrolledUserIds.includes((s as any).user?.id)),
+          )
+          .map((s) => Number(s.score))
+          .filter((n) => Number.isFinite(n));
+        const avg =
+          moduleScores.length > 0
+            ? Math.round(
+                moduleScores.reduce((a, b) => a + b, 0) / moduleScores.length,
+              )
+            : 0;
+
+        return {
+          id: mod.id,
+          title: mod.title,
+          pathTitle: mod.learningPath?.title || '',
+          completed: totalCompletedItems,
+          total: totalExpected,
+          percent: Math.min(100, Math.round(percent)),
+          averageScore: avg,
+          lastActivity: modLastActivity,
+        };
+      }),
+    );
 
     // Path performance bars
     let pathPerformance: any[] = [];
@@ -1686,28 +1694,38 @@ export class AnalyticsEntityService {
       external: myAssignments.filter(a => a.isExternal || (!a.learningPath && !a.module && !a.lesson)).length
     };
 
-    // 4. My Trainees (Distinct trainees assigned)
-    const trainerTraineeIds = new Set<string>();
-    
-    for (const p of myPaths) {
-      if (p.assignedToTraineeIds) p.assignedToTraineeIds.forEach(id => trainerTraineeIds.add(id));
-    }
-    
-    if (myPathIds.length > 0) {
-      const enrollments = await enrollmentRepo.find({
-        where: { learningPath: { id: In(myPathIds) } },
-        relations: ['user', 'learningPath']
-      });
-      enrollments.forEach(e => {
-        if (e.user) trainerTraineeIds.add(e.user.id);
-      });
+    // 4. Trainees explicitly assigned Learning Paths by this trainer
+    const allEnrollments = await enrollmentRepo.find({
+      relations: ['user', 'learningPath', 'learningPath.createdBy', 'assignedBy']
+    });
+
+    const trainerLpEnrollments = allEnrollments.filter(e => {
+      if (!e.user || !e.learningPath || e.user.deletedAt) return false;
+      // Explicitly assigned by current trainer
+      if (e.assignedBy?.id === userId) return true;
+      // Or assigned to a path created by this trainer and not assigned by someone else
+      if (myPathIds.includes(e.learningPath.id)) {
+        if (!e.assignedBy) {
+          const p = myPaths.find(path => path.id === e.learningPath.id);
+          if (Array.isArray(p?.assignedToTraineeIds) && p.assignedToTraineeIds.includes(e.user.id)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+
+    const trainerLpTraineeMap = new Map<string, { user: any; enrollments: any[] }>();
+    for (const e of trainerLpEnrollments) {
+      const tId = e.user.id;
+      if (!trainerLpTraineeMap.has(tId)) {
+        trainerLpTraineeMap.set(tId, { user: e.user, enrollments: [] });
+      }
+      trainerLpTraineeMap.get(tId)!.enrollments.push(e);
     }
 
-    for (const a of myAssignments) {
-      if (a.assignedToTraineeIds) a.assignedToTraineeIds.forEach(id => trainerTraineeIds.add(id));
-    }
-
-    const myTraineesCount = trainerTraineeIds.size;
+    const trainerTraineeIds = new Set<string>(trainerLpTraineeMap.keys());
+    const myTraineesCount = trainerLpTraineeMap.size;
     
     // 5. Pending Reviews
     const trainerPendingReviews = await submissionRepo.count({
@@ -1722,102 +1740,82 @@ export class AnalyticsEntityService {
     let sumCompletionRate = 0;
     let sumAvgScore = 0;
 
-    if (trainerTraineeIds.size > 0) {
-      const traineeIds = Array.from(trainerTraineeIds);
-      const trainees = await userRepo.find({ where: { id: In(traineeIds) } });
-      
+    if (trainerLpTraineeMap.size > 0) {
+      const traineeIds = Array.from(trainerLpTraineeMap.keys());
       const allSubmissions = await submissionRepo.find({
         where: { trainee: { id: In(traineeIds) } },
         relations: ['trainee', 'assignment']
       });
-      
-      const allEvaluations = await evaluationRepo.find({
-        relations: ['submission', 'submission.user']
-      });
-      
-      // Filter enrollments globally to find assigned LPs easily
-      const allEnrollments = await enrollmentRepo.find({
-        where: { user: { id: In(traineeIds) } },
-        relations: ['user', 'learningPath']
-      });
 
-      for (const tUser of trainees) {
-        const tId = tUser.id;
+      for (const [tId, { user: tUser, enrollments: tEnrollments }] of trainerLpTraineeMap.entries()) {
         const tName = `${tUser.firstName || ''} ${tUser.lastName || ''}`.trim() || tUser.email;
-        
-        const tEnrollments = allEnrollments.filter(e => e.user?.id === tId && e.learningPath?.id && myPathIds.includes(e.learningPath.id));
-        const detailedLps = tEnrollments.map(e => ({
-          title: e.learningPath.title,
-          progress: Math.round(Math.random() * 100), // Note: for now keeping this simple or we can calculate real progress
-          score: Math.round(Math.random() * 100),
-          status: 'On Track'
-        }));
-        const assignedLps = Array.from(new Set(tEnrollments.map(e => e.learningPath.title))).join(', ') || 'Direct Assignments';
+        const tLpIds = Array.from(new Set(tEnrollments.map(e => e.learningPath.id)));
 
-        // Calculate real detailed LPs progress if needed, but for now we supply the structure:
-        const tAssignments = myAssignments.filter(a => {
-           const inPath = a.learningPath?.id && tEnrollments.some(e => e.learningPath.id === a.learningPath?.id);
-           const inModule = a.module?.learningPath?.id && tEnrollments.some(e => e.learningPath.id === a.module?.learningPath?.id);
-           const inLesson = a.lesson?.module?.learningPath?.id && tEnrollments.some(e => e.learningPath.id === a.lesson?.module?.learningPath?.id);
-           const isDirect = Array.isArray(a.assignedToTraineeIds) && a.assignedToTraineeIds.includes(tId);
-           return inPath || inModule || inLesson || isDirect;
-        });
+        let sumTraineeLpProgress = 0;
+        const detailedLps: any[] = [];
+
+        for (const lpId of tLpIds) {
+          const lp = tEnrollments.find(e => e.learningPath.id === lpId)?.learningPath;
+          const prog = await this.progressService.getLPProgress(tId, lpId);
+          sumTraineeLpProgress += prog;
+
+          let s = 'On Track';
+          if (prog === 0) s = 'Not Started';
+          else if (prog === 100) s = 'Completed';
+          else if (prog < 30) s = 'At Risk';
+
+          detailedLps.push({
+            title: lp?.title || 'Learning Path',
+            progress: prog,
+            score: null,
+            status: s,
+          });
+        }
+
+        const avgProgress = tLpIds.length > 0 ? Math.round(sumTraineeLpProgress / tLpIds.length) : 0;
+        let traineeStatus = 'On Track';
+        if (avgProgress === 0) {
+          traineeStatus = 'Not Started';
+        } else if (avgProgress === 100) {
+          traineeStatus = 'Completed';
+        } else if (avgProgress < 30) {
+          traineeStatus = 'At Risk';
+        }
 
         const tCompletedSubs = allSubmissions.filter(s => 
           (s.trainee?.id === tId || (s as any).user?.id === tId) && 
-          ['Accepted', 'Evaluated'].includes(String(s.status)) &&
-          tAssignments.some(a => a.id === s.assignment?.id)
+          ['Accepted', 'Evaluated', 'Approved'].includes(String(s.status))
         );
-
-        const tCompletionRate = tAssignments.length > 0 
-          ? (tCompletedSubs.length / tAssignments.length) * 100 
-          : 0;
 
         let tEarnedScore = 0;
         let tMaxScore = 0;
-        
-        // From Submissions directly
-        tCompletedSubs.forEach(s => {
-          const sAssignment = tAssignments.find(a => a.id === s.assignment?.id);
+        for (const s of tCompletedSubs) {
+          const sAssignment = s.assignment;
           if (sAssignment) {
-            const sMaxScore = Number(sAssignment.maxScore || 100);
-            const sScore = Number(s.score || 0);
-            if (Number.isFinite(sScore)) {
-              tEarnedScore += sScore;
-              tMaxScore += sMaxScore;
+            const lpId = sAssignment.learningPath?.id || (sAssignment as any).learningPathId;
+            if (!lpId || tLpIds.includes(lpId)) {
+              const sScore = Number(s.score || 0);
+              const sMax = Number(sAssignment.maxScore || 100);
+              if (Number.isFinite(sScore)) {
+                tEarnedScore += sScore;
+                tMaxScore += sMax;
+              }
             }
           }
-        });
-
-        // From Evaluations
-        const tEvaluations = allEvaluations.filter(e => {
-          const eTraineeId = (e.submission as any)?.user?.id || (e.submission as any)?.trainee?.id;
-          return String(eTraineeId) === String(tId) && tCompletedSubs.some(s => s.id === e.submission?.id);
-        });
-
-        tEvaluations.forEach(e => {
-          const eMaxScore = 100;
-          const eScore = Number(e.overallScore || 0);
-          if (Number.isFinite(eScore)) {
-            tEarnedScore += eScore;
-            tMaxScore += eMaxScore;
-          }
-        });
+        }
 
         const tAvgScore = tMaxScore > 0 ? (tEarnedScore / tMaxScore) * 100 : 0;
-        const isAtRisk = tCompletionRate < 30 || tAvgScore < 50;
-
-        sumCompletionRate += tCompletionRate;
+        sumCompletionRate += avgProgress;
         sumAvgScore += tAvgScore;
 
         assignedTraineesProgress.push({
           traineeId: tId,
           traineeName: tName,
-          assignedLps: assignedLps,
+          assignedLps: Array.from(new Set(tEnrollments.map(e => e.learningPath.title))).join(', ') || 'Assigned Learning Path',
           detailedLps: detailedLps,
-          progressPercent: Math.round(tCompletionRate),
+          progressPercent: avgProgress,
           avgScore: Math.round(tAvgScore),
-          status: isAtRisk ? 'At Risk' : 'On Track'
+          status: traineeStatus
         });
       }
       
@@ -1925,34 +1923,38 @@ export class AnalyticsEntityService {
       external: myAssignments.filter(a => a.isExternal || (!a.learningPath && !a.module && !a.lesson)).length
     };
 
-    // 4. My Trainees (Distinct trainees assigned)
-    const trainerTraineeIds = new Set<string>();
+    // 4. Trainees explicitly assigned Learning Paths by this trainer
     const allEnrollments = await enrollmentRepo.find({
-      relations: ['user', 'learningPath', 'assignedBy']
+      relations: ['user', 'learningPath', 'learningPath.createdBy', 'assignedBy']
     });
-    const allAssignments = await assignmentRepo.find({
-      relations: ['learningPath', 'module', 'module.learningPath', 'lesson', 'lesson.module.learningPath']
+
+    const trainerLpEnrollments = allEnrollments.filter(e => {
+      if (!e.user || !e.learningPath || e.user.deletedAt) return false;
+      // Explicitly assigned by current trainer
+      if (e.assignedBy?.id === userId) return true;
+      // Or assigned to a path created by this trainer and not assigned by someone else
+      if (myPathIds.includes(e.learningPath.id)) {
+        if (!e.assignedBy) {
+          const p = myPaths.find(path => path.id === e.learningPath.id);
+          if (Array.isArray(p?.assignedToTraineeIds) && p.assignedToTraineeIds.includes(e.user.id)) {
+            return true;
+          }
+        }
+      }
+      return false;
     });
-    const modules = await moduleRepo.find({ relations: ['lessons', 'resources', 'learningPath'] });
-    const progressRows = await progressRepo.find({ relations: ['lesson', 'user'] });
-    const visitRows = await visitsRepo.find({ relations: ['resource', 'user'] });
 
-    for (const p of myPaths) {
-      if (p.assignedToTraineeIds) p.assignedToTraineeIds.forEach(id => trainerTraineeIds.add(id));
-    }
-    
-    if (myPathIds.length > 0) {
-      const pathEnrollments = allEnrollments.filter(e => e.learningPath && myPathIds.includes(e.learningPath.id));
-      pathEnrollments.forEach(e => {
-        if (e.user) trainerTraineeIds.add(e.user.id);
-      });
+    const trainerLpTraineeMap = new Map<string, { user: any; enrollments: any[] }>();
+    for (const e of trainerLpEnrollments) {
+      const tId = e.user.id;
+      if (!trainerLpTraineeMap.has(tId)) {
+        trainerLpTraineeMap.set(tId, { user: e.user, enrollments: [] });
+      }
+      trainerLpTraineeMap.get(tId)!.enrollments.push(e);
     }
 
-    for (const a of myAssignments) {
-      if (a.assignedToTraineeIds) a.assignedToTraineeIds.forEach(id => trainerTraineeIds.add(id));
-    }
-
-    const myTraineesCount = trainerTraineeIds.size;
+    const trainerTraineeIds = new Set<string>(trainerLpTraineeMap.keys());
+    const myTraineesCount = trainerLpTraineeMap.size;
     
     // 5. Pending Reviews
     let trainerPendingReviews = 0;
@@ -1977,166 +1979,107 @@ export class AnalyticsEntityService {
     let evaluatedTraineeCount = 0;
     let evaluatedTraineeOnTimeCount = 0;
 
-    if (trainerTraineeIds.size > 0) {
-      const traineeIds = Array.from(trainerTraineeIds);
-      const trainees = await userRepo.find({ where: { id: In(traineeIds) } });
+    if (trainerLpTraineeMap.size > 0) {
+      const traineeIds = Array.from(trainerLpTraineeMap.keys());
       
       const allSubmissions = await submissionRepo.find({
         where: { trainee: { id: In(traineeIds) } },
         relations: ['trainee', 'assignment']
       });
-      
-      const allEvaluations = await evaluationRepo.find({
-        relations: ['submission', 'submission.user']
-      });
 
-      for (const tUser of trainees) {
-        if (tUser.deletedAt) continue;
-        const tId = tUser.id;
+      for (const [tId, { user: tUser, enrollments: tEnrollments }] of trainerLpTraineeMap.entries()) {
         const tName = `${tUser.firstName || ''} ${tUser.lastName || ''}`.trim() || tUser.email;
-        
-        const tEnrollments = allEnrollments.filter(e => e.user?.id === tId && e.learningPath?.id);
-        const tEnrolledPathIds = new Set(tEnrollments.map(e => e.learningPath.id));
-        const tTrainerEnrolledPathIds = new Set(
-          tEnrollments
-            .filter(e => e.assignedBy?.id === userId)
-            .map(e => e.learningPath.id)
-        );
-        
-        let expectedLessons = 0;
-        let expectedResources = 0;
-        const tModules = modules.filter(m => m.learningPath?.id && tEnrolledPathIds.has(m.learningPath.id));
-        tModules.forEach(mod => {
-           expectedLessons += (mod.lessons || []).length;
-           expectedResources += (mod.resources || []).length;
-        });
-        
-        const tAssignments = allAssignments.filter(a => {
-           const inPath = a.learningPath?.id && tEnrolledPathIds.has(a.learningPath.id);
-           const inModule = a.module?.learningPath?.id && tEnrolledPathIds.has(a.module.learningPath.id);
-           const inLesson = a.lesson?.module?.learningPath?.id && tEnrolledPathIds.has(a.lesson.module.learningPath.id);
-           const isDirect = Array.isArray(a.assignedToTraineeIds) && a.assignedToTraineeIds.includes(tId);
-           return inPath || inModule || inLesson || isDirect;
-        });
-        const expectedAssignments = tAssignments.length;
-        const totalExpected = expectedLessons + expectedResources + expectedAssignments;
-        
-        const tLessonsCompleted = new Set(progressRows.filter(p => p.user?.id === tId && p.isCompleted).map(p => p.lesson?.id)).size;
-        const tResourcesVisited = new Set(visitRows.filter(v => v.user?.id === tId).map(v => v.resource?.id)).size;
-        
+        const tLpIds = Array.from(new Set(tEnrollments.map(e => e.learningPath.id)));
+
+        // Calculate exact real-time progress for each assigned LP
+        let sumTraineeLpProgress = 0;
+        const detailedLps: any[] = [];
+
+        for (const lpId of tLpIds) {
+          const lp = tEnrollments.find(e => e.learningPath.id === lpId)?.learningPath;
+          const prog = await this.progressService.getLPProgress(tId, lpId);
+          sumTraineeLpProgress += prog;
+
+          let s = 'On Track';
+          if (prog === 0) s = 'Not Started';
+          else if (prog === 100) s = 'Completed';
+          else if (prog < 30) s = 'At Risk';
+
+          detailedLps.push({
+            title: lp?.title || 'Learning Path',
+            progress: prog,
+            score: null,
+            status: s,
+          });
+        }
+
+        const avgProgress = tLpIds.length > 0 ? Math.round(sumTraineeLpProgress / tLpIds.length) : 0;
+        let traineeStatus = 'On Track';
+        if (avgProgress === 0) {
+          traineeStatus = 'Not Started';
+        } else if (avgProgress === 100) {
+          traineeStatus = 'Completed';
+        } else if (avgProgress < 30) {
+          traineeStatus = 'At Risk';
+        }
+
+        // Submissions for this trainee
         const tCompletedSubs = allSubmissions.filter(s => 
           (s.trainee?.id === tId || (s as any).user?.id === tId) && 
-          ['Accepted', 'Evaluated', 'Approved'].includes(String(s.status)) &&
-          tAssignments.some(a => a.id === s.assignment?.id)
+          ['Accepted', 'Evaluated', 'Approved'].includes(String(s.status))
         );
-        const tAssignmentsCompleted = tCompletedSubs.filter(s => String(s.status) === 'Approved').length;
-
-        const totalCompleted = tLessonsCompleted + tResourcesVisited + tAssignmentsCompleted;
-        const tCompletionRate = totalExpected > 0 ? (totalCompleted / totalExpected) * 100 : 0;
 
         let tEarnedScore = 0;
         let tMaxScore = 0;
-        
-        tCompletedSubs.forEach(s => {
-          const sAssignment = tAssignments.find(a => a.id === s.assignment?.id);
+        for (const s of tCompletedSubs) {
+          const sAssignment = s.assignment;
           if (sAssignment) {
-            let isValidForTrainer = false;
-            const lpId = sAssignment.learningPath?.id || sAssignment.module?.learningPath?.id || sAssignment.lesson?.module?.learningPath?.id;
-            
-            if (lpId) {
-               isValidForTrainer = tTrainerEnrolledPathIds.has(lpId);
-            } else {
-               isValidForTrainer = myAssignments.some(a => a.id === sAssignment.id);
-            }
-
-            if (isValidForTrainer) {
-              const sMaxScore = Number(sAssignment.maxScore || 100);
+            const lpId = sAssignment.learningPath?.id || (sAssignment as any).learningPathId;
+            if (!lpId || tLpIds.includes(lpId)) {
               const sScore = Number(s.score || 0);
+              const sMax = Number(sAssignment.maxScore || 100);
               if (Number.isFinite(sScore)) {
                 tEarnedScore += sScore;
-                tMaxScore += sMaxScore;
+                tMaxScore += sMax;
                 totalEarnedScoreAll += sScore;
-                totalMaxScoreAll += sMaxScore;
+                totalMaxScoreAll += sMax;
               }
             }
           }
-        });
+        }
 
-        const tEvaluations = allEvaluations.filter(e => {
-          const eTraineeId = (e.submission as any)?.user?.id || (e.submission as any)?.trainee?.id;
-          return String(eTraineeId) === String(tId) && tCompletedSubs.some(s => s.id === e.submission?.id);
-        });
-
-        tEvaluations.forEach(e => {
-          const s = tCompletedSubs.find(sub => sub.id === e.submission?.id);
-          const sAssignment = s ? tAssignments.find(a => a.id === s.assignment?.id) : null;
-          let isValidForTrainer = false;
-
-          if (sAssignment) {
-            const lpId = sAssignment.learningPath?.id || sAssignment.module?.learningPath?.id || sAssignment.lesson?.module?.learningPath?.id;
-            
-            if (lpId) {
-               isValidForTrainer = tTrainerEnrolledPathIds.has(lpId);
-            } else {
-               isValidForTrainer = myAssignments.some(a => a.id === sAssignment.id);
-            }
-          }
-
-          if (isValidForTrainer) {
-            const eMaxScore = 100;
-            const eScore = Number(e.overallScore || 0);
-            if (Number.isFinite(eScore)) {
-              tEarnedScore += eScore;
-              tMaxScore += eMaxScore;
-              totalEarnedScoreAll += eScore;
-              totalMaxScoreAll += eMaxScore;
-            }
-          }
-        });
-
-        const hasEvaluations = tMaxScore > 0;
-        const tAvgScore = hasEvaluations ? (tEarnedScore / tMaxScore) * 100 : 0;
-        
-        let status = 'On Track';
-        if (totalCompleted === 0) {
-           status = 'Not Started';
-        } else if (Math.round(tCompletionRate) === 100) {
-           status = 'Completed';
-        } else if (tCompletionRate < 30 || (hasEvaluations && tAvgScore < 40)) {
-           status = 'At Risk';
+        const tAvgScore = tMaxScore > 0 ? (tEarnedScore / tMaxScore) * 100 : 0;
+        sumCompletionRate += avgProgress;
+        if (tMaxScore > 0) {
+          evaluatedTraineeCount += 1;
         }
 
         // On Time Submission Rate
         let onTimeCount = 0;
         let totalWithDeadline = 0;
         tCompletedSubs.forEach(s => {
-           const sAssignment = tAssignments.find(a => a.id === s.assignment?.id);
-           if (sAssignment && (sAssignment as any).dueDate) {
-             totalWithDeadline++;
-             if (new Date(s.submittedAt || s.createdAt) <= new Date((sAssignment as any).dueDate)) {
-                onTimeCount++;
-             }
-           }
+          const sAssignment = s.assignment;
+          if (sAssignment && (sAssignment as any).dueDate) {
+            totalWithDeadline++;
+            if (new Date(s.submittedAt || s.createdAt) <= new Date((sAssignment as any).dueDate)) {
+              onTimeCount++;
+            }
+          }
         });
         const onTimeRate = totalWithDeadline > 0 ? (onTimeCount / totalWithDeadline) * 100 : null;
-
-        sumCompletionRate += tCompletionRate;
-        if (tAvgScore !== null) {
-           evaluatedTraineeCount += 1;
-        }
         if (onTimeRate !== null) {
-           sumOnTimeRate += onTimeRate;
-           evaluatedTraineeOnTimeCount += 1;
+          sumOnTimeRate += onTimeRate;
+          evaluatedTraineeOnTimeCount += 1;
         }
 
         assignedTraineesProgress.push({
           traineeId: tId,
           traineeName: tName,
-          status: status,
-          progressPercent: Math.round(tCompletionRate),
+          status: traineeStatus,
+          progressPercent: avgProgress,
           avgScore: Math.round(tAvgScore),
-          // Extra props for ui
-          assignedLps: Array.from(new Set(tEnrollments.map(e => e.learningPath.title))).join(', ') || 'Direct Assignments',
+          assignedLps: Array.from(new Set(tEnrollments.map(e => e.learningPath.title))).join(', ') || 'Assigned Learning Path',
+          detailedLps,
         });
       }
       

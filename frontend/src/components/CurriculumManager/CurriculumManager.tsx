@@ -33,7 +33,7 @@ interface InspectItem {
 }
 
 /**
- * 🌟 FormattedRichContent
+ * FormattedRichContent
  * Intelligently renders rich text, raw HTML, Tiptap JSON, or plain text without raw markup.
  */
 function FormattedRichContent({
@@ -99,24 +99,63 @@ function getEmbedVideoUrl(url: string): string | null {
  */
 function extractTaskQuestions(task: any): any[] {
   if (!task) return [];
-  if (Array.isArray(task.mcqConfig?.questions) && task.mcqConfig.questions.length > 0) {
-    return task.mcqConfig.questions;
-  }
+  let rawList: any[] = [];
+
   if (Array.isArray(task.questions) && task.questions.length > 0) {
-    return task.questions;
+    rawList = task.questions;
+  } else if (Array.isArray(task.mcqConfig?.questions) && task.mcqConfig.questions.length > 0) {
+    rawList = task.mcqConfig.questions;
+  } else if (typeof task.questions === 'string' && task.questions.trim().length > 0) {
+    try {
+      const p = JSON.parse(task.questions);
+      if (Array.isArray(p) && p.length > 0) rawList = p;
+      else if (Array.isArray(p?.questions) && p.questions.length > 0) rawList = p.questions;
+    } catch {}
+  } else if (typeof task.mcqConfig === 'string' && task.mcqConfig.trim().length > 0) {
+    try {
+      const p = JSON.parse(task.mcqConfig);
+      if (Array.isArray(p?.questions) && p.questions.length > 0) rawList = p.questions;
+      else if (Array.isArray(p?.options) && p.options.length > 0) {
+        rawList = [{
+          id: 'q-legacy',
+          text: task.instructions || task.title || 'Question 1',
+          options: p.options,
+          correctIndex: p.correctIndex ?? 0,
+          points: task.maxScore || 10,
+          type: 'MCQ',
+        }];
+      }
+    } catch {}
+  } else if (task.mcqConfig && Array.isArray(task.mcqConfig.options) && task.mcqConfig.options.length > 0) {
+    rawList = [{
+      id: 'q-legacy',
+      text: task.instructions || task.title || 'Question 1',
+      options: task.mcqConfig.options,
+      correctIndex: task.mcqConfig.correctIndex ?? 0,
+      points: task.maxScore || 10,
+      type: 'MCQ',
+    }];
   }
-  if (task.mcqConfig && Array.isArray(task.mcqConfig.options) && task.mcqConfig.options.length > 0) {
-    return [
-      {
-        id: 'q-legacy',
-        questionText: task.instructions || task.title || 'Question',
-        options: task.mcqConfig.options,
-        correctIndex: task.mcqConfig.correctIndex ?? 0,
-        points: task.maxScore || 10,
-      },
-    ];
+
+  // If no questions list but it's a Subjective assignment with instructions/description/title
+  if (rawList.length === 0 && (task.assignmentType === 'Subjective' || !task.assignmentType)) {
+    const fallbackText =
+      (task.instructions && task.instructions !== '<p></p>')
+        ? task.instructions
+        : (task.description && task.description !== '<p></p>')
+        ? task.description
+        : task.title;
+    if (fallbackText && typeof fallbackText === 'string' && fallbackText.trim().length > 0) {
+      rawList = [{
+        id: 'sub-legacy',
+        text: fallbackText.trim(),
+        maxPoints: task.maxScore || 10,
+        type: 'Subjective',
+      }];
+    }
   }
-  return [];
+
+  return rawList;
 }
 
 export function CurriculumManager({
@@ -141,14 +180,13 @@ export function CurriculumManager({
   const [targetLessonId, setTargetLessonId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
-  // 👁️ Inspector State & Navigation Stack
+  // Inspector State & Navigation Stack
   const [inspectItem, setInspectItem] = useState<InspectItem | null>(null);
   const toast = useToast();
   const [inspectorHistory, setInspectorHistory] = useState<InspectItem[]>([]);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
-  // Search & Filtering State
-  const [searchQuery, setSearchQuery] = useState('');
+  // Collapsed Modules State
   const [collapsedModules, setCollapsedModules] = useState<Record<string, boolean>>({});
 
   // General Form State
@@ -185,7 +223,7 @@ export function CurriculumManager({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🌟 FETCH PATH, MODULES, & TRAINEES
+  // FETCH PATH, MODULES, & TRAINEES
   const loadCurriculum = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -196,7 +234,15 @@ export function CurriculumManager({
       ]);
 
       if (pathData) setPathDetails(pathData);
-      setModules(modulesData || []);
+      const mods = modulesData || [];
+      setModules(mods);
+
+      // Default: all modules start in collapsed state
+      const initialCollapse: Record<string, boolean> = {};
+      mods.forEach((m: any) => {
+        initialCollapse[m.id] = true;
+      });
+      setCollapsedModules(initialCollapse);
 
       if (modulesData && modulesData.length > 0 && modulesData[0].learningPath && !pathData) {
         setPathDetails(modulesData[0].learningPath);
@@ -223,7 +269,7 @@ export function CurriculumManager({
     loadCurriculum();
   }, [loadCurriculum]);
 
-  // 🌟 OWNERSHIP CHECK
+  // OWNERSHIP CHECK
   const isAdmin = currentUser.role === 'Admin' || String(currentUser.role).toLowerCase() === 'admin';
   const isTrainee = currentUser.role === 'Trainee' || String(currentUser.role).toLowerCase() === 'trainee';
 
@@ -270,32 +316,6 @@ export function CurriculumManager({
     return { totalModules, totalLessons, totalAssignments, totalResources, estimatedWeeks };
   }, [modules]);
 
-  // Filtered Modules
-  const filteredModules = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return modules;
-
-    return modules.filter((m) => {
-      const matchMod =
-        (m.title && m.title.toLowerCase().includes(q)) ||
-        (m.description && m.description.toLowerCase().includes(q)) ||
-        (Array.isArray(m.objectives) && m.objectives.some((o: string) => o.toLowerCase().includes(q))) ||
-        (Array.isArray(m.outcomes) && m.outcomes.some((o: string) => o.toLowerCase().includes(q)));
-
-      const matchLessons = (m.lessons || []).some((l: any) =>
-        (l.title && l.title.toLowerCase().includes(q)) ||
-        (l.description && l.description.toLowerCase().includes(q)) ||
-        (l.assignments || []).some((a: any) => a.title && a.title.toLowerCase().includes(q))
-      );
-
-      const matchModAssignments = (m.assignments || []).some((a: any) =>
-        a.title && a.title.toLowerCase().includes(q)
-      );
-
-      return matchMod || matchLessons || matchModAssignments;
-    });
-  }, [modules, searchQuery]);
-
   // Form Reset
   const resetFormFields = () => {
     setFormTitle('');
@@ -324,7 +344,7 @@ export function CurriculumManager({
     setFormModuleTaskLocking(false);
   };
 
-  // 👁️ Open Inspector with History Stack
+  // Open Inspector with History Stack
   const openInspector = (
     type: InspectType,
     data: any,
@@ -372,15 +392,22 @@ export function CurriculumManager({
     setTimeout(() => setCopyFeedback(null), 2000);
   };
 
+  const areAllModulesCollapsed =
+    modules.length > 0 &&
+    modules.every((m) => (collapsedModules[m.id] !== undefined ? collapsedModules[m.id] : true));
+
   const toggleModuleCollapse = (moduleId: string) => {
-    setCollapsedModules((prev) => ({ ...prev, [moduleId]: !prev[moduleId] }));
+    setCollapsedModules((prev) => {
+      const current = prev[moduleId] !== undefined ? prev[moduleId] : true;
+      return { ...prev, [moduleId]: !current };
+    });
   };
 
   const toggleAllCollapse = () => {
-    const areAllCollapsed = modules.every((m) => collapsedModules[m.id]);
+    const nextState = !areAllModulesCollapsed;
     const next: Record<string, boolean> = {};
     modules.forEach((m) => {
-      next[m.id] = !areAllCollapsed;
+      next[m.id] = nextState;
     });
     setCollapsedModules(next);
   };
@@ -526,25 +553,19 @@ export function CurriculumManager({
 
   return (
     <div className="cm-container">
-      {/* 🌟 Navigation */}
+      {/* Navigation */}
       <button type="button" onClick={onBack} className="cm-btn-back">
-        <span>←</span> Back to All Learning Paths
+        Back to All Learning Paths
       </button>
 
-      {/* 🌟 Header Section */}
+      {/* Header Section */}
       <header className="cm-header-section">
         <div>
-          <div className="cm-header-badge-row">
-            <span className="cm-badge cm-badge-blue">Learning Path Curriculum</span>
-            <span className="cm-badge cm-badge-gray">
-              {isOwnerOrAdmin ? 'Trainer & Admin Controls' : 'Read-Only Inspector'}
-            </span>
-          </div>
-          <h2 className="cm-header-title">Curriculum Management: {learningPathTitle}</h2>
+          <h2 className="cm-header-title">Learning Path : {learningPathTitle}</h2>
           <p className="cm-header-subtitle">
             {isOwnerOrAdmin
-              ? 'Comprehensive curriculum tree. Inspect internal modules, lessons, assignments, and learning resources.'
-              : 'Read-Only Mode: Inspect internal modules, lessons, tasks, and attached resources.'}
+              ? ''
+              : ''}
           </p>
         </div>
 
@@ -555,45 +576,45 @@ export function CurriculumManager({
               onClick={() => navigate(`/learning-paths/${learningPathId}/edit`)}
               className="cm-btn-primary"
             >
-              ✏️ Edit Learning Path
+              Edit Learning Path
             </button>
           </div>
         )}
       </header>
 
-      {/* 🌟 Stats & Quick Filter Ribbon */}
+      {/* Stats & Quick Filter Ribbon */}
       <div className="cm-stats-ribbon">
         <div className="cm-stats-items">
           <div className="cm-stat-pill">
-            <span>📦</span>
+            
             <div>
               <strong>{summaryStats.totalModules}</strong> Modules
             </div>
           </div>
           <div className="cm-stat-pill-divider" />
           <div className="cm-stat-pill">
-            <span>📖</span>
+            
             <div>
               <strong>{summaryStats.totalLessons}</strong> Lessons
             </div>
           </div>
           <div className="cm-stat-pill-divider" />
           <div className="cm-stat-pill">
-            <span>📝</span>
+            
             <div>
               <strong>{summaryStats.totalAssignments}</strong> Tasks
             </div>
           </div>
           <div className="cm-stat-pill-divider" />
           <div className="cm-stat-pill">
-            <span>📎</span>
+            
             <div>
               <strong>{summaryStats.totalResources}</strong> Resources
             </div>
           </div>
           <div className="cm-stat-pill-divider" />
           <div className="cm-stat-pill">
-            <span>⏱️</span>
+            
             <div>
               <strong>{summaryStats.estimatedWeeks}</strong> Est. Weeks
             </div>
@@ -601,49 +622,35 @@ export function CurriculumManager({
         </div>
 
         <div className="cm-toolbar-controls">
-          <div className="cm-search-input-wrap">
-            <span className="cm-search-icon">🔍</span>
-            <input
-              type="text"
-              className="cm-search-input"
-              placeholder="Search curriculum items..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          {modules.length > 1 && (
+          {modules.length > 0 && (
             <button type="button" onClick={toggleAllCollapse} className="cm-btn-secondary">
-              {modules.every((m) => collapsedModules[m.id]) ? 'Expand All' : 'Collapse All'}
+              {areAllModulesCollapsed ? 'Expand All' : 'Collapse All'}
             </button>
           )}
         </div>
       </div>
 
-      {/* 🌟 Curriculum Tree Content */}
+      {/* Curriculum Tree Content */}
       {isLoading ? (
         <div className="cm-empty-state">
-          <p>⏳ Loading curriculum tree...</p>
+          <p>Loading curriculum tree...</p>
           <span style={{ fontSize: '13px', color: '#64748b' }}>
             Fetching modules, lessons, assignments, and resources...
           </span>
         </div>
-      ) : filteredModules.length === 0 ? (
+      ) : modules.length === 0 ? (
         <div className="cm-empty-state">
-          <p>{searchQuery ? 'No matching curriculum items found.' : 'No modules created yet.'}</p>
+          <p>No modules created yet.</p>
           <span style={{ fontSize: '13px', color: '#64748b' }}>
-            {searchQuery
-              ? 'Try adjusting your search query or clear the filter.'
-              : 'Add modules to this learning path in the curriculum editor.'}
+            Add modules to this learning path in the curriculum editor.
           </span>
         </div>
       ) : (
-        filteredModules.map((module, mIdx) => {
-          const isCollapsed = Boolean(collapsedModules[module.id]);
+        modules.map((module, mIdx) => {
+          const isCollapsed = collapsedModules[module.id] !== undefined ? collapsedModules[module.id] : true;
           const modAssignments = (module.assignments || []).filter((a: any) => !a.lessonId);
           const hasObjectives = Array.isArray(module.objectives) && module.objectives.length > 0;
           const hasOutcomes = Array.isArray(module.outcomes) && module.outcomes.length > 0;
-          const hasResources = Array.isArray(module.resources) && module.resources.length > 0;
 
           return (
             <div key={module.id} className="cm-module-card">
@@ -655,7 +662,7 @@ export function CurriculumManager({
 
                   <div className="cm-badge-cluster">
                     <span className="cm-badge cm-badge-blue">
-                      ⏱️ {module.durationWeeks ? `${module.durationWeeks} Weeks` : module.durationLabel || '2 Weeks'}
+                      {module.durationWeeks ? `${module.durationWeeks} Weeks` : module.durationLabel || '2 Weeks'}
                     </span>
                     <span className="cm-badge cm-badge-gray">
                       Skill: {module.difficultyLevel || module.level || 'Beginner'}
@@ -665,14 +672,10 @@ export function CurriculumManager({
                     </span>
                     {module.lessonLocking && (
                       <span className="cm-badge cm-badge-purple" title="Lessons unlock sequentially">
-                        🔒 Sequential Lessons
+                        Sequential Lessons
                       </span>
                     )}
-                    {module.taskLocking && (
-                      <span className="cm-badge cm-badge-amber" title="Tasks require all lessons completion">
-                        🛡️ Gated Tasks
-                      </span>
-                    )}
+                   
                   </div>
                 </div>
 
@@ -682,7 +685,7 @@ export function CurriculumManager({
                     onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
                     className="cm-btn-sm cm-btn-view-primary"
                   >
-                    👁️ View Details
+                    View Details
                   </button>
                   <button
                     type="button"
@@ -690,7 +693,7 @@ export function CurriculumManager({
                     className="cm-btn-sm cm-btn-view"
                     title={isCollapsed ? 'Expand module content' : 'Collapse module content'}
                   >
-                    {isCollapsed ? '▼ Expand' : '▲ Collapse'}
+                    {isCollapsed ? 'Expand' : 'Collapse'}
                   </button>
                 </div>
               </div>
@@ -702,8 +705,8 @@ export function CurriculumManager({
                     <FormattedRichContent content={module.description} emptyText="No module description provided." />
                   </div>
 
-                  {/* Micro Chips preview for Objectives, Outcomes, and Resources */}
-                  {(hasObjectives || hasOutcomes || hasResources) && (
+                  {/* Micro Chips preview for Objectives and Outcomes */}
+                  {(hasObjectives || hasOutcomes) && (
                     <div className="cm-objectives-preview-bar">
                       {hasObjectives && (
                         <div
@@ -711,7 +714,7 @@ export function CurriculumManager({
                           onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
                           title="Click to view learning objectives"
                         >
-                          <span>🎯</span> {module.objectives.length} Learning Objectives
+                          {module.objectives.length} Learning Objectives
                         </div>
                       )}
                       {hasOutcomes && (
@@ -720,43 +723,9 @@ export function CurriculumManager({
                           onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
                           title="Click to view learning outcomes"
                         >
-                          <span>🏆</span> {module.outcomes.length} Expected Outcomes
+                          {module.outcomes.length} Expected Outcomes
                         </div>
                       )}
-                      {hasResources && (
-                        <div
-                          className="cm-micro-chip cm-micro-chip-blue"
-                          onClick={() => openInspector('MODULE', module, { moduleTitle: module.title, moduleId: module.id })}
-                          title="Click to view module resources"
-                        >
-                          <span>📎</span> {module.resources.filter((r: any) => !r.lesson && !r.lessonId).length} Module Resources
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Module Resources Shelf (if present) */}
-                  {hasResources && module.resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
-                    <div className="cm-card-resources-shelf">
-                      <div className="cm-shelf-title">
-                        <span>📎 Attached Module Resources ({module.resources.filter((r: any) => !r.lesson && !r.lessonId).length})</span>
-                      </div>
-                      <div className="cm-resource-items-grid">
-                        {module.resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any, rIdx: number) => (
-                          <div
-                            key={res.id || rIdx}
-                            className="cm-resource-item-pill"
-                            onClick={() =>
-                              openInspector('RESOURCE', res, { moduleTitle: module.title, moduleId: module.id })
-                            }
-                            title="Click to inspect resource details"
-                          >
-                            <span>{res.type === 'Video' ? '🎥' : res.type === 'PDF' ? '📄' : '🔗'}</span>
-                            <span>{res.title || 'Attached Resource'}</span>
-                            <span style={{ fontSize: '11px', color: '#94a3b8' }}>↗</span>
-                          </div>
-                        ))}
-                      </div>
                     </div>
                   )}
 
@@ -764,7 +733,7 @@ export function CurriculumManager({
                   {modAssignments.length > 0 && (
                     <div className="cm-module-assignments-box">
                       <div className="cm-assignments-title">
-                        <span>📌 Module-Level Assignments ({modAssignments.length})</span>
+                        <span>Module-Level Assignments ({modAssignments.length})</span>
                         <span style={{ fontSize: '12px', fontWeight: 600, color: '#9333ea' }}>
                           Standalone module milestones
                         </span>
@@ -786,33 +755,21 @@ export function CurriculumManager({
                                   }`}
                                 >
                                   {task.assignmentType === 'MCQ'
-                                    ? '🔘 MCQ Quiz'
+                                    ? 'MCQ Quiz'
                                     : task.assignmentType === 'External'
-                                    ? '🔗 External'
-                                    : '📝 Subjective'}
+                                    ? 'External'
+                                    : 'Subjective'}
                                 </span>
                                 <strong className="cm-task-title">{task.title}</strong>
                               </div>
 
                               <div className="cm-task-meta-row">
                                 <span className="cm-task-meta-item">
-                                  🏆 <strong>{task.maxScore || 100}</strong> Pts
+                                  <strong>{task.maxScore || 100}</strong> Pts
                                 </span>
-                                {(task.durationDays > 0 || task.durationHours > 0 || task.durationMinutes > 0) && (
-                                  <span className="cm-task-meta-item">
-                                    ⏳ {task.durationDays ? `${task.durationDays}d ` : ''}
-                                    {task.durationHours ? `${task.durationHours}h ` : ''}
-                                    {task.durationMinutes ? `${task.durationMinutes}m` : ''}
-                                  </span>
-                                )}
                                 {questions.length > 0 && (
                                   <span className="cm-task-meta-item">
-                                    ❓ {questions.length} Question{questions.length > 1 ? 's' : ''}
-                                  </span>
-                                )}
-                                {task.anchorType && (
-                                  <span className="cm-task-meta-item" style={{ color: '#8b5cf6' }}>
-                                    ⚓ {task.anchorType === 'TASK_UNLOCKED' ? 'On Unlock' : 'On LP Assignment'}
+                                    {questions.length} Question{questions.length > 1 ? 's' : ''}
                                   </span>
                                 )}
                               </div>
@@ -829,7 +786,7 @@ export function CurriculumManager({
                                 }
                                 className="cm-btn-sm cm-btn-view"
                               >
-                                👁️ View
+                                View
                               </button>
                             </div>
                           </div>
@@ -841,7 +798,7 @@ export function CurriculumManager({
                   {/* LESSONS TREE */}
                   <div className="cm-lesson-tree-wrapper">
                     <div className="cm-lessons-header-strip">
-                      <span>📖 Module Lessons ({module.lessons?.length || 0})</span>
+                      <span>Module Lessons ({module.lessons?.length || 0})</span>
                       <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>
                         Curriculum structure & learning materials
                       </span>
@@ -861,31 +818,18 @@ export function CurriculumManager({
                             <div className="cm-lesson-header">
                               <div className="cm-lesson-title-area">
                                 <h4 className="cm-lesson-title">
-                                  📖 Lesson {lesson.displayOrder || lIdx + 1}: {lesson.title}
+                                  Lesson {lesson.displayOrder || lIdx + 1}: {lesson.title}
                                 </h4>
 
                                 <div className="cm-badge-cluster">
-                                  <span className="cm-badge cm-badge-gray">
-                                    ⏱️ {lesson.durationMinutes || 15} mins
-                                  </span>
-                                  {lesson.videoUrl && (
-                                    <span className="cm-badge cm-badge-blue">
-                                      🎥 Video
-                                    </span>
-                                  )}
                                   {lesson.articleUrl && (
                                     <span className="cm-badge cm-badge-purple">
-                                      📰 Article
+                                      Article
                                     </span>
                                   )}
                                   {lessonHasResources && (
                                     <span className="cm-badge cm-badge-cyan">
-                                      📎 {lesson.resources.length} Resources
-                                    </span>
-                                  )}
-                                  {lessonAssignments.length > 0 && (
-                                    <span className="cm-badge cm-badge-amber">
-                                      📝 {lessonAssignments.length} Tasks
+                                      {lesson.resources.length} Resources
                                     </span>
                                   )}
                                 </div>
@@ -902,7 +846,7 @@ export function CurriculumManager({
                                   }
                                   className="cm-btn-sm cm-btn-view"
                                 >
-                                  👁️ View
+                                  View
                                 </button>
                               </div>
                             </div>
@@ -929,7 +873,7 @@ export function CurriculumManager({
                                       })
                                     }
                                   >
-                                    <span>{res.type === 'PDF' ? '📄' : res.type === 'Video' ? '🎥' : '🔗'}</span>
+                                    
                                     <span>{res.title || 'Resource'}</span>
                                   </div>
                                 ))}
@@ -959,13 +903,6 @@ export function CurriculumManager({
                                     <div className="cm-task-meta-row">
                                       <span>Max Score: {task.maxScore || 100} pts</span>
                                       {questions.length > 0 && <span>• {questions.length} Questions</span>}
-                                      {(task.durationDays > 0 || task.durationHours > 0 || task.durationMinutes > 0) && (
-                                        <span>
-                                          • Duration: {task.durationDays ? `${task.durationDays}d ` : ''}
-                                          {task.durationHours ? `${task.durationHours}h ` : ''}
-                                          {task.durationMinutes ? `${task.durationMinutes}m` : ''}
-                                        </span>
-                                      )}
                                     </div>
                                   </div>
 
@@ -982,7 +919,7 @@ export function CurriculumManager({
                                       }
                                       className="cm-btn-sm cm-btn-view"
                                     >
-                                      👁️ View
+                                      View
                                     </button>
                                   </div>
                                 </div>
@@ -1001,7 +938,7 @@ export function CurriculumManager({
       )}
 
       {/* ========================================================================= */}
-      {/* 👁️ MASTER INSPECTOR MODAL (MODULE, LESSON, TASK, RESOURCE)              */}
+      {/* MASTER INSPECTOR MODAL (MODULE, LESSON, TASK, RESOURCE)              */}
       {/* ========================================================================= */}
       {activeModal === 'VIEW_INSPECTOR' && inspectItem && (
         <div className="cm-modal-overlay" onClick={closeInspector}>
@@ -1022,7 +959,7 @@ export function CurriculumManager({
                       className="cm-history-back-btn"
                       title="Go back to previous viewed item"
                     >
-                      ← Back
+                      Back
                     </button>
                   )}
                   <span
@@ -1060,7 +997,7 @@ export function CurriculumManager({
                 className="cm-btn-close"
                 title="Close modal (Esc)"
               >
-                ✕
+                ×
               </button>
             </div>
 
@@ -1074,7 +1011,7 @@ export function CurriculumManager({
                   {/* KPI Stat Cards */}
                   <div className="cm-kpi-grid">
                     <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">⏱️ Duration</div>
+                      <div className="cm-kpi-label">Duration</div>
                       <div className="cm-kpi-value">
                         {inspectItem.data.durationWeeks
                           ? `${inspectItem.data.durationWeeks} Weeks`
@@ -1082,30 +1019,24 @@ export function CurriculumManager({
                       </div>
                     </div>
                     <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">🎚️ Skill Level</div>
+                      <div className="cm-kpi-label">Skill Level</div>
                       <div className="cm-kpi-value">
                         {inspectItem.data.difficultyLevel || inspectItem.data.level || 'Beginner'}
                       </div>
                     </div>
                     <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">📖 Total Lessons</div>
+                      <div className="cm-kpi-label">Total Lessons</div>
                       <div className="cm-kpi-value">
                         {(inspectItem.data.lessons || []).length}
                       </div>
                     </div>
-                    <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">🔒 Gating Rules</div>
-                      <div className="cm-kpi-value" style={{ fontSize: '13px' }}>
-                        {inspectItem.data.lessonLocking ? 'Sequential' : 'Open'}{' '}
-                        {inspectItem.data.taskLocking ? '• Gated' : ''}
-                      </div>
-                    </div>
+                    
                   </div>
 
                   {/* Overview Description */}
                   <div className="cm-inspector-section">
                     <div className="cm-section-header">
-                      <span>📄 Module Overview</span>
+                      <span>Module Overview</span>
                     </div>
                     <FormattedRichContent content={inspectItem.data.description} emptyText="No module overview provided." />
                   </div>
@@ -1114,7 +1045,7 @@ export function CurriculumManager({
                   <div className="cm-goals-grid">
                     <div className="cm-goals-card objectives">
                       <div className="cm-section-header" style={{ color: '#6b21a8' }}>
-                        <span>🎯 Learning Objectives</span>
+                        <span>Learning Objectives</span>
                         <span style={{ fontSize: '11px', fontWeight: 600 }}>
                           {(inspectItem.data.objectives || []).length} Goals
                         </span>
@@ -1132,7 +1063,7 @@ export function CurriculumManager({
 
                     <div className="cm-goals-card outcomes">
                       <div className="cm-section-header" style={{ color: '#15803d' }}>
-                        <span>🏆 Learning Outcomes</span>
+                        <span>Learning Outcomes</span>
                         <span style={{ fontSize: '11px', fontWeight: 600 }}>
                           {(inspectItem.data.outcomes || []).length} Deliverables
                         </span>
@@ -1149,59 +1080,10 @@ export function CurriculumManager({
                     </div>
                   </div>
 
-                  {/* Module Resources */}
-                  {Array.isArray(inspectItem.data.resources) && inspectItem.data.resources.filter((r: any) => !r.lesson && !r.lessonId).length > 0 && (
-                    <div className="cm-inspector-section">
-                      <div className="cm-section-header">
-                        <span>📎 Module Resources ({inspectItem.data.resources.filter((r: any) => !r.lesson && !r.lessonId).length})</span>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {inspectItem.data.resources.filter((r: any) => !r.lesson && !r.lessonId).map((res: any, idx: number) => (
-                          <div key={res.id || idx} className="cm-link-action-card">
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span style={{ fontSize: '18px' }}>
-                                {res.type === 'PDF' ? '📄' : res.type === 'Video' ? '🎥' : '🔗'}
-                              </span>
-                              <div>
-                                <strong style={{ fontSize: '13px', display: 'block', color: '#0f172a' }}>
-                                  {res.title || 'Resource'}
-                                </strong>
-                                <span style={{ fontSize: '11px', color: '#64748b' }}>{res.url}</span>
-                              </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                              <a
-                                href={res.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="cm-btn-sm cm-btn-view-primary"
-                                style={{ textDecoration: 'none' }}
-                              >
-                                Open ↗
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  openInspector('RESOURCE', res, {
-                                    moduleTitle: inspectItem.data.title,
-                                    moduleId: inspectItem.data.id,
-                                  })
-                                }
-                                className="cm-btn-sm cm-btn-view"
-                              >
-                                Inspect
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   {/* Module Lessons Breakdown */}
                   <div className="cm-inspector-section">
                     <div className="cm-section-header">
-                      <span>📖 Module Lessons Breakdown ({(inspectItem.data.lessons || []).length})</span>
+                      <span>Module Lessons Breakdown ({(inspectItem.data.lessons || []).length})</span>
                     </div>
                     {(inspectItem.data.lessons || []).length === 0 ? (
                       <span className="cm-text-muted-italic">No lessons registered in this module.</span>
@@ -1225,7 +1107,7 @@ export function CurriculumManager({
                                 Lesson {lesson.displayOrder || idx + 1}: {lesson.title}
                               </strong>
                               <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                                Duration: {lesson.durationMinutes || 15} mins • {lesson.assignments?.length || 0} tasks
+                                Lesson #{lesson.displayOrder || idx + 1}
                               </div>
                             </div>
                             <button
@@ -1238,7 +1120,7 @@ export function CurriculumManager({
                               }
                               className="cm-btn-sm cm-btn-view"
                             >
-                              👁️ Inspect Lesson
+                              Inspect Lesson
                             </button>
                           </div>
                         ))}
@@ -1255,31 +1137,21 @@ export function CurriculumManager({
                 <>
                   <div className="cm-kpi-grid">
                     <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">⏱️ Duration</div>
-                      <div className="cm-kpi-value">{inspectItem.data.durationMinutes || 15} Mins</div>
-                    </div>
-                    <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">🔢 Order Index</div>
+                      <div className="cm-kpi-label">Lesson Order</div>
                       <div className="cm-kpi-value">Lesson #{inspectItem.data.displayOrder || 1}</div>
                     </div>
-                    <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">🎥 Video Status</div>
-                      <div className="cm-kpi-value">
-                        {inspectItem.data.videoUrl ? 'Available' : 'None'}
+                    {inspectItem.context?.moduleTitle && (
+                      <div className="cm-kpi-card">
+                        <div className="cm-kpi-label">Module</div>
+                        <div className="cm-kpi-value" style={{ fontSize: '13px' }}>{inspectItem.context.moduleTitle}</div>
                       </div>
-                    </div>
-                    <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">📝 Tasks Attached</div>
-                      <div className="cm-kpi-value">
-                        {(inspectItem.data.assignments || []).length}
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Overview Description */}
                   <div className="cm-inspector-section">
                     <div className="cm-section-header">
-                      <span>📖 Lesson Content & Notes</span>
+                      <span>Lesson Content & Notes</span>
                     </div>
                     <FormattedRichContent content={inspectItem.data.description} emptyText="No description provided for this lesson." />
                   </div>
@@ -1288,7 +1160,7 @@ export function CurriculumManager({
                   {(inspectItem.data.videoUrl || inspectItem.data.articleUrl) && (
                     <div className="cm-inspector-section">
                       <div className="cm-section-header">
-                        <span>🎬 Media & Learning Materials</span>
+                        <span>Media & Learning Materials</span>
                       </div>
 
                       {/* Embedded Video preview if YouTube/Vimeo */}
@@ -1313,7 +1185,7 @@ export function CurriculumManager({
                         {inspectItem.data.videoUrl && (
                           <div className="cm-link-action-card">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span>🎥</span>
+                              
                               <div>
                                 <strong style={{ fontSize: '13px' }}>Video Resource</strong>
                                 <div style={{ fontSize: '11px', color: '#64748b' }}>{inspectItem.data.videoUrl}</div>
@@ -1326,7 +1198,7 @@ export function CurriculumManager({
                               className="cm-btn-sm cm-btn-view-primary"
                               style={{ textDecoration: 'none' }}
                             >
-                              Launch Video ↗
+                              Launch Video
                             </a>
                           </div>
                         )}
@@ -1334,7 +1206,7 @@ export function CurriculumManager({
                         {inspectItem.data.articleUrl && (
                           <div className="cm-link-action-card">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                              <span>📰</span>
+                              
                               <div>
                                 <strong style={{ fontSize: '13px' }}>Reading Material / Article</strong>
                                 <div style={{ fontSize: '11px', color: '#64748b' }}>{inspectItem.data.articleUrl}</div>
@@ -1347,7 +1219,7 @@ export function CurriculumManager({
                               className="cm-btn-sm cm-btn-view-primary"
                               style={{ textDecoration: 'none' }}
                             >
-                              Read Article ↗
+                              Read Article
                             </a>
                           </div>
                         )}
@@ -1359,7 +1231,7 @@ export function CurriculumManager({
                   {Array.isArray(inspectItem.data.keyPoints) && inspectItem.data.keyPoints.length > 0 && (
                     <div className="cm-inspector-section">
                       <div className="cm-section-header">
-                        <span>💡 Key Takeaways</span>
+                        <span>Key Takeaways</span>
                       </div>
                       <ul className="cm-goals-list">
                         {inspectItem.data.keyPoints.map((kp: string, idx: number) => (
@@ -1373,13 +1245,13 @@ export function CurriculumManager({
                   {Array.isArray(inspectItem.data.resources) && inspectItem.data.resources.length > 0 && (
                     <div className="cm-inspector-section">
                       <div className="cm-section-header">
-                        <span>📎 Lesson Resources ({inspectItem.data.resources.length})</span>
+                        <span>Lesson Resources ({inspectItem.data.resources.length})</span>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {inspectItem.data.resources.map((res: any, idx: number) => (
                           <div key={res.id || idx} className="cm-link-action-card">
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span>{res.type === 'PDF' ? '📄' : res.type === 'Video' ? '🎥' : '🔗'}</span>
+                              
                               <strong style={{ fontSize: '13px' }}>{res.title || 'Resource'}</strong>
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -1390,7 +1262,7 @@ export function CurriculumManager({
                                 className="cm-btn-sm cm-btn-view-primary"
                                 style={{ textDecoration: 'none' }}
                               >
-                                Open ↗
+                                Open
                               </a>
                               <button
                                 type="button"
@@ -1415,7 +1287,7 @@ export function CurriculumManager({
                   {Array.isArray(inspectItem.data.assignments) && inspectItem.data.assignments.length > 0 && (
                     <div className="cm-inspector-section">
                       <div className="cm-section-header">
-                        <span>📝 Lesson Tasks ({inspectItem.data.assignments.length})</span>
+                        <span>Lesson Tasks ({inspectItem.data.assignments.length})</span>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {inspectItem.data.assignments.map((task: any) => (
@@ -1448,7 +1320,7 @@ export function CurriculumManager({
                               }
                               className="cm-btn-sm cm-btn-view"
                             >
-                              👁️ Inspect Task
+                              Inspect Task
                             </button>
                           </div>
                         ))}
@@ -1465,42 +1337,106 @@ export function CurriculumManager({
                 <>
                   {(() => {
                     const task = inspectItem.data;
-                    const questions = extractTaskQuestions(task);
+                    
+                    // Resiliently collect all questions
+                    const allQuestions: any[] = [];
+                    const seenQKeys = new Set<string>();
+
+                    const addQ = (q: any) => {
+                      if (!q) return;
+                      const promptText =
+                        (typeof q === 'string' ? q : '') ||
+                        q.text ||
+                        q.questionText ||
+                        q.question ||
+                        q.prompt ||
+                        q.title ||
+                        '';
+                      const key = String(q.id || promptText || JSON.stringify(q));
+                      if (!seenQKeys.has(key)) {
+                        seenQKeys.add(key);
+                        allQuestions.push(q);
+                      }
+                    };
+
+                    const extracted = extractTaskQuestions(task);
+                    extracted.forEach(addQ);
+
+                    if (Array.isArray(task.questions)) {
+                      task.questions.forEach(addQ);
+                    }
+                    if (Array.isArray(task.mcqConfig?.questions)) {
+                      task.mcqConfig.questions.forEach(addQ);
+                    }
+
+                    // Helper to resolve exact question text
+                    const resolveQuestionText = (q: any, idx: number) => {
+                      if (typeof q === 'string') return q.trim();
+                      const text =
+                        q.text ||
+                        q.questionText ||
+                        q.question ||
+                        q.prompt ||
+                        q.title ||
+                        q.description ||
+                        q.content ||
+                        '';
+                      if (typeof text === 'string' && text.trim().length > 0 && text.trim() !== '<p></p>') {
+                        return text.trim();
+                      }
+                      if (allQuestions.length === 1) {
+                        if (task.instructions && typeof task.instructions === 'string' && task.instructions.trim().length > 0 && task.instructions.trim() !== '<p></p>') {
+                          return task.instructions.trim();
+                        }
+                        if (task.description && typeof task.description === 'string' && task.description.trim().length > 0 && task.description.trim() !== '<p></p>') {
+                          return task.description.trim();
+                        }
+                        if (task.title && typeof task.title === 'string' && task.title.trim().length > 0) {
+                          return task.title.trim();
+                        }
+                      }
+                      return `Question ${idx + 1}`;
+                    };
+
+                    // Categorize questions into MCQ and Subjective
+                    let mcqList = allQuestions.filter(
+                      (q) => (Array.isArray(q.options) && q.options.length > 0) || q.type === 'MCQ'
+                    );
+                    let subjectiveList = allQuestions.filter(
+                      (q) => !((Array.isArray(q.options) && q.options.length > 0) || q.type === 'MCQ')
+                    );
+
+                    if (task.assignmentType === 'MCQ' && mcqList.length === 0 && subjectiveList.length > 0) {
+                      mcqList = subjectiveList;
+                      subjectiveList = [];
+                    } else if (task.assignmentType === 'Subjective' && subjectiveList.length === 0 && mcqList.length > 0) {
+                      subjectiveList = mcqList;
+                      mcqList = [];
+                    }
 
                     return (
                       <>
                         <div className="cm-kpi-grid">
                           <div className="cm-kpi-card">
-                            <div className="cm-kpi-label">🏷️ Assignment Type</div>
+                            <div className="cm-kpi-label">Assignment Type</div>
                             <div className="cm-kpi-value" style={{ color: '#4f46e5' }}>
                               {task.assignmentType}
                             </div>
                           </div>
                           <div className="cm-kpi-card">
-                            <div className="cm-kpi-label">🏆 Max Score</div>
+                            <div className="cm-kpi-label">Max Score</div>
                             <div className="cm-kpi-value">{task.maxScore || 100} Pts</div>
                           </div>
                           <div className="cm-kpi-card">
-                            <div className="cm-kpi-label">⏳ Allotted Time</div>
-                            <div className="cm-kpi-value">
-                              {task.durationDays ? `${task.durationDays}d ` : ''}
-                              {task.durationHours ? `${task.durationHours}h ` : ''}
-                              {task.durationMinutes ? `${task.durationMinutes}m` : ''}
-                              {!task.durationDays && !task.durationHours && !task.durationMinutes && 'No limit'}
-                            </div>
-                          </div>
-                          <div className="cm-kpi-card">
-                            <div className="cm-kpi-label">⚓ Timer Anchor</div>
-                            <div className="cm-kpi-value" style={{ fontSize: '12px' }}>
-                              {task.anchorType === 'TASK_UNLOCKED' ? 'On Task Unlock' : 'On LP Assigned'}
-                            </div>
+                            <div className="cm-kpi-label">Total Questions</div>
+                            <div className="cm-kpi-value">{allQuestions.length}</div>
                           </div>
                         </div>
 
                         {/* Instructions */}
                         <div className="cm-inspector-section">
                           <div className="cm-section-header">
-                            <span>📝 Assignment Instructions & Prompt</span>
+                            <span>Assignment Instructions & Prompt</span>
                           </div>
                           <FormattedRichContent
                             content={task.instructions || task.description}
@@ -1512,7 +1448,7 @@ export function CurriculumManager({
                         {task.assignmentType === 'External' && (
                           <div className="cm-inspector-section">
                             <div className="cm-section-header">
-                              <span>🔗 External Submission Details</span>
+                              <span>External Submission Details</span>
                             </div>
                             {task.externalUrl ? (
                               <div className="cm-link-action-card">
@@ -1527,7 +1463,7 @@ export function CurriculumManager({
                                   className="cm-btn-sm cm-btn-primary"
                                   style={{ textDecoration: 'none' }}
                                 >
-                                  Open External Link ↗
+                                  Open External Link
                                 </a>
                               </div>
                             ) : (
@@ -1537,125 +1473,103 @@ export function CurriculumManager({
                         )}
 
                         {/* MCQ Questions Breakdown */}
-                        {task.assignmentType === 'MCQ' && (
+                        {mcqList.length > 0 && (
                           <div className="cm-inspector-section">
                             <div className="cm-section-header">
-                              <span>🔘 MCQ Questions & Correct Answers ({questions.length})</span>
+                              <span>MCQ Questions & Options ({mcqList.length})</span>
                               <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 700 }}>
-                                ✓ Correct answers marked in green
+                                Correct answers highlighted
                               </span>
                             </div>
 
-                            {questions.length === 0 ? (
-                              <span className="cm-text-muted-italic">No MCQ questions configured.</span>
-                            ) : (
-                              questions.map((q: any, qIdx: number) => {
-                                const questionText = q.questionText || q.question || `Question ${qIdx + 1}`;
-                                const opts = Array.isArray(q.options) ? q.options : ['Option 1', 'Option 2', 'Option 3', 'Option 4'];
-                                const correctIdx = Number(q.correctIndex) || 0;
+                            {mcqList.map((q: any, qIdx: number) => {
+                              const questionText = resolveQuestionText(q, qIdx);
+                              const opts = Array.isArray(q.options) ? q.options : ['Option 1', 'Option 2', 'Option 3', 'Option 4'];
+                              const correctIdx = Number(q.correctIndex) || 0;
 
-                                return (
-                                  <div key={q.id || qIdx} className="cm-mcq-card">
-                                    <div className="cm-mcq-question-header">
-                                      <div style={{ flex: 1 }}>
-                                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#4f46e5', marginRight: '6px' }}>
-                                          Q{qIdx + 1}.
-                                        </span>
-                                        <div style={{ display: 'inline' }}>
-                                          <FormattedRichContent content={questionText} emptyText="Question prompt" />
-                                        </div>
-                                      </div>
-                                      <span className="cm-badge cm-badge-purple">
-                                        {q.points || q.maxPoints || 10} pts
+                              return (
+                                <div key={q.id || qIdx} className="cm-mcq-card">
+                                  <div className="cm-mcq-question-header">
+                                    <div style={{ flex: 1 }}>
+                                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#4f46e5', marginRight: '6px' }}>
+                                        Q{qIdx + 1}.
                                       </span>
+                                      <div style={{ display: 'inline' }}>
+                                        <FormattedRichContent content={questionText} emptyText="Question prompt" />
+                                      </div>
                                     </div>
-
-                                    <div className="cm-mcq-options-grid">
-                                      {opts.map((opt: string, optIdx: number) => {
-                                        const isCorrect = optIdx === correctIdx;
-                                        return (
-                                          <div
-                                            key={optIdx}
-                                            className={`cm-mcq-option-pill ${isCorrect ? 'correct' : ''}`}
-                                          >
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                              <span style={{ fontSize: '11px', fontWeight: 700, opacity: 0.7 }}>
-                                                {String.fromCharCode(65 + optIdx)}.
-                                              </span>
-                                              <span>{opt}</span>
-                                            </span>
-                                            {isCorrect && (
-                                              <span className="cm-badge cm-badge-emerald" style={{ fontSize: '10px' }}>
-                                                ✓ Correct Answer
-                                              </span>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
+                                    <span className="cm-badge cm-badge-purple">
+                                      {q.points || q.maxPoints || (allQuestions.length === 1 ? task.maxScore : 10) || 10} pts
+                                    </span>
                                   </div>
-                                );
-                              })
-                            )}
+
+                                  <div className="cm-mcq-options-grid">
+                                    {opts.map((opt: string, optIdx: number) => {
+                                      const isCorrect = optIdx === correctIdx;
+                                      return (
+                                        <div
+                                          key={optIdx}
+                                          className={`cm-mcq-option-pill ${isCorrect ? 'correct' : ''}`}
+                                        >
+                                          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <span style={{ fontSize: '11px', fontWeight: 700, opacity: 0.7 }}>
+                                              {String.fromCharCode(65 + optIdx)}.
+                                            </span>
+                                            <span>{opt}</span>
+                                          </span>
+                                          {isCorrect && (
+                                            <span className="cm-badge cm-badge-emerald" style={{ fontSize: '10px' }}>
+                                              Correct Answer
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
 
-                        {/* Subjective Questions Breakdown with AI Grounding Dependencies */}
-                        {task.assignmentType === 'Subjective' && (
+                        {/* Subjective Questions Breakdown (Ground Truth dependencies removed) */}
+                        {subjectiveList.length > 0 && (
                           <div className="cm-inspector-section">
                             <div className="cm-section-header">
-                              <span>📝 Subjective Questions & AI Grounding ({questions.length})</span>
+                              <span>Subjective Questions ({subjectiveList.length})</span>
                             </div>
 
-                            {questions.length === 0 ? (
-                              <span className="cm-text-muted-italic">No subjective questions configured.</span>
-                            ) : (
-                              questions.map((q: any, qIdx: number) => {
-                                const questionText = q.questionText || q.question || `Question ${qIdx + 1}`;
-                                const depIds = q.dependentLessonIds || [];
+                            {subjectiveList.map((q: any, qIdx: number) => {
+                              const questionText = resolveQuestionText(q, qIdx);
 
-                                return (
-                                  <div key={q.id || qIdx} className="cm-sub-card">
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                      <div style={{ flex: 1 }}>
-                                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#4f46e5', marginRight: '6px' }}>
-                                          Q{qIdx + 1}.
-                                        </span>
-                                        <div style={{ display: 'inline' }}>
-                                          <FormattedRichContent content={questionText} emptyText="Question prompt" />
-                                        </div>
-                                      </div>
-                                      <span className="cm-badge cm-badge-purple">
-                                        Max {q.maxPoints || q.points || 10} pts
+                              return (
+                                <div key={q.id || qIdx} className="cm-sub-card">
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <div style={{ flex: 1 }}>
+                                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#4f46e5', marginRight: '6px' }}>
+                                        Q{qIdx + 1}.
                                       </span>
-                                    </div>
-
-                                    {/* AI Grounding Dependencies */}
-                                    <div className="cm-ai-grounding-box">
-                                      <div className="cm-ai-grounding-title">
-                                        <span>🤖 AI Evaluation Ground Truth Dependencies:</span>
+                                      <div style={{ display: 'inline' }}>
+                                        <FormattedRichContent content={questionText} emptyText="Question prompt" />
                                       </div>
-                                      {depIds.length === 0 ? (
-                                        <span style={{ fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
-                                          No specific lessons bound. AI uses general path context.
-                                        </span>
-                                      ) : (
-                                        <div className="cm-lesson-deps-wrap">
-                                          {depIds.map((depId: string) => {
-                                            const resolved = lessonTitleMap.get(String(depId));
-                                            return (
-                                              <span key={depId} className="cm-lesson-dep-chip">
-                                                📖 {resolved ? `${resolved.title} (${resolved.moduleTitle})` : `Lesson ID: ${depId}`}
-                                              </span>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
                                     </div>
+                                    <span className="cm-badge cm-badge-purple">
+                                      Max {q.maxPoints || q.points || (allQuestions.length === 1 ? task.maxScore : 10) || 10} pts
+                                    </span>
                                   </div>
-                                );
-                              })
-                            )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Fallback if no questions configured */}
+                        {allQuestions.length === 0 && task.assignmentType !== 'External' && (
+                          <div className="cm-inspector-section">
+                            <div className="cm-section-header">
+                              <span>Assignment Questions</span>
+                            </div>
+                            <span className="cm-text-muted-italic">No questions configured for this assignment.</span>
                           </div>
                         )}
                       </>
@@ -1671,11 +1585,11 @@ export function CurriculumManager({
                 <>
                   <div className="cm-kpi-grid">
                     <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">📄 Resource Type</div>
+                      <div className="cm-kpi-label">Resource Type</div>
                       <div className="cm-kpi-value">{inspectItem.data.type || 'Web Link'}</div>
                     </div>
                     <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">🌐 Host Domain</div>
+                      <div className="cm-kpi-label">Host Domain</div>
                       <div className="cm-kpi-value" style={{ fontSize: '12px' }}>
                         {(() => {
                           try {
@@ -1687,7 +1601,7 @@ export function CurriculumManager({
                       </div>
                     </div>
                     <div className="cm-kpi-card">
-                      <div className="cm-kpi-label">📍 Association</div>
+                      <div className="cm-kpi-label">Association</div>
                       <div className="cm-kpi-value" style={{ fontSize: '12px' }}>
                         {inspectItem.context?.lessonTitle
                           ? `Lesson: ${inspectItem.context.lessonTitle}`
@@ -1700,7 +1614,7 @@ export function CurriculumManager({
 
                   <div className="cm-inspector-section">
                     <div className="cm-section-header">
-                      <span>🔗 Resource Access Link</span>
+                      <span>Resource Access Link</span>
                     </div>
 
                     <div className="cm-link-action-card">
@@ -1717,7 +1631,7 @@ export function CurriculumManager({
                           onClick={() => copyToClipboard(inspectItem.data.url, 'Copied URL!')}
                           className="cm-btn-sm cm-btn-view"
                         >
-                          {copyFeedback === 'Copied URL!' ? '✓ Copied!' : '📋 Copy URL'}
+                          {copyFeedback === 'Copied URL!' ? 'Copied!' : 'Copy URL'}
                         </button>
                         <a
                           href={inspectItem.data.url}
@@ -1726,7 +1640,7 @@ export function CurriculumManager({
                           className="cm-btn-sm cm-btn-primary"
                           style={{ textDecoration: 'none' }}
                         >
-                          Open in New Tab ↗
+                          Open in New Tab
                         </a>
                       </div>
                     </div>
@@ -1739,7 +1653,7 @@ export function CurriculumManager({
                       return (
                         <div className="cm-inspector-section">
                           <div className="cm-section-header">
-                            <span>🎥 Video Preview</span>
+                            <span>Video Preview</span>
                           </div>
                           <div className="cm-video-embed-box">
                             <iframe
@@ -1763,7 +1677,7 @@ export function CurriculumManager({
               <div>
                 {inspectorHistory.length > 0 && (
                   <button type="button" onClick={handleInspectorBack} className="cm-history-back-btn">
-                    <span>←</span> Previous ({inspectorHistory[inspectorHistory.length - 1].type})
+                    Previous ({inspectorHistory[inspectorHistory.length - 1].type})
                   </button>
                 )}
               </div>
@@ -1776,7 +1690,7 @@ export function CurriculumManager({
       )}
 
       {/* ========================================================================= */}
-      {/* ✏️ CREATE / EDIT FORM MODALS (PRESERVED)                                  */}
+      {/* CREATE / EDIT FORM MODALS (PRESERVED)                                  */}
       {/* ========================================================================= */}
       {isOwnerOrAdmin &&
         (activeModal === 'MODULE' ||
@@ -1794,7 +1708,7 @@ export function CurriculumManager({
               <div className="cm-inspector-header">
                 <h3 className="cm-inspector-title">{activeModal.replace('_', ' ')}</h3>
                 <button type="button" onClick={resetFormFields} className="cm-btn-close">
-                  ✕
+                  ×
                 </button>
               </div>
 
@@ -1897,7 +1811,7 @@ export function CurriculumManager({
                     <>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#4f46e5' }}>
-                          ◎ Learning Objectives (One per line)
+                          Learning Objectives (One per line)
                         </label>
                         <textarea
                           rows={3}
@@ -1909,7 +1823,7 @@ export function CurriculumManager({
                       </div>
                       <div>
                         <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#16a34a' }}>
-                          ✓ Learning Outcomes (One per line)
+                          Learning Outcomes (One per line)
                         </label>
                         <textarea
                           rows={3}
@@ -1989,8 +1903,8 @@ export function CurriculumManager({
                           onChange={(e) => setFormAssignmentType(e.target.value as 'Subjective' | 'MCQ')}
                           style={{ width: '100%', padding: '8px', marginTop: '4px', borderRadius: '4px', border: '1px solid #cbd5e1' }}
                         >
-                          <option value="Subjective">📝 Subjective Questions</option>
-                          <option value="MCQ">🔘 Multiple Choice Quiz (MCQ)</option>
+                          <option value="Subjective">Subjective Questions</option>
+                          <option value="MCQ">Multiple Choice Quiz (MCQ)</option>
                         </select>
                       </div>
 

@@ -131,8 +131,16 @@ export class AssignmentChatService {
          });
       }
 
-      // save user message
+      // Fetch recent history before saving this message
       const thread = await this.getOrCreateThread(assignmentId, traineeId);
+      const priorMessages = await this.messageRepo.find({
+         where: { threadId: thread.id },
+         order: { createdAt: 'DESC' },
+         take: 8,
+      });
+      const recentHistory = priorMessages.reverse();
+
+      // save user message
       await this.messageRepo.save({
          threadId: thread.id,
          role: 'user',
@@ -140,8 +148,8 @@ export class AssignmentChatService {
          questionIds: targetQuestionIds
       });
 
-      // 4. Call Groq
-      let aiResponse = await this.callGroq(contexts, message);
+      // 4. Call Groq with history and dependent lessons context
+      let aiResponse = await this.callGroq(contexts, message, recentHistory);
 
       // Map refs (e.g. "L1") back to actual lesson titles for the frontend
       if (Array.isArray(aiResponse)) {
@@ -253,7 +261,7 @@ export class AssignmentChatService {
       }));
    }
 
-   private async callGroq(contexts: any[], message: string) {
+   private async callGroq(contexts: any[], message: string, recentHistory: AssignmentChatMessageEntity[] = []) {
       if (!this.groqApiKey) {
          this.logger.error('GROQ_API_KEY is missing');
          throw new Error('LLM configuration missing');
@@ -443,6 +451,36 @@ ${JSON.stringify(contexts)}
 `;
 
       try {
+         const chatMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+            { role: 'system', content: systemPrompt }
+         ];
+
+         // Inject recent chat history to maintain conversational memory and continuity
+         if (recentHistory && recentHistory.length > 0) {
+            for (const h of recentHistory) {
+               if (h.role === 'user') {
+                  chatMessages.push({ role: 'user', content: h.content });
+               } else if (h.role === 'assistant') {
+                  let cleanContent = h.content;
+                  try {
+                     const parsed = JSON.parse(h.content);
+                     const items = Array.isArray(parsed) ? parsed : (parsed.responses || parsed.data || []);
+                     if (Array.isArray(items) && items.length > 0) {
+                        cleanContent = items.map((it: any) => it.content || '').filter(Boolean).join('\n\n');
+                     }
+                  } catch (e) {
+                     // plain text message
+                  }
+                  if (cleanContent) {
+                     chatMessages.push({ role: 'assistant', content: cleanContent });
+                  }
+               }
+            }
+         }
+
+         // Current user turn
+         chatMessages.push({ role: 'user', content: message });
+
          const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -451,10 +489,7 @@ ${JSON.stringify(contexts)}
             },
             body: JSON.stringify({
                model: this.groqModel,
-               messages: [
-                  { role: 'system', content: systemPrompt },
-                  { role: 'user', content: message }
-               ],
+               messages: chatMessages,
                temperature: 0.3,
                response_format: { type: 'json_object' }
             })

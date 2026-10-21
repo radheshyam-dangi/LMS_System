@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useParams } from 'react-router-dom';
 import { assignmentService } from '../../services/assignmentService';
 import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
@@ -7,7 +7,6 @@ import { useScrollLock } from '../../hooks/useScrollLock';
 import { DeadlineDisplay } from '../DeadlineDisplay';
 import { AssignmentsFilterPanel } from '../AssignmentsFilterPanel';
 import {
-  Filter,
   X,
   Search,
   CheckCircle2,
@@ -17,8 +16,6 @@ import {
   Clock,
   Eye,
   Play,
-  Send,
-  RefreshCw,
   ExternalLink,
   MessageSquare,
   BookOpen,
@@ -64,6 +61,136 @@ function AssignmentCardSkeleton() {
 }
 
 /**
+ * Safely resolves and formats trainee answers for view details modal.
+ * Prevents raw JSON strings from being shown on UI.
+ */
+function resolveTraineeAnswer(
+  q: any,
+  idx: number,
+  parsedAnswers: any,
+  rawText: string,
+  submissionAnswers?: any[]
+): { selectedVal: any; formattedAnswer: string } {
+  const ansObj = parsedAnswers?.answers || (parsedAnswers && !parsedAnswers.textAnswers ? parsedAnswers : {});
+  const textAnsObj = parsedAnswers?.textAnswers || {};
+  const qId = q?.id != null ? String(q.id) : null;
+
+  let val: any = undefined;
+
+  // 1. Check submission.answers array
+  if (Array.isArray(submissionAnswers) && submissionAnswers.length > 0) {
+    const match = submissionAnswers.find(
+      (item: any) =>
+        (qId && String(item.questionId) === qId) ||
+        String(item.questionId) === String(idx) ||
+        String(item.questionId) === String(idx + 1) ||
+        (item.questionIndex !== undefined && (item.questionIndex === idx || item.questionIndex === idx + 1))
+    );
+    if (match) {
+      val = match.answer ?? match.selectedOption ?? match.traineeAnswer;
+    }
+  }
+
+  // 2. Candidate keys in JSON payload (support 0-index, 1-index, and question ID)
+  if (val === undefined || val === null || val === '') {
+    const candidateKeys = [
+      qId,
+      idx,
+      String(idx),
+      idx + 1,
+      String(idx + 1),
+    ].filter((k) => k !== null && k !== undefined);
+
+    for (const k of candidateKeys) {
+      if (textAnsObj && textAnsObj[k!] !== undefined && textAnsObj[k!] !== null && textAnsObj[k!] !== '') {
+        val = textAnsObj[k!];
+        break;
+      }
+    }
+
+    if (val === undefined || val === null || val === '') {
+      for (const k of candidateKeys) {
+        if (ansObj && ansObj[k!] !== undefined && ansObj[k!] !== null && ansObj[k!] !== '') {
+          val = ansObj[k!];
+          break;
+        }
+      }
+    }
+
+    if (val === undefined || val === null || val === '') {
+      if (parsedAnswers && typeof parsedAnswers === 'object') {
+        for (const k of candidateKeys) {
+          if (parsedAnswers[k!] !== undefined && parsedAnswers[k!] !== null && parsedAnswers[k!] !== '') {
+            val = parsedAnswers[k!];
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Fallback to raw text if not JSON
+  if (val === undefined || val === null || val === '') {
+    if (parsedAnswers?.raw && typeof parsedAnswers.raw === 'string' && !parsedAnswers.raw.trim().startsWith('{')) {
+      val = parsedAnswers.raw.trim();
+    } else if (rawText && typeof rawText === 'string' && !rawText.trim().startsWith('{')) {
+      val = rawText.trim();
+    }
+  }
+
+  // 4. Format into clean human-readable output
+  let formatted = 'No answer provided';
+  if (val !== undefined && val !== null && val !== '') {
+    if (typeof val === 'number') {
+      if (q?.options && Array.isArray(q.options) && q.options[val] !== undefined) {
+        const letter = String.fromCharCode(65 + val);
+        formatted = `Option ${letter}: ${q.options[val]}`;
+      } else {
+        const letter = String.fromCharCode(65 + val);
+        formatted = `Option ${letter} (Selected index ${val})`;
+      }
+    } else if (Array.isArray(val)) {
+      formatted = val
+        .map((item) => {
+          if (typeof item === 'number' && q?.options && q.options[item] !== undefined) {
+            const letter = String.fromCharCode(65 + item);
+            return `Option ${letter}: ${q.options[item]}`;
+          }
+          return String(item);
+        })
+        .join(', ');
+    } else if (typeof val === 'string') {
+      if (val.trim().startsWith('{')) {
+        try {
+          const inner = JSON.parse(val);
+          if (inner.raw && typeof inner.raw === 'string' && !inner.raw.trim().startsWith('{')) {
+            formatted = inner.raw.trim();
+          } else {
+            formatted = 'Answer recorded';
+          }
+        } catch {
+          formatted = 'Answer recorded';
+        }
+      } else if (/^\d+$/.test(val.trim())) {
+        const num = parseInt(val.trim(), 10);
+        if (q?.options && Array.isArray(q.options) && q.options[num] !== undefined) {
+          const letter = String.fromCharCode(65 + num);
+          formatted = `Option ${letter}: ${q.options[num]}`;
+        } else {
+          formatted = val;
+        }
+      } else {
+        formatted = val;
+      }
+    } else {
+      formatted = String(val);
+    }
+  }
+
+  return { selectedVal: val, formattedAnswer: formatted };
+}
+
+/**
  * Trainee Assignments: shows path-linked + external assignments assigned to the trainee.
  * Submitting increases the trainer's notification bell without a page reload.
  */
@@ -71,20 +198,38 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const { refresh: refreshNotifications } = useNotifications();
   const toast = useToast();
   const navigate = useNavigate();
+  const { id: routeId } = useParams<{ id?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [assignments, setAssignments] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isResolvingTarget, setIsResolvingTarget] = useState(false);
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [activeQuickTab, setActiveQuickTab] = useState<QuickTabKey>('all');
+  const [highlightedCardId, setHighlightedCardId] = useState<string | null>(null);
+
+  // Normalized target ID from route params or search params (id, assignmentId, submissionId, taskId)
+  const targetId = useMemo(() => {
+    return (
+      routeId ||
+      searchParams.get('id') ||
+      searchParams.get('assignmentId') ||
+      searchParams.get('submissionId') ||
+      searchParams.get('taskId') ||
+      ''
+    ).trim();
+  }, [routeId, searchParams]);
 
   const localFiltersState = useMemo(() => {
     const filters: Record<string, string> = {};
     searchParams.forEach((value, key) => {
       filters[key] = value;
     });
+    if (targetId && !filters.id) {
+      filters.id = targetId;
+    }
     return filters;
-  }, [searchParams]);
+  }, [searchParams, targetId]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [submitTarget, setSubmitTarget] = useState<any | null>(null);
@@ -94,8 +239,16 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
   const clearIdParam = () => {
     const newParams = new URLSearchParams(searchParams.toString());
     newParams.delete('id');
-    setSearchParams(newParams);
+    newParams.delete('assignmentId');
+    newParams.delete('submissionId');
+    newParams.delete('taskId');
+    if (routeId) {
+      navigate('/assignments', { replace: true });
+    } else {
+      setSearchParams(newParams);
+    }
     lastOpenedIdRef.current = null;
+    setHighlightedCardId(null);
   };
 
   useScrollLock(!!submitTarget || !!viewDetailsTarget);
@@ -122,85 +275,111 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     submissions.map((s) => [s.assignment?.id || s.assignmentId, s])
   ), [submissions]);
 
-  // Deep auto-open handling via ?id= query param
+  // Deep target handling via ?id= / :id / ?assignmentId= / ?submissionId=
   useEffect(() => {
-    const idToOpen = searchParams.get('id');
-    if (!idToOpen || idToOpen === lastOpenedIdRef.current) return;
+    if (!targetId || targetId === lastOpenedIdRef.current) return;
     if (loading) return;
 
-    // 1. Check if idToOpen directly matches an assignment
-    let targetAssignment = assignments.find((a) => a.id === idToOpen);
-    let matchedSub = submissionByAssignment.get(idToOpen);
+    let isCancelled = false;
+
+    // 1. Check if targetId directly matches an assignment in state
+    let targetAssignment = assignments.find(
+      (a) => String(a.id).toLowerCase() === targetId.toLowerCase()
+    );
+    let matchedSub = submissions.find(
+      (s) =>
+        String(s.id).toLowerCase() === targetId.toLowerCase() ||
+        String(s.assignmentId || s.assignment?.id || '').toLowerCase() === targetId.toLowerCase()
+    );
 
     // 2. If not found by assignment ID, check if it matches a submission
-    if (!targetAssignment) {
-      matchedSub = submissions.find(
-        (s) => s.id === idToOpen || s.assignmentId === idToOpen || s.assignment?.id === idToOpen
-      );
-      if (matchedSub) {
-        const foundAssignId = matchedSub.assignmentId || matchedSub.assignment?.id;
-        targetAssignment = assignments.find((a) => a.id === foundAssignId) || matchedSub.assignment;
+    if (!targetAssignment && matchedSub) {
+      const foundAssignId = matchedSub.assignmentId || matchedSub.assignment?.id;
+      targetAssignment = assignments.find(
+        (a) => String(a.id).toLowerCase() === String(foundAssignId).toLowerCase()
+      ) || matchedSub.assignment;
+
+      if (targetAssignment && !assignments.some((a) => String(a.id).toLowerCase() === String(targetAssignment!.id).toLowerCase())) {
+        setAssignments((prev) => [targetAssignment!, ...prev]);
       }
     }
 
     if (targetAssignment) {
-      lastOpenedIdRef.current = idToOpen;
-      const sub = matchedSub || submissionByAssignment.get(targetAssignment.id);
-      const status = sub?.status;
-      const rawStatus = String(status || 'AVAILABLE').toUpperCase();
+      lastOpenedIdRef.current = targetId;
+      setHighlightedCardId(targetAssignment.id);
+      setActiveQuickTab('all');
 
-      if (
-        rawStatus === 'EVALUATED' ||
-        rawStatus === 'APPROVED' ||
-        rawStatus === 'REJECTED' ||
-        rawStatus === 'NEEDS_IMPROVEMENT'
-      ) {
-        setViewDetailsTarget({ assignment: targetAssignment, submission: sub });
-      } else {
-        setSubmitTarget(targetAssignment);
-      }
+      setTimeout(() => {
+        const el = document.getElementById(`assignment-card-${targetAssignment!.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 250);
       return;
     }
 
     // 3. Fallback: Query backend for assignment or submission if not present in preloaded list
-    let isCancelled = false;
+    setIsResolvingTarget(true);
     (async () => {
       try {
-        const fetchedAssign = await assignmentService.fetchAssignmentById(idToOpen, accessToken).catch(() => null);
+        const fetchedAssign = await assignmentService.fetchAssignmentById(targetId, accessToken).catch(() => null);
         if (fetchedAssign && !isCancelled) {
-          lastOpenedIdRef.current = idToOpen;
-          const sub = submissionByAssignment.get(fetchedAssign.id);
-          const rawStatus = String(sub?.status || 'AVAILABLE').toUpperCase();
-          if (
-            rawStatus === 'EVALUATED' ||
-            rawStatus === 'APPROVED' ||
-            rawStatus === 'REJECTED' ||
-            rawStatus === 'NEEDS_IMPROVEMENT'
-          ) {
-            setViewDetailsTarget({ assignment: fetchedAssign, submission: sub });
-          } else {
-            setSubmitTarget(fetchedAssign);
-          }
+          lastOpenedIdRef.current = targetId;
+          // CRITICAL: Inject fetched assignment into assignments state so it is visible in the UI
+          setAssignments((prev) => {
+            if (prev.some((a) => String(a.id).toLowerCase() === String(fetchedAssign.id).toLowerCase())) return prev;
+            return [fetchedAssign, ...prev];
+          });
+          setHighlightedCardId(fetchedAssign.id);
+          setActiveQuickTab('all');
+
+          setTimeout(() => {
+            const el = document.getElementById(`assignment-card-${fetchedAssign.id}`);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 300);
           return;
         }
 
-        const fetchedSub = await assignmentService.fetchSubmissionById(idToOpen, accessToken, activeRole).catch(() => null);
+        const fetchedSub = await assignmentService.fetchSubmissionById(targetId, accessToken, activeRole).catch(() => null);
         if (fetchedSub && !isCancelled) {
-          lastOpenedIdRef.current = idToOpen;
+          lastOpenedIdRef.current = targetId;
+          setSubmissions((prev) => {
+            if (prev.some((s) => String(s.id).toLowerCase() === String(fetchedSub.id).toLowerCase())) return prev;
+            return [fetchedSub, ...prev];
+          });
+
           const assign = fetchedSub.assignment;
           if (assign) {
-            setViewDetailsTarget({ assignment: assign, submission: fetchedSub });
+            setAssignments((prev) => {
+              if (prev.some((a) => String(a.id).toLowerCase() === String(assign.id).toLowerCase())) return prev;
+              return [assign, ...prev];
+            });
+            setHighlightedCardId(assign.id);
+            setActiveQuickTab('all');
+
+            setTimeout(() => {
+              const el = document.getElementById(`assignment-card-${assign.id}`);
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }, 300);
           }
         }
       } catch (err) {
         console.error('Failed to resolve deep-linked notification target:', err);
+      } finally {
+        if (!isCancelled) {
+          setIsResolvingTarget(false);
+        }
       }
     })();
 
     return () => {
       isCancelled = true;
     };
-  }, [assignments, submissions, loading, searchParams, submissionByAssignment, accessToken, activeRole]);
+  }, [assignments, submissions, loading, targetId, accessToken, activeRole]);
 
   // Enriched cards computation with robust priority ordering & deadline calculation
   const enrichedAllCards = useMemo(() => {
@@ -308,6 +487,19 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
 
   // Combined filtering: Quick Tab + Search Query + Advanced Filters
   const filteredCards = useMemo(() => {
+    // 0. If filtering specifically by notification/assignment ID, return the matching assignment directly
+    if (targetId) {
+      const idMatch = enrichedAllCards.filter(({ a, sub }) => {
+        if (String(a.id).toLowerCase() === targetId.toLowerCase()) return true;
+        if (sub && String(sub.id).toLowerCase() === targetId.toLowerCase()) return true;
+        if (sub && (String(sub.assignmentId || '').toLowerCase() === targetId.toLowerCase() || String(sub.assignment?.id || '').toLowerCase() === targetId.toLowerCase())) return true;
+        return false;
+      });
+      if (idMatch.length > 0) {
+        return idMatch;
+      }
+    }
+
     let result = enrichedAllCards;
 
     // 1. Quick tab filter
@@ -336,10 +528,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     }
 
     // 3. ID specific filter
-    if (localFiltersState.id) {
+    if (targetId) {
       result = result.filter(({ a, sub }) => {
-        if (a.id === localFiltersState.id) return true;
-        if (sub && sub.id === localFiltersState.id) return true;
+        if (String(a.id).toLowerCase() === targetId.toLowerCase()) return true;
+        if (sub && String(sub.id).toLowerCase() === targetId.toLowerCase()) return true;
+        if (sub && (String(sub.assignmentId || '').toLowerCase() === targetId.toLowerCase() || String(sub.assignment?.id || '').toLowerCase() === targetId.toLowerCase())) return true;
         return false;
       });
     }
@@ -414,7 +607,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     });
 
     return sorted;
-  }, [enrichedAllCards, activeQuickTab, searchQuery, localFiltersState]);
+  }, [enrichedAllCards, activeQuickTab, searchQuery, localFiltersState, targetId]);
 
   const filterCategories = [
     {
@@ -592,18 +785,6 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             </button>
           )}
         </div>
-
-        <button
-          type="button"
-          className="filter-toggle-btn"
-          onClick={() => setIsFilterPanelOpen(true)}
-        >
-          <Filter size={16} />
-          <span>Filters</span>
-          {activeFilterCount > 0 && (
-            <span className="filter-badge-count">{activeFilterCount}</span>
-          )}
-        </button>
       </div>
 
       {/* Advanced Filter Panel Drawer / Modal */}
@@ -622,10 +803,14 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             if (!value || key === 'evaluationMode') return null;
 
             if (key === 'id') {
-              const targetAssign = assignments.find((a) => a.id === value);
+              const targetAssign = assignments.find((a) => String(a.id).toLowerCase() === String(value).toLowerCase());
               let title = targetAssign?.title;
               if (!title) {
-                const targetSub = submissions.find((s) => s.id === value);
+                const targetSub = submissions.find(
+                  (s) =>
+                    String(s.id).toLowerCase() === String(value).toLowerCase() ||
+                    String(s.assignmentId || s.assignment?.id || '').toLowerCase() === String(value).toLowerCase()
+                );
                 title = targetSub?.assignment?.title || 'Specific Assignment';
               }
               return (
@@ -634,11 +819,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                   <button
                     type="button"
                     className="filter-chip-remove"
-                    onClick={() => {
-                      const newFilters = { ...localFiltersState };
-                      delete newFilters.id;
-                      setSearchParams(newFilters);
-                    }}
+                    onClick={clearIdParam}
                   >
                     <X size={14} />
                   </button>
@@ -723,6 +904,12 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
         </div>
       )}
 
+      {isResolvingTarget && (
+        <div style={{ marginBottom: 20 }}>
+          <AssignmentCardSkeleton />
+        </div>
+      )}
+
       {/* Assignment Card List */}
       <div className="assignment-cards-list">
         {filteredCards.map(({ a, sub, displayStatus, isOverdue, isExpired, isBelowCutoff, submittedAt, rawStatus }) => {
@@ -797,10 +984,23 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
             return 'status-pending';
           })();
 
+          const isTargeted =
+            highlightedCardId === a.id ||
+            Boolean(
+              targetId && (
+                String(a.id).toLowerCase() === targetId.toLowerCase() ||
+                (sub && (
+                  String(sub.id).toLowerCase() === targetId.toLowerCase() ||
+                  String(sub.assignmentId || sub.assignment?.id || '').toLowerCase() === targetId.toLowerCase()
+                ))
+              )
+            );
+
           return (
             <div
               key={a.id}
-              className={`trainee-assignment-row ${statusModifier}`}
+              id={`assignment-card-${a.id}`}
+              className={`trainee-assignment-row ${statusModifier} ${isTargeted ? 'is-targeted-assignment' : ''}`}
               title={displayStatus === 'Locked' ? a.lockReason || 'Locked task. Click to view prerequisite lessons.' : undefined}
               onClick={handleRowClick}
             >
@@ -922,7 +1122,6 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                       className={isResubmit ? 'btn-assignment-resubmit' : 'btn-assignment-submit'}
                       onClick={() => setSubmitTarget(a)}
                     >
-                      {isResubmit ? <RefreshCw size={12} /> : <Send size={12} />}
                       <span>{isResubmit ? 'Resubmit' : 'Submit'}</span>
                     </button>
                   )}
@@ -1052,23 +1251,17 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                 {questions.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                     {questions.map((q: any, idx: number) => {
-                      const ansObj = parsedAnswers.answers || parsedAnswers || {};
-                      const textAnsObj = parsedAnswers.textAnswers || parsedAnswers || {};
-
-                      let userAnswer = '';
-                      if (isMcq) {
-                        const optIdx = ansObj[idx];
-                        userAnswer = typeof optIdx === 'number' && q.options ? q.options[optIdx] : 'No answer provided';
-                      } else {
-                        const extractedAns = textAnsObj[idx] || ansObj[idx] || parsedAnswers[idx];
-                        userAnswer = (extractedAns && typeof extractedAns === 'string')
-                          ? extractedAns
-                          : (parsedAnswers.raw ? parsedAnswers.raw : rawText) || 'No answer provided';
-                      }
+                      const { selectedVal, formattedAnswer } = resolveTraineeAnswer(
+                        q,
+                        idx,
+                        parsedAnswers,
+                        rawText,
+                        submission.answers
+                      );
 
                       const qPoints = q.maxPoints || q.points || 10;
                       const qText = (q.questionText || q.text || q.question || '').replace(/\\n/g, '\n').replace(/\n$/, '').trim();
-                      const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ';
+                      const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ' || (q.options && q.options.length > 0);
 
                       return (
                         <div key={idx} className="eval-question-card">
@@ -1085,9 +1278,12 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                                 Options & Review:
                               </span>
                               {q.options.map((opt: string, optIdx: number) => {
-                                const ansVal = ansObj[idx];
-                                const isSelected = Array.isArray(ansVal) ? ansVal.includes(optIdx) : ansVal === optIdx;
-                                const isCorrect = Array.isArray(q.correctIndex) ? q.correctIndex.includes(optIdx) : q.correctIndex === optIdx;
+                                const isSelected = Array.isArray(selectedVal)
+                                  ? selectedVal.includes(optIdx) || selectedVal.map(String).includes(String(optIdx))
+                                  : selectedVal === optIdx || String(selectedVal) === String(optIdx);
+                                const isCorrect = Array.isArray(q.correctIndex)
+                                  ? q.correctIndex.includes(optIdx)
+                                  : q.correctIndex === optIdx;
 
                                 let rowBg = '#f8fafc';
                                 let rowBorder = '1px solid #e2e8f0';
@@ -1133,7 +1329,9 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                               <span style={{ fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, fontSize: 11, textTransform: 'uppercase' }}>
                                 Your Answer:
                               </span>
-                              {userAnswer}
+                              <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: '#0f172a', fontSize: '13.5px' }}>
+                                {formattedAnswer}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1145,11 +1343,12 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                     <span style={{ fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, fontSize: 11, textTransform: 'uppercase' }}>
                       Your Submission:
                     </span>
-                    {parsedAnswers.raw
-                      ? parsedAnswers.raw
-                      : rawText.trim().startsWith('{')
-                        ? 'JSON Submission (See parsed answers)'
-                        : rawText}
+                    <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, color: '#0f172a', fontSize: '13.5px' }}>
+                      {(() => {
+                        const { formattedAnswer } = resolveTraineeAnswer(null, 0, parsedAnswers, rawText, submission.answers);
+                        return formattedAnswer;
+                      })()}
+                    </div>
                   </div>
                 )}
               </div>

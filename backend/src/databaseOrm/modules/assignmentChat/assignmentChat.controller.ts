@@ -9,10 +9,15 @@ import { Roles } from '../../../common/decorator/roles.decorator';
 export class AssignmentChatController {
   constructor(private readonly chatService: AssignmentChatService) { }
 
+  private isChatbotEnabled(): boolean {
+    const envVal = (process.env.ASSIGNMENT_CHATBOT_ENABLED || (process.env as any)['ASSIGNMENT_CHATBOT_ENABLED '])?.trim();
+    return envVal === 'true' || envVal === undefined;
+  }
+
   @Get()
   @Roles('TRAINEE')
   async getChatHistory(@Param('assignmentId') assignmentId: string, @Req() req: any) {
-    if (process.env.ASSIGNMENT_CHATBOT_ENABLED !== 'true') {
+    if (!this.isChatbotEnabled()) {
       throw new HttpException('Chatbot is disabled', HttpStatus.FORBIDDEN);
     }
     return this.chatService.getChatHistory(assignmentId, req.user.id);
@@ -26,8 +31,7 @@ export class AssignmentChatController {
     @Body('focusQuestionIds') focusQuestionIds: string[],
     @Req() req: any
   ) {
-    console.log("ASSIGNMENT_CHATBOT_ENABLED", process.env.ASSIGNMENT_CHATBOT_ENABLED)
-    if (process.env.ASSIGNMENT_CHATBOT_ENABLED !== 'true') {
+    if (!this.isChatbotEnabled()) {
       throw new HttpException('Chatbot is disabled', HttpStatus.FORBIDDEN);
     }
 
@@ -40,7 +44,7 @@ export class AssignmentChatController {
   @Delete()
   @Roles('TRAINEE')
   async clearChat(@Param('assignmentId') assignmentId: string, @Req() req: any) {
-    if (process.env.ASSIGNMENT_CHATBOT_ENABLED !== 'true') {
+    if (!this.isChatbotEnabled()) {
       throw new HttpException('Chatbot is disabled', HttpStatus.FORBIDDEN);
     }
     return this.chatService.clearChat(assignmentId, req.user.id);

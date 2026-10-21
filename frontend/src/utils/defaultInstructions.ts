@@ -3,6 +3,9 @@
  * Shown to trainees in the submit modal when the trainer has not provided
  * custom instructions. Also pre-filled in the trainer's create/edit form.
  */
+export const DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT =
+  'Please review all prerequisite lessons carefully and note the objectives before answering the questions below. Ensure your responses are detailed, accurate, and original.';
+
 export const DEFAULT_ASSIGNMENT_INSTRUCTIONS = `<ol>
   <li><strong>Read the assignment brief fully</strong> and note the objective, deliverables, and deadline.</li>
   <li><strong>Revise the lessons and concepts</strong> related to the assignment.</li>
@@ -10,3 +13,4 @@ export const DEFAULT_ASSIGNMENT_INSTRUCTIONS = `<ol>
   <li><strong>Plan your work in steps</strong> and set an internal deadline before the final one.</li>
   <li><strong>Follow the evaluation criteria and company standards</strong>, and submit original, accurate work.</li>
 </ol>`;
+

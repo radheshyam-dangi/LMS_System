@@ -734,26 +734,27 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       const orConditions = [];
       const params: any = {};
 
-      if (statuses.includes('pending')) {
-        orConditions.push("submission.status = 'SUBMITTED'");
+      if (statuses.includes('pending') || statuses.includes('all')) {
+        orConditions.push("LOWER(submission.status) IN ('submitted', 'pending', 'ai_evaluated_pending_review', 'pending_manual_review')");
+        orConditions.push("(LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.evaluation_method = 'ai_auto' OR submission.ai_total_score IS NOT NULL))");
       }
       if (statuses.includes('approved')) {
-        orConditions.push("submission.status IN ('APPROVED', 'EVALUATED') AND (submission.score * 1.0 / assignment.max_score) >= 0.35");
+        orConditions.push("LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.score * 1.0 / NULLIF(assignment.max_score, 0)) >= 0.35");
       }
       if (statuses.includes('rejected')) {
-        orConditions.push("submission.status = 'REJECTED'");
+        orConditions.push("LOWER(submission.status) = 'rejected'");
       }
       if (statuses.includes('needs improvement')) {
-        orConditions.push("submission.status IN ('APPROVED', 'EVALUATED') AND (submission.score * 1.0 / assignment.max_score) < 0.35");
+        orConditions.push("LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.score * 1.0 / NULLIF(assignment.max_score, 0)) < 0.35");
       }
 
       if (orConditions.length > 0) {
         qb.andWhere(`(${orConditions.join(' OR ')})`, params);
       } else {
-        qb.andWhere("submission.status = 'SUBMITTED'");
+        qb.andWhere("LOWER(submission.status) IN ('submitted', 'pending', 'ai_evaluated_pending_review', 'pending_manual_review') OR (LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.evaluation_method = 'ai_auto' OR submission.ai_total_score IS NOT NULL))");
       }
     } else {
-      qb.andWhere("submission.status = 'SUBMITTED'");
+      qb.andWhere("LOWER(submission.status) IN ('submitted', 'pending', 'ai_evaluated_pending_review', 'pending_manual_review') OR (LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.evaluation_method = 'ai_auto' OR submission.ai_total_score IS NOT NULL))");
     }
 
     if (filters?.type) {
@@ -774,7 +775,7 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
     const all = await qb.getMany();
 
-    // Filter submissions based on who assigned them (the assigner should evaluate)
+    // Filter submissions based on who assigned them or created them
     const filtered: AssignmentSubmissionEntity[] = [];
     for (const s of all) {
       if (!s.assignment || !s.trainee) continue;
@@ -785,8 +786,18 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
 
       if (!trainerId) {
         filtered.push(s);
-      } else if (assigner && String(assigner.id).toLowerCase() === String(trainerId).toLowerCase()) {
-        filtered.push(s);
+      } else {
+        const tId = String(trainerId).toLowerCase();
+        const isAssigner = assigner && String(assigner.id).toLowerCase() === tId;
+        const isAssignmentCreator = s.assignment.createdBy && String(s.assignment.createdBy.id).toLowerCase() === tId;
+        const isPathCreator = 
+          (s.assignment.lesson?.module?.learningPath?.createdBy && String(s.assignment.lesson.module.learningPath.createdBy.id).toLowerCase() === tId) ||
+          (s.assignment.module?.learningPath?.createdBy && String(s.assignment.module.learningPath.createdBy.id).toLowerCase() === tId) ||
+          (s.assignment.learningPath?.createdBy && String(s.assignment.learningPath.createdBy.id).toLowerCase() === tId);
+
+        if (isAssigner || isAssignmentCreator || isPathCreator) {
+          filtered.push(s);
+        }
       }
     }
     return filtered;
@@ -828,6 +839,11 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
           assigner = enrollment.assignedBy;
         }
       }
+    }
+
+    // Fallback: If no direct assigner was recorded via enrollment/mapping, fallback to creator
+    if (!assigner?.id && assignment.createdBy) {
+      assigner = assignment.createdBy;
     }
 
     return assigner?.id ? assigner : null;
@@ -1513,7 +1529,21 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   async getSubmissionById(id: string): Promise<AssignmentSubmissionEntity> {
     const submission = await this.submissionRepository.findOne({
       where: { id },
-      relations: ['assignment', 'trainee', 'assignment.createdBy', 'evaluatedBy'],
+      relations: [
+        'assignment',
+        'trainee',
+        'assignment.createdBy',
+        'assignment.lesson',
+        'assignment.lesson.module',
+        'assignment.lesson.module.learningPath',
+        'assignment.lesson.module.learningPath.createdBy',
+        'assignment.module',
+        'assignment.module.learningPath',
+        'assignment.module.learningPath.createdBy',
+        'assignment.learningPath',
+        'assignment.learningPath.createdBy',
+        'evaluatedBy',
+      ],
     });
     if (!submission) {
       throw new NotFoundException('Submission not found');

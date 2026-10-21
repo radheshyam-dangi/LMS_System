@@ -2,10 +2,11 @@ import React from 'react';
 import { Editor } from '@tiptap/react';
 import { 
   Bold, Italic, List, ListOrdered, Heading2, 
-  Layers, PlaySquare, FileText, Video, Headphones, Link2, HelpCircle,
+  Layers, PlaySquare, FileText, Video, Link2, HelpCircle,
   Command
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
 
 interface ToolbarProps {
   editor: Editor;
@@ -13,16 +14,22 @@ interface ToolbarProps {
 
 const makeModuleNode = () => ({
   type: 'module',
-  attrs: { id: uuidv4(), sequentialLessonLock: true, description: 'Module description and learning overview...' },
+  attrs: { 
+    id: uuidv4(), 
+    sequentialModuleLock: true, 
+    sequentialLessonLock: true, 
+    lockRule: 'prerequisite',
+    description: '' 
+  },
   content: [
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Module' }] },
-    { type: 'paragraph', content: [{ type: 'text', text: 'Module description and learning overview...' }] },
+    { type: 'paragraph' },
     {
       type: 'lesson',
-      attrs: { id: uuidv4() },
+      attrs: { id: uuidv4(), lockRule: 'prerequisite' },
       content: [
         { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] },
-        { type: 'paragraph', content: [{ type: 'text', text: 'Lesson content...' }] },
+        { type: 'paragraph' },
       ],
     },
   ],
@@ -30,32 +37,28 @@ const makeModuleNode = () => ({
 
 const makeLessonNode = () => ({
   type: 'lesson',
-  attrs: { id: uuidv4() },
+  attrs: { id: uuidv4(), lockRule: 'prerequisite' },
   content: [
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] },
-    { type: 'paragraph', content: [{ type: 'text', text: 'Lesson content...' }] },
+    { type: 'paragraph' },
   ],
 });
-
-const defaultAssignmentInstructionBlocks = () => [
-  'Read the assignment brief fully and note the objective, deliverables, and deadline.',
-  'Revise the related lessons and concepts before you begin.',
-  'Prepare your tools, software, and reference materials.',
-  'Plan your work in steps and set an internal deadline.',
-  'Submit original, accurate work that follows the evaluation criteria.',
-].map(text => ({ type: 'paragraph', content: [{ type: 'text', text }] }));
 
 const makeAssignmentNode = () => ({
   type: 'assignment',
   attrs: {
     id: uuidv4(),
     lockUntilLessonsComplete: true,
+    lockRule: 'prerequisite',
     autoEvaluateWithAI: false,
     humanInterventionRequired: true,
   },
   content: [
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-    ...defaultAssignmentInstructionBlocks(),
+    {
+      type: 'paragraph',
+      content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }],
+    },
     {
       type: 'questionBlock',
       attrs: {
@@ -65,18 +68,13 @@ const makeAssignmentNode = () => ({
         correctIndex: 0,
         options: ['', '', '', ''],
       },
-      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }]
+      content: [{ type: 'paragraph' }]
     },
   ],
 });
 
 const makeVideoBlock = (url: string) => ({
   type: 'videoBlock',
-  attrs: { url, title: '' },
-});
-
-const makeAudioBlock = (url: string) => ({
-  type: 'audioBlock',
   attrs: { url, title: '' },
 });
 
@@ -95,7 +93,7 @@ const makeQuestionBlock = () => ({
     options: ['', '', '', ''],
   },
   content: [
-    { type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }
+    { type: 'paragraph' }
   ]
 });
 
@@ -147,13 +145,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
         <div className="toolbar-divider" />
 
         {/* Structural Curriculum Elements */}
-        <div className="toolbar-group">
+        <div className="toolbar-group" title="Add structural section blocks">
+          <span style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', letterSpacing: '0.05em', textTransform: 'uppercase', marginRight: '4px' }}>
+            SECTIONS:
+          </span>
           <button
             onClick={() => {
               const node = makeModuleNode();
               editor.chain().focus('end').insertContent(node).run();
             }}
-            title="Add Module to Learning Path"
+            title="Add Module Section to Learning Path"
             className="structural-btn module-btn"
           >
             <Layers size={14} /> + Module
@@ -241,49 +242,41 @@ export const Toolbar: React.FC<ToolbarProps> = ({ editor }) => {
 
         {/* Media & Content Blocks */}
         <div className="toolbar-group">
+       
           <button
             onClick={() => {
-              const url = window.prompt('Enter Video URL (YouTube or mp4):');
+              const url = window.prompt('Enter Video URL (YouTube, Vimeo, MP4):');
               if (url) editor.chain().focus().insertContent(makeVideoBlock(url)).run();
             }}
-            title="Add Video Block"
+            title="Add Core Video Block"
+            style={{ color: '#dc2626' }}
           >
             <Video size={15} /> Video
           </button>
           <button
             onClick={() => {
-              const url = window.prompt('Enter Audio URL (mp3, wav):');
-              if (url) editor.chain().focus().insertContent(makeAudioBlock(url)).run();
-            }}
-            title="Add Audio Block"
-          >
-            <Headphones size={15} /> Audio
-          </button>
-          <button
-            onClick={() => {
-              const url = window.prompt('Enter Resource URL (PDF or Web link):');
+              const url = window.prompt('Enter Resource URL (PDF, GitHub, or Web link):');
               if (url) {
-                const label = window.prompt('Enter a label for this resource:') || 'Resource';
+                const label = window.prompt('Enter a title/label for this resource:') || 'Resource';
                 editor.chain().focus().insertContent(makeResourceBlock(url, label)).run();
               }
             }}
             title="Add Resource/PDF Attachment"
+            style={{ color: '#0284c7' }}
           >
             <Link2 size={15} /> Resource
           </button>
           <button
             onClick={() => editor.chain().focus().insertContent(makeQuestionBlock()).run()}
             title="Add Question Block"
+            style={{ color: '#d97706' }}
           >
             <HelpCircle size={15} /> Question
           </button>
         </div>
       </div>
 
-      <div className="toolbar-tip">
-        <Command size={12} color="#64748b" />
-        <span>Type <strong>/</strong> in document for quick commands</span>
-      </div>
+      
     </div>
   );
 };

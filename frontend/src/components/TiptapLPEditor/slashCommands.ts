@@ -1,6 +1,7 @@
 import { Extension } from '@tiptap/core';
 import Suggestion from '@tiptap/suggestion';
 import { v4 as uuidv4 } from 'uuid';
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 
@@ -42,7 +43,7 @@ export const getSuggestionItems = ({ query, editor }: { query: string; editor: a
       command: ({ editor, range }: any) => {
         editor.chain().focus().deleteRange(range).insertContent({
           type: 'module',
-          attrs: { id: uuidv4(), sequentialLessonLock: true },
+          attrs: { id: uuidv4(), sequentialModuleLock: true, sequentialLessonLock: true, lockRule: 'prerequisite' },
           content: [
             { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Module' }] },
             { type: 'paragraph' }
@@ -58,7 +59,7 @@ export const getSuggestionItems = ({ query, editor }: { query: string; editor: a
       command: ({ editor, range }: any) => {
         editor.chain().focus().deleteRange(range).insertContent({
           type: 'lesson',
-          attrs: { id: uuidv4() },
+          attrs: { id: uuidv4(), lockRule: 'prerequisite' },
           content: [
             { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] },
             { type: 'paragraph' }
@@ -80,7 +81,10 @@ export const getSuggestionItems = ({ query, editor }: { query: string; editor: a
           },
           content: [
             { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-            { type: 'paragraph' }
+            {
+              type: 'paragraph',
+              content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }],
+            }
           ]
         }).run();
       },
@@ -92,12 +96,6 @@ export const getSuggestionItems = ({ query, editor }: { query: string; editor: a
       title: 'Video',
       command: ({ editor, range }: any) => {
         editor.chain().focus().deleteRange(range).insertContent({ type: 'videoBlock', attrs: { url: '', title: '' } }).run();
-      },
-    });
-    items.push({
-      title: 'Audio',
-      command: ({ editor, range }: any) => {
-        editor.chain().focus().deleteRange(range).insertContent({ type: 'audioBlock', attrs: { url: '', title: '' } }).run();
       },
     });
     items.push({
@@ -121,7 +119,7 @@ export const getSuggestionItems = ({ query, editor }: { query: string; editor: a
             correctIndex: null,
           },
           content: [
-            { type: 'paragraph', content: [{ type: 'text', text: 'New Question' }] }
+            { type: 'paragraph' }
           ]
         }).run();
       },

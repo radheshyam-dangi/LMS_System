@@ -460,30 +460,13 @@
               box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
               border-color 0.2s ease;
   position: relative;
-  overflow: hidden;
   box-sizing: border-box;
 }
 
 .learning-path-card-item:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--lp-shadow-md);
-  border-color: #cbd5e1;
-}
-
-.learning-path-card-item::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--lp-primary), #38bdf8);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.learning-path-card-item:hover::before {
-  opacity: 1;
+  transform: none;
+  box-shadow: var(--lp-shadow-sm);
+  border-color: var(--lp-border-card);
 }
 
 /* Highlight border if requested */
@@ -632,7 +615,7 @@
 }
 
 .card-title-string:hover {
-  color: var(--lp-primary);
+  color: var(--lp-text-heading);
 }
 
 .expandable-description-container {
@@ -703,9 +686,9 @@
 }
 
 .card-skill-tag-chip:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: var(--lp-text-heading);
+  background: var(--lp-bg-subtle);
+  border-color: var(--lp-border-light);
+  color: var(--lp-text-muted);
 }
 
 .card-skill-tag-chip.is-matched {
@@ -838,8 +821,8 @@
   background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%);
   border-color: #818cf8;
   color: #3730a3;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.16);
-  transform: translateY(-1px);
+  box-shadow: none;
+  transform: none;
 }
 
 .btn-cohort-view-progress:hover .btn-cohort-left {
@@ -848,7 +831,7 @@
 
 .btn-cohort-view-progress:hover .btn-cohort-icon {
   color: #4f46e5;
-  transform: scale(1.1);
+  transform: none;
 }
 
 .btn-cohort-view-progress:hover .btn-cohort-count-chip {
@@ -859,11 +842,11 @@
 
 .btn-cohort-view-progress:hover .btn-cohort-arrow {
   color: #3730a3;
-  transform: translateX(3px);
+  transform: none;
 }
 
 .btn-cohort-view-progress:active {
-  transform: translateY(0);
+  transform: none;
 }
 
 .cohort-unassigned-prompt {
@@ -960,12 +943,12 @@
 
 .btn-card-primary-action:hover {
   background: var(--lp-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(79, 70, 229, 0.25);
+  transform: none;
+  box-shadow: none;
 }
 
 .btn-card-primary-action:active {
-  transform: translateY(1px);
+  transform: none;
 }
 
 .card-secondary-actions-group {
@@ -994,7 +977,7 @@
   background: var(--lp-bg-subtle);
   color: var(--lp-text-heading);
   border-color: #cbd5e1;
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .btn-card-icon-action.is-delete:hover {

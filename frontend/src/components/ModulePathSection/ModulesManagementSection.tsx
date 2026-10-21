@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { learningPathService } from "../../services/learningPathService";
 import { curriculumService } from "../../services/curriculumService";
 import { progressService } from "../../services/lmsApi";
@@ -12,10 +12,35 @@ import { ExpandableDescription } from "../ExpandableDescription/ExpandableDescri
 import { LessonCard } from "../SharedCards/LessonCard";
 import { AssignmentCard } from "../SharedCards/AssignmentCard";
 import { SharedAssignmentModal } from "../SharedCards/SharedAssignmentModal";
+import { FullscreenLessonPlayer } from "./FullscreenLessonPlayer";
+import { resolveCurriculumDependencies } from "./useCurriculumDependencies";
+import { ModuleAccordionSkeleton } from "./ModuleContentAccordion";
+import { LessonPlayerView } from "./LessonPlayerView";
+import { AssignmentInstructionModal } from "./AssignmentInstructionModal";
+import { AssignmentWorkspaceModal } from "./AssignmentWorkspaceModal";
 import { RichText } from "../common/RichText";
 import { renderMultilineText, ModuleDescription } from "../../utils/textUtils";
 import { resolveAssignmentInstructions } from "../../utils/assignmentInstructions";
 import { AssignmentInstructionsGate } from "../common/AssignmentInstructionsGate";
+import {
+  isModuleUnlocked,
+  isLessonUnlocked,
+  getLessonLockInfo,
+  isAssignmentUnlocked,
+  getAssignmentLockInfo,
+  sortCurriculumModules,
+  sortCurriculumLessons,
+} from "../../shared/lockLogic";
+import {
+  Lock,
+  Clock,
+  BookOpen,
+  CheckSquare,
+  Award,
+  Sparkles,
+  CheckCircle2,
+  FileText,
+} from "lucide-react";
 import "./ModulesManagement.css";
 
 interface ModulesProps {
@@ -27,7 +52,6 @@ interface ModulesProps {
 }
 
 import { ModuleDescriptionPreview, ModuleShowMoreModal } from '../common/ModuleShowMoreModal';
-import { Clock, BookOpen, CheckSquare, Award } from 'lucide-react';
 
 export function ModulesManagementSection({
   currentPathId,
@@ -38,6 +62,7 @@ export function ModulesManagementSection({
 }: ModulesProps) {
   const { moduleId: urlModuleId } = useParams<{ moduleId?: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const isTrainerOrAdmin = userRole === 'Admin' || userRole === 'Trainer';
   const isTrainee = userRole === 'Trainee';
   const { refresh: refreshNotifications } = useNotifications();
@@ -56,6 +81,7 @@ export function ModulesManagementSection({
   const [moduleStats, setModuleStats] = useState<any | null>(null);
   const [moduleLoading, setModuleLoading] = useState(false);
   const [isModuleDropdownOpen, setIsModuleDropdownOpen] = useState(false);
+  const [activeFullscreenLessonIndex, setActiveFullscreenLessonIndex] = useState<number | null>(null);
 
   // ── Progress state (for Trainee) ──────────────────────────────────────────
   const [progressStats, setProgressStats] = useState<any>(null);
@@ -93,6 +119,8 @@ export function ModulesManagementSection({
 
   // ── Task submission modal (Trainee only) ──────────────────────────────────
   const [submitTask, setSubmitTask] = useState<any | null>(null);
+  const [instructionTask, setInstructionTask] = useState<any | null>(null);
+  const [workspaceTask, setWorkspaceTask] = useState<any | null>(null);
   const [submissionText, setSubmissionText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
@@ -144,7 +172,7 @@ export function ModulesManagementSection({
     // Don't clear modules here if we're just switching URL module IDs for the same path
     curriculumService.fetchModulesByPath(selectedPathId, accessToken)
       .then((data: any) => {
-        const mods = Array.isArray(data) ? data : [];
+        const mods = sortCurriculumModules(Array.isArray(data) ? data : []);
         setModules(mods);
 
         // Open module ONLY if explicitly requested by URL or navigation state
@@ -159,15 +187,47 @@ export function ModulesManagementSection({
       .finally(() => setIsLoading(false));
   }, [selectedPathId, accessToken, isTrainee, urlModuleId]);
 
-  // ── Load progress stats once (for Trainee) ────────────────────────────────
+  // ── Load progress stats & submissions upfront (for Trainee) ───────────────
   useEffect(() => {
     if (!isTrainee) return;
     progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { });
+    assignmentService.fetchMySubmissions(accessToken).then((subs) => setMySubs(Array.isArray(subs) ? subs : [])).catch(() => { });
   }, [accessToken, isTrainee]);
 
   // ── Drill into a module ───────────────────────────────────────────────────
   const openModule = async (moduleId: string, preserveTab: boolean = false) => {
+    // Sequential module locking check for Trainees
+    if (isTrainee && modules.length > 0) {
+      const targetIdx = modules.findIndex((m: any) => String(m.id) === String(moduleId));
+      if (targetIdx > 0) {
+        const activeModuleProgressMap = modules.reduce((acc: any, m: any) => {
+          acc[String(m.id)] = getModuleProgress(m);
+          return acc;
+        }, {});
+        const activeCompletedModuleIds = Array.from(new Set([
+          ...(progressStats?.completedModuleIds || []).map(String),
+          ...modules.filter((m: any) => getModuleProgress(m) >= 100).map((m: any) => String(m.id)),
+        ]));
+        const checkLock = isModuleUnlocked(
+          targetIdx,
+          modules,
+          activeCompletedModuleIds,
+          activeModuleProgressMap,
+          true
+        );
+        if (!checkLock.isUnlocked) {
+          toast.warning(checkLock.lockReason || 'This module is locked until preceding modules are completed.');
+          return;
+        }
+      }
+    }
+
     setOpenModuleId(moduleId);
+    if (isTrainee && selectedPathId) {
+      navigate(`/learning-path/${selectedPathId}/module/${moduleId}`, {
+        state: { pathId: selectedPathId, pathName: selectedPathTitle, moduleId },
+      });
+    }
     setModuleLoading(true);
     if (!preserveTab) {
       setActiveTab((location.state as any)?.activeTab || 'Lessons');
@@ -219,6 +279,12 @@ export function ModulesManagementSection({
     setOpenModuleId(null);
     setOpenModuleData(null);
     setModuleStats(null);
+    setActiveFullscreenLessonIndex(null);
+    if (isTrainee && selectedPathId) {
+      navigate(`/learning-path/${selectedPathId}/modules`, {
+        state: { pathId: selectedPathId, pathName: selectedPathTitle },
+      });
+    }
   };
 
   // Refetch on window focus & periodic polling to ensure updated DB data is always visible (§6.2)
@@ -254,9 +320,26 @@ export function ModulesManagementSection({
   // ── Mark lesson watched (Trainee) ─────────────────────────────────────────
   const markLessonWatched = async (lessonId: string) => {
     try {
+      // Optimistic update for instantaneous UI progression
+      const lid = String(lessonId);
+      setProgressStats((prev: any) => ({
+        ...prev,
+        completedLessonIds: Array.from(new Set([...(prev?.completedLessonIds || []), lid])),
+      }));
+      setModuleStats((prev: any) => ({
+        ...prev,
+        completedLessonIds: Array.from(new Set([...(prev?.completedLessonIds || []), lid])),
+        completedLessons: (prev?.completedLessons || 0) + 1,
+      }));
+
       await progressService.completeLesson(lessonId, accessToken);
-      if (openModuleId) await openModule(openModuleId);
-      await progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { });
+      await Promise.all([
+        openModuleId ? refreshModuleData(openModuleId) : Promise.resolve(),
+        progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { }),
+        assignmentService.fetchMySubmissions(accessToken).then((subs) => setMySubs(Array.isArray(subs) ? subs : [])).catch(() => { }),
+        progressService.fetchPathProgressSummary(accessToken).then((s) => setPathProgressSummary(s || {})).catch(() => { }),
+        curriculumService.fetchModulesByPath(selectedPathId, accessToken).then((data) => setModules(Array.isArray(data) ? sortCurriculumModules(data) : [])).catch(() => { }),
+      ]);
       await refreshNotifications();
     } catch (err: any) {
       toast.error(err?.message || 'Could not mark lesson as watched.');
@@ -360,7 +443,13 @@ export function ModulesManagementSection({
       await curriculumService.submitAssignment({ assignmentId: submitTask.id, submissionText: text, attachmentUrl }, accessToken);
       setSubmitTask(null);
       setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); setAttachmentUrl('');
-      if (openModuleId) await openModule(openModuleId);
+      await Promise.all([
+        openModuleId ? refreshModuleData(openModuleId) : Promise.resolve(),
+        progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { }),
+        assignmentService.fetchMySubmissions(accessToken).then((subs) => setMySubs(Array.isArray(subs) ? subs : [])).catch(() => { }),
+        progressService.fetchPathProgressSummary(accessToken).then((s) => setPathProgressSummary(s || {})).catch(() => { }),
+        curriculumService.fetchModulesByPath(selectedPathId, accessToken).then((data) => setModules(Array.isArray(data) ? sortCurriculumModules(data) : [])).catch(() => { }),
+      ]);
       await refreshNotifications();
       toast.success('Assignment submitted successfully!');
     } catch (err: any) {
@@ -379,10 +468,11 @@ export function ModulesManagementSection({
     return { bg: '#f1f5f9', color: '#475569' };
   };
 
-  // Use module-level stats if drilled in (more accurate), fallback to LP-level stats for list view
-  const completedLessonIds = new Set<string>(
-    (moduleStats?.completedLessonIds || progressStats?.completedLessonIds || []).map(String)
-  );
+  // Use combined stats so lessons completed across modules are always counted
+  const completedLessonIds = new Set<string>([
+    ...(progressStats?.completedLessonIds || []).map(String),
+    ...(moduleStats?.completedLessonIds || []).map(String),
+  ]);
 
   const subByAssignment = React.useMemo(() => {
     const map = new Map<string, any>();
@@ -390,16 +480,117 @@ export function ModulesManagementSection({
     return map;
   }, [mySubs]);
 
+  // Helper to calculate module progress percentage (hoisted for openModule & list views)
+  const getModuleProgress = (m: any): number => {
+    const isCurrentOpen = openModuleId && String(m?.id) === String(openModuleId) && openModuleData;
+    const mLessons = isCurrentOpen ? (openModuleData.lessons || []) : (m.lessons || []);
+    const lessonTasks = mLessons.flatMap((l: any) => l.assignments || []);
+    const modTasks = isCurrentOpen ? (openModuleData.assignments || []) : (m.assignments || []);
+    const allModTasks = [...lessonTasks, ...modTasks];
+    const seenTaskIds = new Set<string>();
+    const uniqueTasks = allModTasks.filter((t: any) => {
+      const id = String(t?.id || '');
+      if (!id || seenTaskIds.has(id)) return false;
+      seenTaskIds.add(id);
+      return true;
+    });
+
+    const totalItems = mLessons.length + uniqueTasks.length;
+    if (totalItems > 0) {
+      const completedLessonIdsSet = new Set<string>([
+        ...(progressStats?.completedLessonIds || []).map(String),
+        ...(moduleStats?.completedLessonIds || []).map(String),
+      ]);
+      const completedLessonsCount = mLessons.filter((l: any) => completedLessonIdsSet.has(String(l.id))).length;
+
+      const completedTasksCount = uniqueTasks.filter((t: any) => {
+        const sub = subByAssignment.get(t.id);
+        return sub && String(sub.status || '').toUpperCase() !== 'AVAILABLE';
+      }).length;
+
+      const livePct = Math.min(100, Math.round(((completedLessonsCount + completedTasksCount) / totalItems) * 100));
+      if (livePct >= 100) return 100;
+
+      if (pathProgressSummary[selectedPathId]?.moduleProgresses?.[m.id] !== undefined) {
+        return Math.max(livePct, Math.min(100, Math.max(0, Math.round(Number(pathProgressSummary[selectedPathId].moduleProgresses[m.id])))));
+      }
+      return livePct;
+    }
+
+    if (pathProgressSummary[selectedPathId]?.moduleProgresses?.[m.id] !== undefined) {
+      return Math.min(100, Math.max(0, Math.round(Number(pathProgressSummary[selectedPathId].moduleProgresses[m.id]))));
+    }
+    return 0;
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // MODULE DETAIL VIEW (when a module is drilled into)
   // ─────────────────────────────────────────────────────────────────────────
   if (openModuleId) {
     if (moduleLoading) {
       return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', flexDirection: 'column', gap: 16 }}>
-          <div style={{ width: 40, height: 40, border: '3px solid #e2e8f0', borderTop: '3px solid #6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-          <span style={{ color: '#64748b', fontSize: 14 }}>Loading module details...</span>
-          <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
+        <div className="lp-overview-container" style={{ padding: '0 0 40px 0' }} aria-busy="true">
+          {/* Breadcrumbs Skeleton */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div className="mm-shimmer" style={{ width: 240, height: 24, borderRadius: 6 }} />
+            <div className="mm-shimmer" style={{ width: 140, height: 32, borderRadius: 8 }} />
+          </div>
+
+          {/* Hero Banner Skeleton */}
+          <div className="mm-shimmer" style={{ width: '100%', height: 180, borderRadius: 20, marginBottom: 20 }} />
+
+          {/* Stats Cards Skeleton */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14, marginBottom: 24 }}>
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="mm-shimmer" style={{ height: 68, borderRadius: 14 }} />
+            ))}
+          </div>
+
+          {/* Objectives & Outcomes Skeleton */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 20, marginBottom: 28 }}>
+            <div className="mm-shimmer" style={{ height: 150, borderRadius: 16 }} />
+            <div className="mm-shimmer" style={{ height: 150, borderRadius: 16 }} />
+          </div>
+
+          {/* Tabs Bar Skeleton */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div className="mm-shimmer" style={{ width: 200, height: 38, borderRadius: 10 }} />
+            <div className="mm-shimmer" style={{ width: 140, height: 18, borderRadius: 4 }} />
+          </div>
+
+          {/* Lesson Cards Skeletons */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                style={{
+                  background: '#ffffff',
+                  border: '1.5px solid #e2e8f0',
+                  borderRadius: 14,
+                  padding: '20px 24px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 16,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className="mm-shimmer" style={{ width: 36, height: 36, borderRadius: 10 }} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div className="mm-shimmer" style={{ width: 180, height: 18, borderRadius: 4 }} />
+                      <div className="mm-shimmer" style={{ width: 120, height: 12, borderRadius: 4 }} />
+                    </div>
+                  </div>
+                  <div className="mm-shimmer" style={{ width: 110, height: 32, borderRadius: 8 }} />
+                </div>
+                <div className="mm-shimmer" style={{ width: '100%', height: 76, borderRadius: 12 }} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+                  <div className="mm-shimmer" style={{ height: 60, borderRadius: 10 }} />
+                  <div className="mm-shimmer" style={{ height: 60, borderRadius: 10 }} />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
@@ -413,7 +604,7 @@ export function ModulesManagementSection({
       );
     }
 
-    const lessons = openModuleData?.lessons || [];
+    const lessons = sortCurriculumLessons(openModuleData?.lessons || []);
     const resources = openModuleData?.resources || [];
 
     const lessonTasks = lessons.flatMap((l: any) =>
@@ -434,6 +625,16 @@ export function ModulesManagementSection({
       });
 
     const tasks = [...lessonTasks, ...moduleLevelAssignments];
+
+    // ── Single-Instance Dependency Resolution & Deduplication Engine ────────
+    const curriculum = resolveCurriculumDependencies({
+      lessons,
+      tasks,
+      completedLessonIds,
+      submissions: mySubs,
+      sequentialLessonLock: openModuleData?.sequentialLessonLock ?? openModuleData?.lessonLocking ?? true,
+      isTrainee,
+    });
 
     // ── Module progress calculation ──────────────────────────────────────────
     // Formula: ((total task completed + total lesson completed) / (total lesson + task)) * 100
@@ -516,6 +717,9 @@ export function ModulesManagementSection({
     const moduleCircleCircumference = 2 * Math.PI * moduleCircleRadius;
     const moduleCircleStrokeDashoffset = moduleCircleCircumference - (moduleCircleCircumference * progressPercent) / 100;
 
+    const curModuleIdx = modules.findIndex((m: any) => String(m.id) === String(openModuleId));
+    const nextModule = curModuleIdx >= 0 && curModuleIdx < modules.length - 1 ? modules[curModuleIdx + 1] : null;
+
     return (
       <div className="module-detail-container">
 
@@ -586,37 +790,60 @@ export function ModulesManagementSection({
                     maxHeight: 300,
                     overflowY: 'auto'
                   }}>
-                    {modules.map((m: any) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => {
-                          void openModule(m.id);
-                          setIsModuleDropdownOpen(false);
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '10px 14px',
-                          border: 'none',
-                          background: m.id === openModuleId ? '#eef2ff' : '#fff',
-                          color: m.id === openModuleId ? '#4338ca' : '#334155',
-                          fontSize: 13,
-                          fontWeight: m.id === openModuleId ? 700 : 500,
-                          cursor: 'pointer',
-                          borderBottom: '1px solid #f8fafc',
-                          transition: 'all 0.15s ease'
-                        }}
-                        onMouseEnter={(e) => { if (m.id !== openModuleId) e.currentTarget.style.background = '#f8fafc'; }}
-                        onMouseLeave={(e) => { if (m.id !== openModuleId) e.currentTarget.style.background = '#fff'; }}
-                      >
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.title}</span>
-                        {m.id === openModuleId && <span style={{ color: '#4f46e5', fontSize: 13, fontWeight: 800 }}>✓</span>}
-                      </button>
-                    ))}
+                    {modules.map((m: any, mIdx: number) => {
+                      const activeModuleProgressMap = modules.reduce((acc: any, mod: any) => {
+                        acc[String(mod.id)] = getModuleProgress(mod);
+                        return acc;
+                      }, {});
+                      const activeCompletedModuleIds = Array.from(new Set([
+                        ...(progressStats?.completedModuleIds || []).map(String),
+                        ...modules.filter((mod: any) => getModuleProgress(mod) >= 100).map((mod: any) => String(mod.id)),
+                        ...(progressPercent === 100 && openModuleId ? [String(openModuleId)] : []),
+                      ]));
+                      const mLock = isTrainee
+                        ? isModuleUnlocked(mIdx, modules, activeCompletedModuleIds, activeModuleProgressMap, true)
+                        : { isUnlocked: true };
+                      const isModLocked = !mLock.isUnlocked;
+
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => {
+                            if (isModLocked) {
+                              toast.warning(mLock.lockReason || 'This module is locked.');
+                              return;
+                            }
+                            void openModule(m.id);
+                            setIsModuleDropdownOpen(false);
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            width: '100%',
+                            textAlign: 'left',
+                            padding: '10px 14px',
+                            border: 'none',
+                            background: m.id === openModuleId ? '#eef2ff' : '#fff',
+                            color: isModLocked ? '#94a3b8' : (m.id === openModuleId ? '#4338ca' : '#334155'),
+                            cursor: isModLocked ? 'not-allowed' : 'pointer',
+                            opacity: isModLocked ? 0.6 : 1,
+                            fontSize: 13,
+                            fontWeight: m.id === openModuleId ? 700 : 500,
+                            borderBottom: '1px solid #f8fafc',
+                            transition: 'all 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => { if (!isModLocked && m.id !== openModuleId) e.currentTarget.style.background = '#f8fafc'; }}
+                          onMouseLeave={(e) => { if (!isModLocked && m.id !== openModuleId) e.currentTarget.style.background = '#fff'; }}
+                        >
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {m.title} {isModLocked ? '🔒' : ''}
+                          </span>
+                          {m.id === openModuleId && <span style={{ color: '#4f46e5', fontSize: 13, fontWeight: 800 }}>✓</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -695,7 +922,7 @@ export function ModulesManagementSection({
                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.22)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
                       >
-                        <span>🔗</span>
+                        
                         {res.title}
                       </a>
                     ))}
@@ -734,12 +961,62 @@ export function ModulesManagementSection({
           </div>
         </div>
 
+        {/* ── Next Module Unlocked Celebration Banner ── */}
+        {progressPercent === 100 && nextModule && (
+          <div style={{
+            marginTop: 18,
+            padding: '16px 22px',
+            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+            border: '1.5px solid #86efac',
+            borderRadius: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+            boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)'
+          }}>
+            <div>
+              <div style={{ fontSize: 14.5, fontWeight: 700, color: '#166534' }}>
+                🎉 Module Completed! Next Module Unlocked
+              </div>
+              <div style={{ fontSize: 12.5, color: '#15803d', marginTop: 2 }}>
+                You have finished all items in this module. Continue with <strong>{nextModule.title}</strong> without delay.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void openModule(nextModule.id)}
+              style={{
+                padding: '9px 20px',
+                background: '#16a34a',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: 9,
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                boxShadow: '0 4px 10px rgba(22, 163, 74, 0.22)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span>Start Next Module</span>
+              <span>→</span>
+            </button>
+          </div>
+        )}
+
         {/* ── Key Metrics Strip (Clean, non-overlapping) ── */}
         <div className="lp-stats-strip" style={{ marginTop: 18 }}>
           <div className="lp-stat-pill-card">
-            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
-              <Clock size={16} strokeWidth={1.75} />
-            </div>
+            {!isTrainee && (
+              <div className="lp-stat-icon-wrap" style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe' }}>
+                <Clock size={16} strokeWidth={2} />
+              </div>
+            )}
             <div className="lp-stat-info">
               <strong>{openModuleData.durationLabel || `${openModuleData.durationWeeks || 2} weeks`}</strong>
               <span>Duration</span>
@@ -747,9 +1024,11 @@ export function ModulesManagementSection({
           </div>
 
           <div className="lp-stat-pill-card">
-            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
-              <BookOpen size={16} strokeWidth={1.75} />
-            </div>
+            {!isTrainee && (
+              <div className="lp-stat-icon-wrap" style={{ background: '#f0f9ff', color: '#0284c7', border: '1px solid #bae6fd' }}>
+                <BookOpen size={16} strokeWidth={2} />
+              </div>
+            )}
             <div className="lp-stat-info">
               <strong>{isTrainee ? `${completedLessons}/${lessons.length} done` : `${lessons.length} total`}</strong>
               <span>Lessons</span>
@@ -757,9 +1036,11 @@ export function ModulesManagementSection({
           </div>
 
           <div className="lp-stat-pill-card">
-            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
-              <CheckSquare size={16} strokeWidth={1.75} />
-            </div>
+            {!isTrainee && (
+              <div className="lp-stat-icon-wrap" style={{ background: '#faf5ff', color: '#7c3aed', border: '1px solid #e9d5ff' }}>
+                <CheckSquare size={16} strokeWidth={2} />
+              </div>
+            )}
             <div className="lp-stat-info">
               <strong>{isTrainee ? `${tasksSubmitted}/${tasks.length} submitted` : `${tasks.length} assigned`}</strong>
               <span>Tasks</span>
@@ -767,9 +1048,11 @@ export function ModulesManagementSection({
           </div>
 
           <div className="lp-stat-pill-card">
-            <div className="lp-stat-icon-wrap" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
-              <Award size={16} strokeWidth={1.75} />
-            </div>
+            {!isTrainee && (
+              <div className="lp-stat-icon-wrap" style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a' }}>
+                <Award size={16} strokeWidth={2} />
+              </div>
+            )}
             <div className="lp-stat-info">
               <strong>{tasks.length > 0 ? `${totalGained}/${totalMax}` : '0/0'}</strong>
               <span>Avg. Score</span>
@@ -791,41 +1074,49 @@ export function ModulesManagementSection({
             background: '#ffffff',
             borderRadius: 16,
             border: '1.5px solid #e2e8f0',
-            padding: '24px 26px',
+            padding: '22px 24px',
             boxShadow: '0 1px 3px rgba(15, 23, 42, 0.03)',
             transition: 'all 0.2s ease',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16
+            gap: 14
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: '#eef2ff',
-                color: '#4f46e5',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-              </div>
+              {!isTrainee && (
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: '#eef2ff',
+                  color: '#4f46e5',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Sparkles size={18} strokeWidth={2} />
+                </div>
+              )}
               <div>
-                <h4 style={{ margin: 0, color: '#0f172a', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                <h4 style={{ margin: 0, color: '#0f172a', fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>
                   Learning Objectives
                 </h4>
                 <span style={{ fontSize: 12, color: '#64748b' }}>Core concepts and focus areas</span>
               </div>
             </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {objectives.map((o, i) => (
-                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#334155', fontSize: 13.5, lineHeight: 1.55 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6366f1', marginTop: 7, flexShrink: 0 }} />
-                  <span>{o}</span>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {objectives.filter(o => typeof o === 'string' && o.trim().length > 0).length > 0 ? (
+                objectives.filter(o => typeof o === 'string' && o.trim().length > 0).map((o, i) => (
+                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#334155', fontSize: 13.5, lineHeight: 1.55 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#6366f1', marginTop: 8, flexShrink: 0 }} />
+                    <span>{o}</span>
+                  </li>
+                ))
+              ) : (
+                <li style={{ color: '#94a3b8', fontSize: 13, fontStyle: 'italic' }}>
+                  Explore the curriculum lessons to master this module's topics.
                 </li>
-              ))}
+              )}
             </ul>
           </div>
 
@@ -834,41 +1125,53 @@ export function ModulesManagementSection({
             background: '#ffffff',
             borderRadius: 16,
             border: '1.5px solid #e2e8f0',
-            padding: '24px 26px',
+            padding: '22px 24px',
             boxShadow: '0 1px 3px rgba(15, 23, 42, 0.03)',
             transition: 'all 0.2s ease',
             display: 'flex',
             flexDirection: 'column',
-            gap: 16
+            gap: 14
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: '#ecfdf5',
-                color: '#059669',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0
-              }}>
-                <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-              </div>
+              {!isTrainee && (
+                <div style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  background: '#ecfdf5',
+                  color: '#059669',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <CheckCircle2 size={18} strokeWidth={2} />
+                </div>
+              )}
               <div>
-                <h4 style={{ margin: 0, color: '#0f172a', fontSize: 16, fontWeight: 700, letterSpacing: '-0.01em' }}>
+                <h4 style={{ margin: 0, color: '#0f172a', fontSize: 15, fontWeight: 700, letterSpacing: '-0.01em' }}>
                   Learning Outcomes
                 </h4>
                 <span style={{ fontSize: 12, color: '#64748b' }}>Practical capabilities & competencies</span>
               </div>
             </div>
-            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {outcomes.map((o, i) => (
-                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#334155', fontSize: 13.5, lineHeight: 1.55 }}>
-                  <svg width="16" height="16" fill="none" stroke="#059669" strokeWidth="2.5" viewBox="0 0 24 24" style={{ marginTop: 3, flexShrink: 0 }}><polyline points="20 6 9 17 4 12"></polyline></svg>
-                  <span>{o}</span>
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {outcomes.filter(o => typeof o === 'string' && o.trim().length > 0).length > 0 ? (
+                outcomes.filter(o => typeof o === 'string' && o.trim().length > 0).map((o, i) => (
+                  <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#334155', fontSize: 13.5, lineHeight: 1.55 }}>
+                    {isTrainee ? (
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', marginTop: 8, flexShrink: 0 }} />
+                    ) : (
+                      <CheckCircle2 size={14} color="#059669" style={{ marginTop: 3, flexShrink: 0 }} />
+                    )}
+                    <span>{o}</span>
+                  </li>
+                ))
+              ) : (
+                <li style={{ color: '#94a3b8', fontSize: 13, fontStyle: 'italic' }}>
+                  Complete module assessments to demonstrate core proficiency.
                 </li>
-              ))}
+              )}
             </ul>
           </div>
         </div>
@@ -934,33 +1237,136 @@ export function ModulesManagementSection({
           </div>
         </div>
 
-        {/* ── LESSONS TAB ── */}
+        {/* ── LESSONS TAB (Deduplicated Single-Instance Placement) ── */}
         {activeTab === 'Lessons' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {lessons.length === 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {moduleLoading ? (
+              <ModuleAccordionSkeleton />
+            ) : curriculum.resolvedLessons.length === 0 ? (
               <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 12 }}>
                 No lessons in this module yet.
               </div>
+            ) : (
+              curriculum.resolvedLessons.map((node, lIdx) => {
+                const lesson = node.lesson;
+                return (
+                  <div key={lesson.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <LessonCard
+                      lesson={{ ...lesson, title: `${lIdx + 1}. ${lesson.title}` }}
+                      isDone={node.isCompleted}
+                      isLocked={node.isLocked}
+                      lockReason={node.lockReason}
+                      isTrainee={isTrainee}
+                      resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
+                      onVisitResource={(res) => {
+                        if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { });
+                      }}
+                      onMarkWatched={markLessonWatched}
+                      onStartLesson={() => {
+                        if (node.isLocked) {
+                          toast.warning(node.lockReason || 'Complete previous lesson to unlock this lesson.');
+                          return;
+                        }
+                        setActiveFullscreenLessonIndex(lIdx);
+                      }}
+                      onClickLocked={() => toast.warning(node.lockReason || 'Complete previous lesson to unlock this lesson.')}
+                    />
+
+                    {/* Single-Instance Deduplicated Dependent Assignments (rendered strictly beneath final prerequisite lesson) */}
+                    {node.dependentAssignments.length > 0 && (
+                      <div
+                        style={{
+                          marginLeft: '24px',
+                          paddingLeft: '22px',
+                          borderLeft: '2.5px solid #a5b4fc',
+                          position: 'relative',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px',
+                          marginTop: '6px',
+                          marginBottom: '14px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '7px',
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            color: '#4338ca',
+                            background: '#eef2ff',
+                            border: '1px solid #c7d2fe',
+                            padding: '4px 12px',
+                            borderRadius: '999px',
+                            letterSpacing: '0.02em',
+                            width: 'fit-content',
+                            boxShadow: '0 1px 2px rgba(99, 102, 241, 0.08)',
+                          }}
+                        >
+                          <FileText size={13} />
+                          <span>Dependent Assessment{node.dependentAssignments.length > 1 ? 's' : ''} for Lesson {lIdx + 1}</span>
+                        </div>
+                        {node.dependentAssignments.map((aNode) => (
+                          <AssignmentCard
+                            key={aNode.task.id}
+                            task={{ ...aNode.task, lessonTitle: `Lesson ${lIdx + 1}` }}
+                            submission={aNode.submission}
+                            isLocked={aNode.isLocked}
+                            lockReason={aNode.lockReason}
+                            isTrainee={isTrainee}
+                            onClickLocked={(r) => toast.warning(r || 'This task is locked until prerequisite lessons are completed.')}
+                            onAttempt={(t) => setInstructionTask(t)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
-            {lessons.map((lesson: any, lIdx: number) => {
-              const isDone = completedLessonIds.has(String(lesson.id));
-              return (
-                <div key={lesson.id} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <LessonCard
-                    lesson={{ ...lesson, title: `${lIdx + 1}. ${lesson.title}` }}
-                    isDone={isDone}
-                    isLocked={lesson.isLocked}
-                    isTrainee={isTrainee}
-                    resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
-                    onVisitResource={(res) => {
-                      if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { });
-                    }}
-                    onMarkWatched={markLessonWatched}
-                    onClickLocked={() => lesson.isLocked && toast.warning(lesson.lockReason)}
-                  />
+
+            {/* Standalone module-level tasks without lesson prerequisites rendered at the bottom */}
+            {curriculum.standaloneTasks.length > 0 && (
+              <div
+                style={{
+                  marginTop: '20px',
+                  borderTop: '1px solid #e2e8f0',
+                  paddingTop: '20px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    color: '#334155',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}
+                >
+                  <Award size={15} color="#4f46e5" />
+                  <span>Module Assessments ({curriculum.standaloneTasks.length})</span>
                 </div>
-              );
-            })}
+                {curriculum.standaloneTasks.map((aNode) => (
+                  <AssignmentCard
+                    key={aNode.task.id}
+                    task={{ ...aNode.task, lessonTitle: 'Module Task' }}
+                    submission={aNode.submission}
+                    isLocked={aNode.isLocked}
+                    lockReason={aNode.lockReason}
+                    isTrainee={isTrainee}
+                    onClickLocked={(r) => toast.warning(r || 'This task is locked until prerequisite lessons are completed.')}
+                    onAttempt={(t) => setInstructionTask(t)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -980,16 +1386,29 @@ export function ModulesManagementSection({
                 </div>
                 {tasks.map((task: any) => {
                   const sub = subByAssignment.get(task.id);
+                  const isTaskLocked = isTrainee && !isAssignmentUnlocked(
+                    { lockUntilLessonsComplete: task.lockUntilLessonsComplete, dependsOnLessonIds: task.dependsOnLessonIds },
+                    { completedLessonIds: Array.from(completedLessonIds) },
+                    lessons
+                  );
+                  const lockInfo = isTaskLocked
+                    ? getAssignmentLockInfo(
+                        { lockUntilLessonsComplete: task.lockUntilLessonsComplete, dependsOnLessonIds: task.dependsOnLessonIds },
+                        { completedLessonIds: Array.from(completedLessonIds) },
+                        lessons
+                      )
+                    : { isUnlocked: true };
+
                   return (
                     <AssignmentCard
                       key={task.id}
                       task={task}
                       submission={sub}
-                      isLocked={task.isLocked}
-                      lockReason={task.lockReason}
+                      isLocked={isTaskLocked}
+                      lockReason={lockInfo.lockReason}
                       isTrainee={isTrainee}
-                      onClickLocked={(r) => toast.warning(r || 'Locked')}
-                      onAttempt={(t) => { setSubmitTask(t); setSubmissionText(''); setSubjectiveAnswers({}); setMcqAnswers({}); }}
+                      onClickLocked={(r) => toast.warning(r || 'This task is locked until prerequisite lessons are completed.')}
+                      onAttempt={(t) => setInstructionTask(t)}
                     />
                   );
                 })}
@@ -1003,7 +1422,7 @@ export function ModulesManagementSection({
           <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
             {isTrainee && completedLessons < lessons.length ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 32px', textAlign: 'center' }}>
-                <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, marginBottom: 16 }}>🔒</div>
+                
                 <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#0f172a' }}>Module Assessment</h3>
                 <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: 14 }}>
                   Complete {lessons.length - completedLessons} more lesson{lessons.length - completedLessons !== 1 ? 's' : ''} to unlock the final assessment.
@@ -1020,7 +1439,20 @@ export function ModulesManagementSection({
                 </p>
                 {tasks.map((task: any) => {
                   const sub = subByAssignment.get(task.id);
-                  const isLocked = task.isLocked;
+                  const isTaskLocked = isTrainee && !isAssignmentUnlocked(
+                    { lockUntilLessonsComplete: task.lockUntilLessonsComplete, dependsOnLessonIds: task.dependsOnLessonIds },
+                    { completedLessonIds: Array.from(completedLessonIds) },
+                    lessons
+                  );
+                  const lockInfo = isTaskLocked
+                    ? getAssignmentLockInfo(
+                        { lockUntilLessonsComplete: task.lockUntilLessonsComplete, dependsOnLessonIds: task.dependsOnLessonIds },
+                        { completedLessonIds: Array.from(completedLessonIds) },
+                        lessons
+                      )
+                    : { isUnlocked: true };
+                  const isLocked = isTaskLocked || task.isLocked;
+                  const finalLockReason = lockInfo.lockReason || task.lockReason;
 
                   let timeLeftStr = '';
                   let isOverdue = false;
@@ -1048,21 +1480,21 @@ export function ModulesManagementSection({
                     <div key={task.id} style={{ padding: '14px 18px', background: isLocked ? '#f1f5f9' : '#f8fafc', borderRadius: 10, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: isLocked ? 0.6 : 1 }}>
                       <div>
                         <strong style={{ fontSize: 14 }}>
-                          {isLocked && <span style={{ marginRight: 6 }}>🔒</span>}
+                          
                           {task.title}
                         </strong>
                         <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{task.assignmentType}</div>
-                        {isLocked && task.lockReason && (
-                          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{task.lockReason}</div>
+                        {isLocked && finalLockReason && (
+                          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{finalLockReason}</div>
                         )}
                         {!isLocked && status === 'started' && (
                           <div style={{ fontSize: 13, color: isOverdue ? '#ef4444' : '#f59e0b', fontWeight: 600, marginTop: 6 }}>
-                            ⏳ {timeLeftStr}
+                            {timeLeftStr}
                           </div>
                         )}
                         {!isLocked && status === 'Overdue' && (
                           <div style={{ fontSize: 13, color: '#ef4444', fontWeight: 600, marginTop: 6 }}>
-                            ⚠️ Overdue
+                            Overdue
                           </div>
                         )}
                       </div>
@@ -1127,15 +1559,81 @@ export function ModulesManagementSection({
           </div>
         )}
 
-        {submitTask && (
+        {/* ── Step 1: Assignment Overview & Instructions Modal ── */}
+        {instructionTask && (
+          <AssignmentInstructionModal
+            task={instructionTask}
+            submission={subByAssignment.get(instructionTask.id)}
+            isOpen={Boolean(instructionTask)}
+            onClose={() => setInstructionTask(null)}
+            onContinue={() => {
+              setWorkspaceTask(instructionTask);
+              setInstructionTask(null);
+            }}
+          />
+        )}
+
+        {/* ── Step 2: Active Assessment Workspace Modal ── */}
+        {workspaceTask && (
+          <AssignmentWorkspaceModal
+            task={workspaceTask}
+            submission={subByAssignment.get(workspaceTask.id)}
+            accessToken={accessToken}
+            isOpen={Boolean(workspaceTask)}
+            onClose={() => setWorkspaceTask(null)}
+            onBackToInstructions={() => {
+              setInstructionTask(workspaceTask);
+              setWorkspaceTask(null);
+            }}
+            onSuccess={async () => {
+              if (openModuleId) await refreshModuleData(openModuleId);
+              await Promise.all([
+                progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { }),
+                assignmentService.fetchMySubmissions(accessToken).then((subs) => setMySubs(Array.isArray(subs) ? subs : [])).catch(() => { }),
+                progressService.fetchPathProgressSummary(accessToken).then((s) => setPathProgressSummary(s || {})).catch(() => { }),
+                curriculumService.fetchModulesByPath(selectedPathId, accessToken).then((data) => setModules(Array.isArray(data) ? sortCurriculumModules(data) : [])).catch(() => { }),
+              ]);
+              refreshNotifications();
+            }}
+          />
+        )}
+
+        {/* Fallback to legacy modal if submitTask is set */}
+        {submitTask && !instructionTask && !workspaceTask && (
           <SharedAssignmentModal
             task={submitTask}
             submission={subByAssignment.get(submitTask.id)}
             accessToken={accessToken}
             onClose={() => setSubmitTask(null)}
-            onSuccess={() => {
-              if (openModuleId) openModule(openModuleId);
+            onSuccess={async () => {
+              if (openModuleId) await refreshModuleData(openModuleId);
+              await Promise.all([
+                progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { }),
+                assignmentService.fetchMySubmissions(accessToken).then((subs) => setMySubs(Array.isArray(subs) ? subs : [])).catch(() => { }),
+                progressService.fetchPathProgressSummary(accessToken).then((s) => setPathProgressSummary(s || {})).catch(() => { }),
+                curriculumService.fetchModulesByPath(selectedPathId, accessToken).then((data) => setModules(Array.isArray(data) ? sortCurriculumModules(data) : [])).catch(() => { }),
+              ]);
               refreshNotifications();
+            }}
+          />
+        )}
+
+        {/* ── Dedicated Lesson Player View ── */}
+        {activeFullscreenLessonIndex !== null && curriculum.resolvedLessons[activeFullscreenLessonIndex] && (
+          <LessonPlayerView
+            lessonNodes={curriculum.resolvedLessons}
+            standaloneTasks={curriculum.standaloneTasks}
+            currentLessonIndex={activeFullscreenLessonIndex}
+            moduleTitle={openModuleData?.title || selectedPathTitle || 'Curriculum Module'}
+            isOpen={activeFullscreenLessonIndex !== null}
+            onClose={() => setActiveFullscreenLessonIndex(null)}
+            onSelectLessonIndex={(idx) => setActiveFullscreenLessonIndex(idx)}
+            onMarkLessonCompleted={async (lessonId) => {
+              await markLessonWatched(lessonId);
+            }}
+            onTriggerAssignment={(task) => {
+              setActiveFullscreenLessonIndex(null);
+              setInstructionTask(task);
             }}
           />
         )}
@@ -1149,26 +1647,7 @@ export function ModulesManagementSection({
   const activeLP = currentPathDetails || allPaths.find((p: any) => p.id === selectedPathId);
   const lpSummary = pathProgressSummary[selectedPathId];
 
-  // Helper to calculate module progress percentage
-  const getModuleProgress = (m: any): number => {
-    if (lpSummary?.moduleProgresses?.[m.id] !== undefined) {
-      return Math.min(100, Math.max(0, Math.round(Number(lpSummary.moduleProgresses[m.id]))));
-    }
-    const mLessons = m.lessons || [];
-    const mTasks = m.assignments || [];
-    const totalItems = mLessons.length + mTasks.length;
-    if (totalItems === 0) return 0;
 
-    const completedLessonIdsSet = new Set<string>((progressStats?.completedLessonIds || []).map(String));
-    const completedLessonsCount = mLessons.filter((l: any) => completedLessonIdsSet.has(String(l.id))).length;
-
-    const completedTasksCount = mTasks.filter((t: any) => {
-      const sub = subByAssignment.get(t.id);
-      return sub && String(sub.status || '').toUpperCase() !== 'AVAILABLE';
-    }).length;
-
-    return Math.min(100, Math.round(((completedLessonsCount + completedTasksCount) / totalItems) * 100));
-  };
 
   // Overall LP progress percentage
   const overallProgressPercent = typeof lpSummary?.userProgressPercent === 'number'
@@ -1341,9 +1820,6 @@ export function ModulesManagementSection({
       {/* ── Quick Stats Strip (Modules, Duration, Lessons) ── */}
       <div className="lp-stats-strip">
         <div className="lp-stat-pill-card">
-          <div className="lp-stat-icon-wrap" style={{ background: '#eef2ff', color: '#4f46e5' }}>
-            📚
-          </div>
           <div className="lp-stat-info">
             <strong>{modules.length} {modules.length === 1 ? 'module' : 'modules'}</strong>
             <span>Curriculum structure</span>
@@ -1351,9 +1827,6 @@ export function ModulesManagementSection({
         </div>
 
         <div className="lp-stat-pill-card">
-          <div className="lp-stat-icon-wrap" style={{ background: '#f0fdfa', color: '#0d9488' }}>
-            ⏱️
-          </div>
           <div className="lp-stat-info">
             <strong>{lpDurationDisplay}</strong>
             <span>Estimated duration</span>
@@ -1362,9 +1835,6 @@ export function ModulesManagementSection({
 
         {totalLessonsInLP > 0 && (
           <div className="lp-stat-pill-card">
-            <div className="lp-stat-icon-wrap" style={{ background: '#f5f3ff', color: '#7c3aed' }}>
-              🎯
-            </div>
             <div className="lp-stat-info">
               <strong>{totalLessonsInLP} {totalLessonsInLP === 1 ? 'lesson' : 'lessons'}</strong>
               <span>Interactive lessons</span>
@@ -1383,13 +1853,34 @@ export function ModulesManagementSection({
 
       {/* ── Modules Timeline / Cards List ── */}
       {isLoading ? (
-        <div style={{ textAlign: 'center', padding: '60px', color: '#94a3b8' }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
-          Loading curriculum modules...
+        <div className="module-cards-timeline">
+          {[1, 2, 3].map((n) => (
+            <div key={n} className="module-card-skeleton">
+              <div className="module-card-skeleton-top">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div className="mm-shimmer" style={{ width: 36, height: 26, borderRadius: 6 }} />
+                  <div className="mm-shimmer" style={{ width: 90, height: 16 }} />
+                </div>
+                <div className="mm-shimmer" style={{ width: 80, height: 22, borderRadius: 999 }} />
+              </div>
+              <div className="mm-shimmer" style={{ width: '60%', height: 24, marginTop: 4 }} />
+              <div className="mm-shimmer" style={{ width: '90%', height: 16 }} />
+              <div className="mm-shimmer" style={{ width: '75%', height: 16 }} />
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <div className="mm-shimmer" style={{ width: 60, height: 20, borderRadius: 999 }} />
+                <div className="mm-shimmer" style={{ width: 75, height: 20, borderRadius: 999 }} />
+                <div className="mm-shimmer" style={{ width: 85, height: 20, borderRadius: 999 }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                <div className="mm-shimmer" style={{ width: '55%', height: 14, borderRadius: 999 }} />
+                <div className="mm-shimmer" style={{ width: 130, height: 36, borderRadius: 999 }} />
+              </div>
+            </div>
+          ))}
         </div>
       ) : modules.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px', background: '#f8fafc', borderRadius: 16, border: '2px dashed #e2e8f0' }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
+          
           <div style={{ fontWeight: 700, fontSize: 16, color: '#475569' }}>No modules yet</div>
           <div style={{ fontSize: 13, color: '#94a3b8', marginTop: 4 }}>
             {isTrainerOrAdmin ? 'Create the first module for this learning path.' : 'No modules available for this path.'}
@@ -1401,11 +1892,35 @@ export function ModulesManagementSection({
             const padNum = String(idx + 1).padStart(2, '0');
             const stage = stageLabels[idx] || (module.level ? String(module.level).toUpperCase() : 'SPECIALIZATION');
             const modProgress = getModuleProgress(module);
-            const isActive = idx === (firstActiveIndex === -1 ? 0 : firstActiveIndex);
+
+            const activeModuleProgressMap = modules.reduce((acc: any, m: any) => {
+              acc[String(m.id)] = getModuleProgress(m);
+              return acc;
+            }, {});
+            const activeCompletedModuleIds = Array.from(new Set([
+              ...(progressStats?.completedModuleIds || []).map(String),
+              ...modules.filter((m: any) => getModuleProgress(m) >= 100).map((m: any) => String(m.id)),
+            ]));
+
+            // Sequential module locking evaluation for trainees
+            const moduleLock = isTrainee
+              ? isModuleUnlocked(
+                  idx,
+                  modules,
+                  activeCompletedModuleIds,
+                  activeModuleProgressMap,
+                  true
+                )
+              : { isUnlocked: true };
+            const isModLocked = !moduleLock.isUnlocked;
+
+            const isActive = !isModLocked && idx === (firstActiveIndex === -1 ? 0 : firstActiveIndex);
 
             // Status badge details
             let statusBadge = { label: 'Not started', bg: '#f8fafc', color: '#94a3b8', border: '#e2e8f0' };
-            if (modProgress >= 100) {
+            if (isModLocked) {
+              statusBadge = { label: 'Locked', bg: '#f1f5f9', color: '#64748b', border: '#cbd5e1' };
+            } else if (modProgress >= 100) {
               statusBadge = { label: 'Completed', bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' };
             } else if (modProgress > 0) {
               statusBadge = { label: 'In progress', bg: '#eff6ff', color: '#4f46e5', border: '#dbeafe' };
@@ -1424,13 +1939,24 @@ export function ModulesManagementSection({
             return (
               <div
                 key={module.id}
-                className={`module-card-item ${isActive ? 'is-active-module' : ''}`}
-                onClick={() => openModule(module.id)}
+                className={`module-card-item ${isActive ? 'is-active-module' : ''} ${isModLocked ? 'module-card-item--locked' : ''}`}
+                style={isModLocked ? { cursor: 'not-allowed', opacity: 0.78, background: '#fafbfc' } : { cursor: 'pointer' }}
+                onClick={() => {
+                  if (isModLocked) {
+                    toast.warning(moduleLock.lockReason || 'Complete previous module to unlock this module.');
+                    return;
+                  }
+                  void openModule(module.id);
+                }}
                 role="button"
-                tabIndex={0}
+                tabIndex={isModLocked ? -1 : 0}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
+                    if (isModLocked) {
+                      toast.warning(moduleLock.lockReason || 'Complete previous module to unlock this module.');
+                      return;
+                    }
                     void openModule(module.id);
                   }
                 }}
@@ -1438,7 +1964,8 @@ export function ModulesManagementSection({
                 {/* Top: Index + Stage Label (Left) and Status Badge (Right) */}
                 <div className="module-card-top">
                   <div className="module-card-top-left">
-                    <div className="module-index-pill">
+                    <div className="module-index-pill" style={isModLocked ? { background: '#e2e8f0', color: '#64748b', display: 'inline-flex', alignItems: 'center', gap: 4 } : undefined}>
+                      {isModLocked && <Lock size={12} />}
                       {padNum}
                     </div>
                     <span className="module-stage-label">{stage}</span>
@@ -1459,6 +1986,26 @@ export function ModulesManagementSection({
                 {/* Title */}
                 <h3 className="module-card-title">{module.title}</h3>
 
+                {/* Prerequisite notice if locked */}
+                {isModLocked && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '6px 12px',
+                    background: '#f1f5f9',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    margin: '6px 0 10px 0'
+                  }}>
+                    <Lock size={12} />
+                    <span>{moduleLock.lockReason}</span>
+                  </div>
+                )}
+
                 {/* Description */}
                 <p className="module-card-desc">
                   {cleanModDesc || 'Build core principles, practical workflows, and real-world mastery through guided lessons and assessments.'}
@@ -1467,13 +2014,13 @@ export function ModulesManagementSection({
                 {/* Meta Row: Duration, Lessons, Activities */}
                 <div className="module-meta-row">
                   <span className="module-meta-item">
-                    ⏱️ {durationLabel}
+                    {durationLabel}
                   </span>
                   <span className="module-meta-item">
-                    📚 {modLessonsCount} lessons
+                    {modLessonsCount} lessons
                   </span>
                   <span className="module-meta-item">
-                    📝 {modActivitiesCount} activities
+                    {modActivitiesCount} activities
                   </span>
                 </div>
 
@@ -1486,7 +2033,7 @@ export function ModulesManagementSection({
                         className="module-progress-fill"
                         style={{
                           width: `${modProgress}%`,
-                          background: modProgress >= 100 ? '#10b981' : 'linear-gradient(90deg, #6366f1, #4f46e5)'
+                          background: modProgress >= 100 ? '#10b981' : isModLocked ? '#94a3b8' : 'linear-gradient(90deg, #6366f1, #4f46e5)'
                         }}
                       />
                     </div>
@@ -1504,6 +2051,26 @@ export function ModulesManagementSection({
                         }}
                       >
                         Review module <span>›</span>
+                      </button>
+                    ) : isModLocked ? (
+                      <button
+                        type="button"
+                        className="btn-module-outline"
+                        style={{
+                          background: '#f1f5f9',
+                          color: '#64748b',
+                          border: '1px solid #cbd5e1',
+                          cursor: 'not-allowed',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toast.warning(moduleLock.lockReason || 'Complete previous module first.');
+                        }}
+                      >
+                        <Lock size={12} /> Locked
                       </button>
                     ) : isActive ? (
                       <button
@@ -1573,12 +2140,12 @@ export function ModulesManagementSection({
                 </div>
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#4f46e5', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>◎ Learning Objectives (One per line)</label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#4f46e5', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Learning Objectives (One per line)</label>
                 <textarea rows={3} value={moduleObjectives} onChange={e => setModuleObjectives(e.target.value)} placeholder="e.g. Understand RESTful architecture principles&#10;Design clean API endpoints"
                   style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #c7d2fe', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: '#f5f3ff' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#16a34a', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>✓ Learning Outcomes (One per line)</label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#16a34a', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Learning Outcomes (One per line)</label>
                 <textarea rows={3} value={moduleOutcomes} onChange={e => setModuleOutcomes(e.target.value)} placeholder="e.g. Build a fully functional REST API with CRUD operations&#10;Secure endpoints with JWT authentication"
                   style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #bbf7d0', fontSize: 13, resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: '#f0fdf4' }} />
               </div>

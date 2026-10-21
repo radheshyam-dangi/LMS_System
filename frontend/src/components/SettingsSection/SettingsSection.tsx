@@ -259,9 +259,7 @@ export function SettingsSection({ currentUser, activeRole, accessToken }: Settin
       <header className="settings-header-row">
         <div className="settings-header-left">
           <h1 className="settings-main-title">Account Settings</h1>
-          <p className="settings-sub-heading">
-            Manage your personal profile, notification triggers, login security, and workspace preferences.
-          </p>
+         
         </div>
       </header>
 

@@ -3,7 +3,6 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { SetPasswordForm } from './components/auth/SetPasswordForm';
 import { AppLayout } from './components/layout/AppLayout';
 import { DashboardPage } from './pages/DashboardPage';
-import { HomePage } from './pages/HomePage';
 import { LoginPage } from './components/auth/LoginPage';
 import LPEditorPage from './pages/LPEditorPage';
 import { NotificationsPage } from './pages/NotificationsPage';
@@ -253,7 +252,7 @@ function App() {
           currentUser && accessToken ? (
             <Navigate to={getRoleDashboard(activeRole)} replace />
           ) : (
-            <HomePage onLoginClick={() => navigate('/login')} />
+            <Navigate to="/login" replace />
           )
         }
       />
@@ -263,7 +262,7 @@ function App() {
           currentUser && accessToken ? (
             <Navigate to={getRoleDashboard(activeRole)} replace />
           ) : (
-            <LoginPage onBackHome={() => navigate('/')} onLogin={handleLogin} />
+            <LoginPage onLogin={handleLogin} />
           )
         }
       />
@@ -278,10 +277,16 @@ function App() {
       <Route path="/learning-paths/new" element={ currentUser && accessToken && activeRole !== 'Trainee' ? <LPEditorPage /> : <Navigate to="/dashboard" replace /> } />
       <Route path="/learning-paths/:pathId/edit" element={ currentUser && accessToken && activeRole !== 'Trainee' ? <LPEditorPage /> : <Navigate to="/dashboard" replace /> } />
       <Route path="/learning-paths/:pathId" element={<ProtectedLayout section="Learning Paths" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-path/:pathId" element={<ProtectedLayout section="Learning Paths" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-path/:pathId/modules" element={<ProtectedLayout section="Modules" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-paths/:pathId/modules" element={<ProtectedLayout section="Modules" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-path/:pathId/module/:moduleId" element={<ProtectedLayout section="Module Details" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-paths/:pathId/module/:moduleId" element={<ProtectedLayout section="Module Details" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/learning-paths/:pathId/modules/:moduleId" element={<ProtectedLayout section="Module Details" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/modules" element={<ProtectedLayout section="Modules" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/modules/:moduleId" element={<ProtectedLayout section="Module Details" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
-      <Route path="/learning-paths/:pathId/modules/:moduleId" element={<ProtectedLayout section="Module Details" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/assignments" element={<ProtectedLayout section="Assignments" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
+      <Route path="/assignments/:id" element={<ProtectedLayout section="Assignments" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />
       <Route path="/trainer/assignments" element={<Navigate to="/assignments" replace />} />
       <Route path="/evaluations" element={<Navigate to="/assignments?status=pending" replace />} />
       <Route path="/users" element={<ProtectedLayout section="Users" currentUser={currentUser} accessToken={accessToken} activeRole={activeRole} onLogout={handleLogout} onRoleChange={handleRoleChange} />} />

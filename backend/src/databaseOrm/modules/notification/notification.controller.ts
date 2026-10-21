@@ -100,6 +100,16 @@ export class NotificationController {
     return { affected, unreadCount: 0 };
   }
 
+  @Delete('all')
+  async deleteAll(
+    @GetUser() currentUser: any,
+    @Headers('x-active-role') activeRole: string,
+  ) {
+    const userId = currentUser?.id || currentUser?.sub;
+    const count = await this.notificationService.deleteAll(userId, activeRole || 'trainee');
+    return { success: true, count };
+  }
+
   @Delete(':id')
   async deleteNotification(
     @Param('id') id: string,

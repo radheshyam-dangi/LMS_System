@@ -10,7 +10,11 @@ export function resolveAssignmentInstructions(assignment: any) {
   const isMeaningful = (value: unknown): value is string => {
     if (typeof value !== 'string' || isTiptapContentEmpty(value)) return false;
     const text = value.replace(/<[^>]*>/g, '').replace(/\u00a0/g, ' ').trim().toLowerCase();
-    return text !== 'assignment instructions...';
+    return (
+      text !== 'assignment instructions...' &&
+      text !== 'type "/" for commands or write instructions...' &&
+      text !== 'provide assignment instructions or description here...'
+    );
   };
 
   const content = isMeaningful(assignment?.instructions)

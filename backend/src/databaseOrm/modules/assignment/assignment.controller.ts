@@ -55,13 +55,21 @@ export class AssignmentController {
     const evaluatorId = currentUser?.id || currentUser?.sub;
     const isAdmin = this.assignmentService.isAdminUser(currentUser);
     
-    // Ensure they have permission (Trainer assigned it or Admin)
+    // Ensure they have permission (Trainer assigned it, created it, or Admin)
     if (!isAdmin) {
       const assigner = await this.assignmentService.resolveAssignerForInstance(
         submission.assignment, 
         submission.trainee.id
       );
-      if (assigner?.id !== evaluatorId) {
+      const tId = String(evaluatorId).toLowerCase();
+      const isAssigner = assigner && String(assigner.id).toLowerCase() === tId;
+      const isAssignmentCreator = submission.assignment?.createdBy && String(submission.assignment.createdBy.id).toLowerCase() === tId;
+      const isPathCreator =
+        (submission.assignment?.lesson?.module?.learningPath?.createdBy && String(submission.assignment.lesson.module.learningPath.createdBy.id).toLowerCase() === tId) ||
+        (submission.assignment?.module?.learningPath?.createdBy && String(submission.assignment.module.learningPath.createdBy.id).toLowerCase() === tId) ||
+        (submission.assignment?.learningPath?.createdBy && String(submission.assignment.learningPath.createdBy.id).toLowerCase() === tId);
+
+      if (!isAssigner && !isAssignmentCreator && !isPathCreator) {
         throw new ForbiddenException('Not authorized to view this submission.');
       }
     }

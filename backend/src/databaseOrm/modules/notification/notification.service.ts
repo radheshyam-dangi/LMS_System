@@ -200,4 +200,13 @@ export class NotificationService {
     await this.repository.remove(note);
     return true;
   }
+
+  async deleteAll(userId: string, activeRole: string): Promise<number> {
+    const role = activeRole.toLowerCase();
+    const result = await this.repository.delete({
+      userId,
+      recipientRole: role,
+    });
+    return result.affected ?? 0;
+  }
 }

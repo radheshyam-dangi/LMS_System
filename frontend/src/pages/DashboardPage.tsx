@@ -268,12 +268,12 @@ function useAnimatedValue(targetValue: number, duration: number = 800) {
 // Modern Executive MetricCard Component
 // ---------------------------------------------------------
 interface MetricCardProps {
-  icon: React.ReactNode;
-  iconBg: string;
-  iconColor: string;
+  icon?: React.ReactNode;
+  iconBg?: string;
+  iconColor?: string;
   value: string | number;
   label: string;
-  hint: string;
+  hint?: string;
   hintType?: 'positive' | 'neutral' | 'warning' | 'negative';
   trend?: string;
   progressPercent?: number;
@@ -284,7 +284,7 @@ interface MetricCardProps {
 function MetricCard({
   icon,
   iconBg,
-  iconColor,
+  iconColor = '#4f46e5',
   value,
   label,
   hint,
@@ -295,10 +295,11 @@ function MetricCard({
   actionText,
 }: MetricCardProps) {
   const isClickable = Boolean(onClick);
+  const hasHeader = Boolean(icon || trend || (isClickable && actionText));
 
   return (
     <div
-      className={`db-metric-card ${isClickable ? 'db-metric-card-interactive' : ''}`}
+      className={`db-metric-card ${!icon && !hint ? 'db-metric-card-compact' : ''} ${isClickable ? 'db-metric-card-interactive' : ''}`}
       onClick={onClick}
       role={isClickable ? 'button' : undefined}
       tabIndex={isClickable ? 0 : undefined}
@@ -313,24 +314,28 @@ function MetricCard({
           : undefined
       }
     >
-      <div className="db-metric-card-header">
-        <div className="db-metric-icon" style={{ backgroundColor: iconBg, color: iconColor }}>
-          {icon}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {trend && (
-            <span className={`db-metric-trend-badge ${hintType}`}>
-              {trend}
-            </span>
+      {hasHeader && (
+        <div className="db-metric-card-header" style={{ marginBottom: '8px' }}>
+          {icon && (
+            <div className="db-metric-icon" style={{ backgroundColor: iconBg, color: iconColor }}>
+              {icon}
+            </div>
           )}
-          {isClickable && actionText && (
-            <span className="db-metric-action-link">
-              <span>{actionText}</span>
-              <ChevronRight size={13} />
-            </span>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+            {trend && (
+              <span className={`db-metric-trend-badge ${hintType}`}>
+                {trend}
+              </span>
+            )}
+            {isClickable && actionText && (
+              <span className="db-metric-action-link">
+                <span>{actionText}</span>
+                <ChevronRight size={13} />
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       <div className="db-metric-value">{value}</div>
       <div className="db-metric-label">{label}</div>
       {typeof progressPercent === 'number' && (
@@ -341,7 +346,7 @@ function MetricCard({
           />
         </div>
       )}
-      <div className={`db-metric-hint ${hintType}`}>{hint}</div>
+      {hint && <div className={`db-metric-hint ${hintType}`}>{hint}</div>}
     </div>
   );
 }
@@ -359,9 +364,8 @@ function StreakCard({
   onCelebrate: (val: number) => void;
 }) {
   const animatedStreak = useAnimatedValue(currentStreak, 800);
-  const flameRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
   const [milestoneMsg, setMilestoneMsg] = useState<string | null>(null);
-  const [bounce, setBounce] = useState(false);
 
   useEffect(() => {
     const toLocalDateStr = (d: Date) => {
@@ -379,9 +383,6 @@ function StreakCard({
       localStorage.setItem(lsKey, todayStr);
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      setBounce(true);
-      setTimeout(() => setBounce(false), 300);
-
       let particleCount = 20;
       if (currentStreak === 7) {
         setMilestoneMsg('7-day streak achieved');
@@ -396,8 +397,8 @@ function StreakCard({
         setMilestoneMsg(null);
       }
 
-      if (!prefersReducedMotion && flameRef.current) {
-        const rect = flameRef.current.getBoundingClientRect();
+      if (!prefersReducedMotion && cardRef.current) {
+        const rect = cardRef.current.getBoundingClientRect();
         const originX = (rect.left + rect.width / 2) / window.innerWidth;
         const originY = (rect.top + rect.height / 2) / window.innerHeight;
 
@@ -414,20 +415,13 @@ function StreakCard({
   }, [currentStreak, activeToday, onCelebrate]);
 
   return (
-    <div className="db-metric-card">
-      <div className="db-metric-card-header">
-        <div
-          ref={flameRef}
-          className="db-metric-icon"
-          style={{
-            backgroundColor: '#fff7ed',
-            color: '#ea580c',
-            transform: bounce ? 'scale(1.25)' : 'scale(1)',
-            transition: 'transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        >
-          <Flame size={19} strokeWidth={1.75} />
-        </div>
+    <div className="db-metric-card" ref={cardRef}>
+      <div className="db-metric-card-header" style={{ minHeight: '22px', justifyContent: 'flex-end', marginBottom: '8px' }}>
+        {currentStreak > 0 && (
+          <span className="db-metric-trend-badge positive" style={{ background: '#fff7ed', color: '#ea580c' }}>
+            Active
+          </span>
+        )}
       </div>
       <div className="db-metric-value">{animatedStreak} days</div>
       <div className="db-metric-label">Current Streak</div>
@@ -462,8 +456,10 @@ function DashboardSkeleton({ isTrainee = true, isAdmin = false }: { isTrainee?: 
       <div className={`db-metrics-grid ${isAdmin ? 'admin-grid' : ''}`}>
         {Array.from({ length: cardCount }).map((_, idx) => (
           <div key={idx} className="db-skeleton-metric-card">
-            <div className="db-skeleton-shimmer" style={{ width: '38px', height: '38px', borderRadius: '11px' }} />
-            <div className="db-skeleton-shimmer" style={{ width: '90px', height: '28px', marginTop: '6px' }} />
+            {!isTrainee && (
+              <div className="db-skeleton-shimmer" style={{ width: '38px', height: '38px', borderRadius: '11px' }} />
+            )}
+            <div className="db-skeleton-shimmer" style={{ width: '90px', height: '28px', marginTop: isTrainee ? '14px' : '6px' }} />
             <div className="db-skeleton-shimmer" style={{ width: '120px', height: '14px' }} />
             <div className="db-skeleton-shimmer" style={{ width: '75px', height: '12px', marginTop: '4px' }} />
           </div>
@@ -652,7 +648,7 @@ export function DashboardPage({
   const [showInviteModal, setShowInviteModal] = useState(false);
   useScrollLock(showInviteModal);
   const location = useLocation();
-  const { pathId: urlPathId } = useParams<{ pathId?: string }>();
+  const { pathId: urlPathId, moduleId: urlModuleId } = useParams<{ pathId?: string; moduleId?: string }>();
   const [selectedPathId, setSelectedPathId] = useState<string | null>(urlPathId || (location.state as any)?.pathId || null);
   const [selectedPathTitle, setSelectedPathTitle] = useState<string>((location.state as any)?.pathName || '');
   const [selectedLpTitle, setSelectedLpTitle] = useState<string | null>(null);
@@ -663,6 +659,14 @@ export function DashboardPage({
 
   const [searchParams, setSearchParams] = useSearchParams();
   const prevRoleRef = useRef(activeRole);
+  const [timeGreeting, setTimeGreeting] = useState<string>(getTimeGreeting);
+
+  useEffect(() => {
+    const updateGreeting = () => setTimeGreeting(getTimeGreeting());
+    updateGreeting();
+    const interval = setInterval(updateGreeting, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (prevRoleRef.current !== activeRole) {
@@ -760,6 +764,19 @@ export function DashboardPage({
   const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   const [charts, setCharts] = useState<ChartBundle | null>(null);
+
+  useEffect(() => {
+    if (!selectedLpTitle) {
+      if (traineePath?.title) {
+        setSelectedLpTitle(traineePath.title);
+      } else if (allPaths && allPaths.length > 0) {
+        const assigned = allPaths.find((p: any) => p.assignedToTraineeIds?.includes(currentUser.id));
+        if (assigned?.title) {
+          setSelectedLpTitle(assigned.title);
+        }
+      }
+    }
+  }, [traineePath, allPaths, currentUser.id, selectedLpTitle]);
 
   useEffect(() => {
     if (charts?.moduleCompletion && charts.moduleCompletion.length > 0 && !selectedLpTitle) {
@@ -1070,13 +1087,19 @@ export function DashboardPage({
             highlightPathId={selectedPathId}
             currentUser={{
               id: currentUser?.id ?? 'trainee-99',
-              name: currentUser?.firstName ?? 'User',
+              name: [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ') || currentUser?.name || 'User',
+              firstName: currentUser?.firstName,
+              lastName: currentUser?.lastName,
+              email: currentUser?.email,
               role: activeRole as any,
+              roles: currentUser?.roles,
+              primaryRole: currentUser?.primaryRole,
+              avatarUrl: currentUser?.avatarUrl,
             }}
             accessToken={accessToken}
             onNavigateToModules={(pathId: string, pathName: string) => {
               if (isTrainee) {
-                navigate(`/learning-paths/${pathId}`, { state: { pathId, pathName } });
+                navigate(`/learning-path/${pathId}/modules`, { state: { pathId, pathName } });
                 setSelectedPathId(pathId);
                 setSelectedPathTitle(pathName);
               } else {
@@ -1175,14 +1198,67 @@ export function DashboardPage({
     ];
     const { streak: currentStreak, activeToday } = calculateStreak(combinedTimestamps);
 
+    const assignedPaths = (allPaths || []).filter((p: any) => {
+      if (isTrainerDrillDown && targetTraineeId) {
+        return p.assignedToTraineeIds?.includes(targetTraineeId);
+      }
+      return p.assignedToTraineeIds?.includes(currentUser.id);
+    });
+
+    const activePaths = assignedPaths.length > 0
+      ? assignedPaths
+      : (allPaths || []).filter((p: any) => !['draft', 'archived', 'deleted'].includes(String(p.status || '').toLowerCase()));
+
     const availableLps = Array.from(new Set([
+      ...(activePaths || []).map((p: any) => p.title || p.name),
       ...(charts?.pathPerformance || []).map((p: any) => p.title),
       ...(charts?.moduleCompletion || []).map((mc: any) => mc.pathTitle),
     ].filter(Boolean)));
 
-    let filteredModuleCompletion = (charts?.moduleCompletion || []).filter(
-      (mc: any) => !selectedLpTitle || mc.pathTitle === selectedLpTitle
+    const currentSelectedPath = (allPaths || []).find(
+      (p: any) => (p.title || p.name) === selectedLpTitle
     );
+
+    let filteredModuleCompletion: any[] = [];
+    if (currentSelectedPath && currentSelectedPath.modules && currentSelectedPath.modules.length > 0) {
+      filteredModuleCompletion = currentSelectedPath.modules.map((mod: any) => {
+        const mc = (charts?.moduleCompletion || []).find((c: any) => c.id === mod.id);
+        const summaryProgress = pathProgressSummary[currentSelectedPath.id]?.moduleProgresses?.[mod.id];
+        const modPercent = mod.progressPercent ?? mod.completionPercent;
+
+        let percent = 0;
+        if (typeof summaryProgress === 'number') {
+          percent = summaryProgress;
+        } else if (typeof modPercent === 'number') {
+          percent = modPercent;
+        } else if (mc?.percent !== undefined) {
+          percent = mc.percent;
+        }
+
+        return {
+          id: mod.id,
+          title: mod.title || mc?.title || 'Module',
+          pathTitle: currentSelectedPath.title || currentSelectedPath.name || selectedLpTitle,
+          percent: Math.min(100, Math.max(0, Math.round(percent))),
+          completed: mc?.completed ?? (percent === 100 ? 1 : 0),
+          total: mc?.total ?? 1,
+          averageScore: mc?.averageScore ?? 0,
+        };
+      });
+    } else {
+      filteredModuleCompletion = (charts?.moduleCompletion || [])
+        .filter((mc: any) => !selectedLpTitle || mc.pathTitle === selectedLpTitle)
+        .map((mc: any) => {
+          const matchedPath = (allPaths || []).find((p: any) => (p.title || p.name) === mc.pathTitle);
+          if (matchedPath && pathProgressSummary[matchedPath.id]?.moduleProgresses?.[mc.id] !== undefined) {
+            return {
+              ...mc,
+              percent: Math.min(100, Math.max(0, Math.round(pathProgressSummary[matchedPath.id].moduleProgresses[mc.id]))),
+            };
+          }
+          return mc;
+        });
+    }
 
     if (filteredModuleCompletion.length === 0 && selectedLpTitle) {
       filteredModuleCompletion = [
@@ -1220,17 +1296,6 @@ export function DashboardPage({
 
     // Build Radar Chart Data
     let skillData: Array<{ name: string; percent: number; count: number; pathId?: string }> = [];
-
-    const assignedPaths = (allPaths || []).filter((p: any) => {
-      if (isTrainerDrillDown && targetTraineeId) {
-        return p.assignedToTraineeIds?.includes(targetTraineeId);
-      }
-      return p.assignedToTraineeIds?.includes(currentUser.id);
-    });
-
-    const activePaths = assignedPaths.length > 0
-      ? assignedPaths
-      : (allPaths || []).filter((p: any) => !['draft', 'archived', 'deleted'].includes(String(p.status || '').toLowerCase()));
 
     if (activePaths.length > 0) {
       skillData = activePaths.map((path: any) => {
@@ -1305,14 +1370,16 @@ export function DashboardPage({
             <div className="db-header-title-wrap">
               <div className="db-header-title-row">
                 <h1 className="db-header-title">
-                  {isTrainerDrillDown ? 'Trainee Progress Inspection' : `Good morning, ${firstName}`}
+                  {isTrainerDrillDown ? 'Trainee Progress Inspection' : `${timeGreeting}, ${firstName}`}
                 </h1>
                 <span className="db-role-badge">
                   <span>{isTrainerDrillDown ? 'Inspection' : 'Trainee'}</span>
                 </span>
               </div>
               <p className="db-header-subtitle">
-                {progressPercent}% completed across {currentPathTitle}.
+                {isTrainerDrillDown
+                  ? 'Viewing individual progress and activity for cohort inspection.'
+                  : 'Welcome back. Review your assigned learning paths, modules, and coursework.'}
               </p>
             </div>
           </div>
@@ -1333,14 +1400,12 @@ export function DashboardPage({
         <section className="db-metrics-grid">
           {/* 1. Lesson Progress */}
           <MetricCard
-            icon={<TrendingUp size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#4f46e5"
             value={`${lessonProgressPct}%`}
             label="Lesson Progress"
             hint={`${progressStats.completedLessons}/${progressStats.totalLessons} lessons`}
             hintType="positive"
             progressPercent={lessonProgressPct}
+            iconColor="#4f46e5"
           />
 
           {/* 2. Current Streak */}
@@ -1355,9 +1420,6 @@ export function DashboardPage({
 
           {/* 3. Avg. Evaluation Score */}
           <MetricCard
-            icon={<Award size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#475569"
             value={dbData.totalMaxScore === 0 ? '0/0' : `${fmt(dbData.totalGainedScore ?? 0)}/${fmt(dbData.totalMaxScore ?? 0)}`}
             label="Avg. Score"
             hint={dbData.totalMaxScore === 0 ? 'No graded work yet' : `Average: ${fmt(dbData.averageScore)}%`}
@@ -1367,21 +1429,16 @@ export function DashboardPage({
 
           {/* 4. Tasks Completed */}
           <MetricCard
-            icon={<CheckCircle2 size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#475569"
             value={dbData.totalTasks === 0 ? '0/0' : `${dbData.tasksCompleted ?? 0}/${dbData.totalTasks}`}
             label="Tasks Completed"
             hint={dbData.totalTasks === 0 ? 'No tasks assigned' : `${tasksSubmittedPct}% submitted`}
             hintType="positive"
             progressPercent={tasksSubmittedPct}
+            iconColor="#10b981"
           />
 
           {/* 5. Learning Velocity */}
           <MetricCard
-            icon={<Zap size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#475569"
             value={`${dbData.learningVelocity ?? 0} items/wk`}
             label="Learning Velocity"
             hint="Tasks, Lessons & Resources (7d)"
@@ -1390,9 +1447,6 @@ export function DashboardPage({
 
           {/* 6. Active Learning Paths */}
           <MetricCard
-            icon={<Compass size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#475569"
             value={String(dbData.activeEnrollments || 0)}
             label="Active Paths"
             hint={(dbData.activeEnrollments ?? 0) > 0 ? 'Enrolled curriculum paths' : 'No active paths'}
@@ -1429,7 +1483,7 @@ export function DashboardPage({
                 <RadarChart
                   cx="50%"
                   cy="50%"
-                  outerRadius="68%"
+                  outerRadius="72%"
                   data={radarChartData}
                   margin={{ top: 10, right: 25, bottom: 10, left: 25 }}
                 >
@@ -1503,30 +1557,6 @@ export function DashboardPage({
                 </RadarChart>
               </ResponsiveContainer>
             </div>
-
-            {/* Path Progress Breakdown List */}
-            {realPathItems.length > 0 && (
-              <div className="db-skill-paths-breakdown">
-                {realPathItems.slice(0, 3).map((pathItem, idx) => (
-                  <div key={idx} className="db-skill-path-item">
-                    <div className="db-skill-path-left">
-                      <span className="db-skill-path-name" title={pathItem.name}>
-                        {pathItem.name}
-                      </span>
-                      <span className="db-skill-path-sub">
-                        {pathItem.count} module{pathItem.count !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    <div className="db-skill-path-bar-wrap">
-                      <div className="db-skill-path-bar-fill" style={{ width: `${Math.min(100, Math.round(pathItem.percent))}%` }} />
-                    </div>
-                    <span className="db-skill-path-pill">
-                      {Math.round(pathItem.percent)}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </section>
 
@@ -1634,7 +1664,6 @@ export function DashboardPage({
 
   // 🟢 B. TRAINER DASHBOARD VIEW
   if (isTrainer) {
-    const timeGreeting = getTimeGreeting();
     const trainerPendingReviews = (dbData as any).trainerPendingReviews ?? pendingSubmissions.length ?? 0;
     const totalTrainees = dbData.totalTrainees || 0;
     const lpsCreated = (dbData as any).trainerLpsCreated || 0;
@@ -1691,53 +1720,32 @@ export function DashboardPage({
           </div>
         </header>
 
-        {/* 3-Card Balanced & Clickable Metrics Grid */}
+        {/* 3-Card Balanced Metrics Grid (Compact without icons or hints) */}
         <section className="db-metrics-grid trainer-grid">
           {/* 1. Active Trainees */}
           <MetricCard
-            icon={<Users size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#475569"
             value={totalTrainees}
             label="Assigned Trainees"
-            hint={(dbData as any).platformTotalTrainees ? `${(dbData as any).platformTotalTrainees} platform total` : "Across your cohorts"}
-            hintType="neutral"
-            onClick={() => navigate('/users')}
-            actionText="View"
           />
 
           {/* 2. Learning Paths */}
           <MetricCard
-            icon={<Compass size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#475569"
             value={lpsCreated}
             label="Learning Paths"
-            hint={typeof (dbData as any).draftLpsCount === 'number' && (dbData as any).draftLpsCount > 0 ? `${(dbData as any).draftLpsCount} drafts pending` : "Curricula authored"}
-            hintType={typeof (dbData as any).draftLpsCount === 'number' && (dbData as any).draftLpsCount > 0 ? 'warning' : 'neutral'}
-            onClick={() => navigate('/learning-paths')}
-            actionText="Manage"
           />
 
           {/* 3. Total Assignments */}
           <MetricCard
-            icon={<Layers size={19} strokeWidth={1.75} />}
-            iconBg="#f8fafc"
-            iconColor="#475569"
             value={assignmentsTotal}
             label="Created Assignments"
-            hint={`${assignmentsInternal} internal • ${assignmentsExternal} external`}
-            hintType="neutral"
-            onClick={() => navigate('/assignments')}
-            actionText="Browse"
           />
         </section>
 
         {/* Assigned LPs & Trainee Progress Chart */}
-        <section style={{ marginBottom: '24px' }}>
+        <section style={{ marginBottom: '20px' }}>
           <InteractiveTraineeProgress
             data={((dbData as any).assignedTraineesProgress || [])}
-            isLoading={false}
+            isLoading={isLoadingMetrics}
             accessToken={accessToken}
           />
         </section>
@@ -1944,7 +1952,7 @@ export function DashboardPage({
         <div className="db-header-left">
           <div className="db-header-title-wrap">
             <div className="db-header-title-row">
-              <h1 className="db-header-title">Good morning, {firstName}</h1>
+              <h1 className="db-header-title">{timeGreeting}, {firstName}</h1>
               <span className="db-role-badge">
                 <span>Administrator</span>
               </span>
@@ -2033,7 +2041,7 @@ export function DashboardPage({
       <section style={{ marginBottom: '24px' }}>
         <InteractiveTraineeProgress
           data={((dbData as any).assignedTraineesProgress || [])}
-          isLoading={false}
+          isLoading={isLoadingMetrics}
           accessToken={accessToken}
         />
       </section>

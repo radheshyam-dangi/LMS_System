@@ -31,6 +31,7 @@ import {
   Award
 } from "lucide-react";
 import "./LearningPaths.css";
+import { DeletePathModal } from "./DeletePathModal";
 import { learningPathService } from "../../services/learningPathService";
 import { userService } from "../../services/userService";
 import { progressService } from "../../services/lmsApi";
@@ -52,12 +53,68 @@ interface LearningPathsSectionProps {
     lastName?: string;
     email?: string;
     role: RoleName;
+    roles?: (RoleName | string)[];
+    primaryRole?: any;
+    avatarUrl?: string;
   };
   accessToken: string;
   onNavigateToModules: (pathId: string, pathName: string, traineeId?: string) => void;
   onBackToAllPaths?: () => void;
   highlightPathId?: string | null;
 }
+
+export const isUserTraineeEligible = (user: any): boolean => {
+  if (!user) return false;
+  const userRoles: string[] = [];
+
+  const addRole = (r: any) => {
+    if (!r) return;
+    if (typeof r === "string") {
+      if (r.includes(",")) {
+        r.split(",").forEach((sub) => userRoles.push(sub.trim().toLowerCase()));
+      } else {
+        userRoles.push(r.toLowerCase());
+      }
+    } else if (typeof r === "object") {
+      if (r.name) addRole(r.name);
+      if (r.role) addRole(r.role);
+      if (r.roleName) addRole(r.roleName);
+      if (r.role_name) addRole(r.role_name);
+      if (r.title) addRole(r.title);
+      if (r.primaryRole) addRole(r.primaryRole);
+    }
+  };
+
+  addRole(user.role);
+  addRole(user.primaryRole);
+  addRole(user.primary_role);
+  addRole(user.roleName);
+  addRole(user.role_name);
+  addRole(user.activeRole);
+
+  if (Array.isArray(user.roles)) {
+    user.roles.forEach(addRole);
+  }
+  if (Array.isArray(user.userRoles)) {
+    user.userRoles.forEach(addRole);
+  }
+  if (Array.isArray(user.secondaryRoles)) {
+    user.secondaryRoles.forEach(addRole);
+  }
+  if (Array.isArray(user.allRoles)) {
+    user.allRoles.forEach(addRole);
+  }
+
+  return userRoles.some(
+    (r) =>
+      r === "trainee" ||
+      r === "learner" ||
+      r === "student" ||
+      r.includes("trainee") ||
+      r.includes("learner") ||
+      r.includes("student")
+  );
+};
 
 interface TraineeUser {
   id: string;
@@ -449,10 +506,15 @@ export function LearningPathsSection({
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [selectedPathForAssignment, setSelectedPathForAssignment] = useState<LearningPath | null>(null);
   const [allTrainees, setAllTrainees] = useState<TraineeUser[]>([]);
+  const allFetchedUsersRef = useRef<any[]>([]);
   const [newlySelectedTraineeIds, setNewlySelectedTraineeIds] = useState<string[]>([]);
   const [traineeSearchQuery, setTraineeSearchQuery] = useState("");
   const [isLoadingTrainees, setIsLoadingTrainees] = useState(false);
   const [isSubmittingAssignment, setIsSubmittingAssignment] = useState(false);
+
+  // Delete Track Modal State
+  const [deleteTarget, setDeleteTarget] = useState<LearningPath | null>(null);
+  const [isDeletingPath, setIsDeletingPath] = useState(false);
 
   /* ==========================================================================
      DATA FETCHING
@@ -486,25 +548,153 @@ export function LearningPathsSection({
     if (isAdmin || isTrainer) {
       userService
         .fetchAllUsers(accessToken)
-        .then((rawUsersList) => {
-          const eligible = (rawUsersList || []).filter((user: any) => {
-            const userRoles: string[] = [];
-            if (typeof user.role === "string") userRoles.push(user.role.toLowerCase());
-            if (typeof user.primaryRole === "string") userRoles.push(user.primaryRole.toLowerCase());
-            if (user.primaryRole?.name) userRoles.push(user.primaryRole.name.toLowerCase());
-            if (Array.isArray(user.roles)) {
-              user.roles.forEach((r: any) => {
-                if (typeof r === "string") userRoles.push(r.toLowerCase());
-                if (r?.name) userRoles.push(r.name.toLowerCase());
+        .then((rawUsersList: any) => {
+          const rawUsers: any[] = Array.isArray(rawUsersList) ? rawUsersList : [];
+          allFetchedUsersRef.current = rawUsers;
+
+          const userLookupMap = new Map<string, any>();
+          rawUsers.forEach((u: any) => {
+            if (u.id) userLookupMap.set(String(u.id).toLowerCase(), u);
+            if (u.email) userLookupMap.set(String(u.email).toLowerCase(), u);
+          });
+
+          // Check local stored session roles for currentUser as supplementary fallback
+          let storedUserRoles: string[] = [];
+          try {
+            const savedStr = localStorage.getItem("skillforge_user");
+            if (savedStr) {
+              const parsed = JSON.parse(savedStr);
+              if (Array.isArray(parsed.roles)) storedUserRoles.push(...parsed.roles);
+              if (parsed.primaryRole) storedUserRoles.push(parsed.primaryRole);
+              if (parsed.role) storedUserRoles.push(parsed.role);
+              if (parsed.activeRole) storedUserRoles.push(parsed.activeRole);
+            }
+            const activeRoleStr = localStorage.getItem("skillforge_active_role");
+            if (activeRoleStr) storedUserRoles.push(activeRoleStr);
+          } catch (e) {}
+
+          const currentUserHasTrainee =
+            isUserTraineeEligible(currentUser) ||
+            storedUserRoles.some((r) => /trainee|learner|student/i.test(String(r)));
+
+          // Collect user IDs that are enrolled in any learning path
+          const enrolledTraineeIds = new Set<string>();
+          (paths || []).forEach((p) => {
+            if (Array.isArray(p.assignedToTraineeIds)) {
+              p.assignedToTraineeIds.forEach((id) => {
+                if (id) enrolledTraineeIds.add(String(id).toLowerCase());
               });
             }
-            return userRoles.includes("trainee");
           });
+
+          // Collect creator IDs across all learning paths
+          const ownerUserIds = new Set<string>();
+          (paths || []).forEach((p) => {
+            const cId = p.createdBy?.id || (typeof p.createdBy === "string" ? p.createdBy : null) || (p as any).createdById;
+            if (cId) ownerUserIds.add(String(cId).toLowerCase());
+          });
+
+          const eligible: TraineeUser[] = rawUsers
+            .map((user: any): TraineeUser => ({
+              id: user.id,
+              name: user.name || `${user.firstName || ""} ${user.lastName || ""}`.trim() || user.email,
+              firstName: user.firstName,
+              lastName: user.lastName,
+              email: user.email,
+              avatarUrl: user.avatarUrl,
+              roles: user.roles,
+              primaryRole: user.primaryRole,
+            }))
+            .filter((user: any) => {
+              const uid = String(user.id || "").toLowerCase();
+              const uEmail = String(user.email || "").toLowerCase();
+
+              // 1. If this is currentUser and currentUser has trainee role (for ownself)
+              const isMatchCurrentUser =
+                (currentUser.id && uid === String(currentUser.id).toLowerCase()) ||
+                (currentUser.email && uEmail === String(currentUser.email).toLowerCase());
+              if (isMatchCurrentUser && currentUserHasTrainee) {
+                return true;
+              }
+
+              // 2. Direct trainee role check
+              if (isUserTraineeEligible(user)) {
+                return true;
+              }
+
+              // 3. User is already enrolled in any learning path as a trainee
+              if (enrolledTraineeIds.has(uid)) {
+                return true;
+              }
+
+              // 4. User is an owner/creator of any path and that user has trainee role
+              if (ownerUserIds.has(uid)) {
+                const dbUser = userLookupMap.get(uid);
+                if (dbUser && isUserTraineeEligible(dbUser)) {
+                  return true;
+                }
+              }
+
+              return false;
+            });
+
+          // Ensure current user is present if they have trainee role (for ownself)
+          if (currentUserHasTrainee && currentUser.id) {
+            const alreadyIncluded = eligible.some(
+              (u: any) =>
+                String(u.id).toLowerCase() === String(currentUser.id).toLowerCase() ||
+                (currentUser.email && String(u.email || "").toLowerCase() === String(currentUser.email).toLowerCase())
+            );
+
+            if (!alreadyIncluded) {
+              eligible.unshift({
+                id: currentUser.id,
+                name: currentUser.name || `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim() || currentUser.email,
+                firstName: currentUser.firstName,
+                lastName: currentUser.lastName,
+                email: currentUser.email || "",
+                avatarUrl: currentUser.avatarUrl,
+                roles: currentUser.roles,
+                primaryRole: currentUser.primaryRole,
+              });
+            }
+          }
+
+          // Ensure all path owners/creators who have trainee role are visible to all trainers
+          (paths || []).forEach((p) => {
+            const cId = p.createdBy?.id || (typeof p.createdBy === "string" ? p.createdBy : null) || (p as any).createdById;
+            const cEmail = typeof p.createdBy === "object" ? p.createdBy?.email : null;
+            const dbCreator = (cId && userLookupMap.get(String(cId).toLowerCase())) || (cEmail && userLookupMap.get(String(cEmail).toLowerCase()));
+            const creatorObj = dbCreator || (typeof p.createdBy === "object" ? p.createdBy : null);
+
+            if (creatorObj && creatorObj.id && (isUserTraineeEligible(creatorObj) || (dbCreator && isUserTraineeEligible(dbCreator)))) {
+              const creatorId = String(creatorObj.id).toLowerCase();
+              const creatorEmail = String(creatorObj.email || "").toLowerCase();
+              const alreadyIncluded = eligible.some(
+                (u: any) =>
+                  String(u.id).toLowerCase() === creatorId ||
+                  (creatorEmail && String(u.email || "").toLowerCase() === creatorEmail)
+              );
+              if (!alreadyIncluded) {
+                eligible.push({
+                  id: creatorObj.id,
+                  name: `${creatorObj.firstName || ""} ${creatorObj.lastName || ""}`.trim() || creatorObj.name || creatorObj.email,
+                  firstName: creatorObj.firstName,
+                  lastName: creatorObj.lastName,
+                  email: creatorObj.email || "",
+                  avatarUrl: creatorObj.avatarUrl,
+                  roles: creatorObj.roles,
+                  primaryRole: creatorObj.primaryRole,
+                });
+              }
+            }
+          });
+
           setAllTrainees(eligible);
         })
         .catch(() => {});
     }
-  }, [accessToken, isAdmin, isTrainer]);
+  }, [accessToken, isAdmin, isTrainer, currentUser, paths]);
 
   // Load Cohort details when a specific path modal is triggered
   useEffect(() => {
@@ -567,6 +757,13 @@ export function LearningPathsSection({
       (path as any).userId ||
       null
     );
+  };
+
+  const getCreatorEmail = (path: LearningPath): string | null => {
+    if (path.createdBy && typeof path.createdBy === "object" && (path.createdBy as any).email) {
+      return String((path.createdBy as any).email).toLowerCase();
+    }
+    return null;
   };
 
   const isCurrentAuthor = (path: LearningPath): boolean => {
@@ -747,11 +944,176 @@ export function LearningPathsSection({
      ========================================================================== */
 
   // Open Assign Modal
-  const handleOpenAssignModal = (path: LearningPath) => {
+  const handleOpenAssignModal = async (path: LearningPath) => {
     setSelectedPathForAssignment(path);
     setNewlySelectedTraineeIds([]);
     setTraineeSearchQuery("");
     setIsAssignModalOpen(true);
+    setIsLoadingTrainees(true);
+
+    try {
+      const rawUsersList: any = await userService.fetchAllUsers(accessToken);
+      const rawUsers: any[] = Array.isArray(rawUsersList) ? rawUsersList : [];
+      allFetchedUsersRef.current = rawUsers;
+
+      const userLookupMap = new Map<string, any>();
+      rawUsers.forEach((u: any) => {
+        if (u.id) userLookupMap.set(String(u.id).toLowerCase(), u);
+        if (u.email) userLookupMap.set(String(u.email).toLowerCase(), u);
+      });
+
+      let storedUserRoles: string[] = [];
+      try {
+        const savedStr = localStorage.getItem("skillforge_user");
+        if (savedStr) {
+          const parsed = JSON.parse(savedStr);
+          if (Array.isArray(parsed.roles)) storedUserRoles.push(...parsed.roles);
+          if (parsed.primaryRole) storedUserRoles.push(parsed.primaryRole);
+          if (parsed.role) storedUserRoles.push(parsed.role);
+          if (parsed.activeRole) storedUserRoles.push(parsed.activeRole);
+        }
+        const activeRoleStr = localStorage.getItem("skillforge_active_role");
+        if (activeRoleStr) storedUserRoles.push(activeRoleStr);
+      } catch (e) {}
+
+      const currentUserHasTrainee =
+        isUserTraineeEligible(currentUser) ||
+        storedUserRoles.some((r) => /trainee|learner|student/i.test(String(r)));
+
+      const creator = path.createdBy;
+      const creatorId =
+        creator?.id ||
+        (typeof creator === "string" ? creator : null) ||
+        (path as any).createdById;
+      const creatorEmail = typeof creator === "object" ? creator?.email : null;
+
+      const dbCreator =
+        (creatorId && userLookupMap.get(String(creatorId).toLowerCase())) ||
+        (creatorEmail && userLookupMap.get(String(creatorEmail).toLowerCase()));
+      const creatorObj = dbCreator || (typeof creator === "object" ? creator : null);
+
+      const creatorHasTrainee =
+        (creatorObj && isUserTraineeEligible(creatorObj)) ||
+        (dbCreator && isUserTraineeEligible(dbCreator)) ||
+        (creator && isUserTraineeEligible(creator));
+
+      // Collect user IDs that are enrolled in any learning path
+      const enrolledTraineeIds = new Set<string>();
+      (paths || []).forEach((p) => {
+        if (Array.isArray(p.assignedToTraineeIds)) {
+          p.assignedToTraineeIds.forEach((id) => {
+            if (id) enrolledTraineeIds.add(String(id).toLowerCase());
+          });
+        }
+      });
+
+      const eligible: TraineeUser[] = rawUsers
+        .map((user: any): TraineeUser => ({
+          id: user.id,
+          name:
+            user.name ||
+            `${user.firstName || ""} ${user.lastName || ""}`.trim() ||
+            user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+          roles: user.roles,
+          primaryRole: user.primaryRole,
+        }))
+        .filter((user: any) => {
+          const uid = String(user.id || "").toLowerCase();
+          const uEmail = String(user.email || "").toLowerCase();
+
+          // 1. Current user with trainee role (for ownself)
+          const isMatchCurrentUser =
+            (currentUser.id && uid === String(currentUser.id).toLowerCase()) ||
+            (currentUser.email && uEmail === String(currentUser.email).toLowerCase());
+          if (isMatchCurrentUser && currentUserHasTrainee) {
+            return true;
+          }
+
+          // 2. Direct trainee role check
+          if (isUserTraineeEligible(user)) {
+            return true;
+          }
+
+          // 3. User is already enrolled in any learning path as a trainee
+          if (enrolledTraineeIds.has(uid)) {
+            return true;
+          }
+
+          // 4. Current learning path creator with trainee role (for other trainers)
+          const isPathCreator =
+            (creatorId && uid === String(creatorId).toLowerCase()) ||
+            (creatorEmail && uEmail === String(creatorEmail).toLowerCase());
+          if (isPathCreator && creatorHasTrainee) {
+            return true;
+          }
+
+          return false;
+        });
+
+      // Ensure current user is included if they have trainee role (for ownself)
+      if (currentUserHasTrainee && currentUser?.id) {
+        const cId = String(currentUser.id).toLowerCase();
+        const cEmail = String(currentUser.email || "").toLowerCase();
+        const exists = eligible.some(
+          (u) =>
+            String(u.id).toLowerCase() === cId ||
+            (cEmail && String(u.email || "").toLowerCase() === cEmail)
+        );
+        if (!exists) {
+          const cleanName =
+            `${currentUser.firstName || ""} ${currentUser.lastName || ""}`.trim() ||
+            currentUser.name ||
+            currentUser.email;
+          eligible.unshift({
+            id: currentUser.id,
+            name: cleanName,
+            firstName: currentUser.firstName,
+            lastName: currentUser.lastName,
+            email: currentUser.email || "",
+            avatarUrl: currentUser.avatarUrl,
+            roles: currentUser.roles,
+            primaryRole: currentUser.primaryRole,
+          });
+        }
+      }
+
+      // Ensure path creator is included if they have trainee role (for other trainers)
+      if (creatorHasTrainee && creatorObj && creatorObj.id) {
+        const cId = String(creatorObj.id).toLowerCase();
+        const cEmail = String(creatorObj.email || "").toLowerCase();
+        const exists = eligible.some(
+          (u) =>
+            String(u.id).toLowerCase() === cId ||
+            (cEmail && String(u.email || "").toLowerCase() === cEmail)
+        );
+        if (!exists) {
+          const cleanName =
+            `${creatorObj.firstName || ""} ${creatorObj.lastName || ""}`.trim() ||
+            creatorObj.name ||
+            creatorObj.email;
+          eligible.unshift({
+            id: creatorObj.id,
+            name: cleanName,
+            firstName: creatorObj.firstName,
+            lastName: creatorObj.lastName,
+            email: creatorObj.email || "",
+            avatarUrl: creatorObj.avatarUrl,
+            roles: creatorObj.roles,
+            primaryRole: creatorObj.primaryRole,
+          });
+        }
+      }
+
+      setAllTrainees(eligible);
+    } catch (err) {
+      console.error("Failed to load trainees in assign modal", err);
+    } finally {
+      setIsLoadingTrainees(false);
+    }
   };
 
   const handleToggleTrainee = (traineeId: string) => {
@@ -764,8 +1126,11 @@ export function LearningPathsSection({
 
   const handleSelectAllAvailableTrainees = () => {
     if (!selectedPathForAssignment) return;
+    const assignedIdsSet = new Set(
+      (selectedPathForAssignment.assignedToTraineeIds || []).map((id: any) => String(id).toLowerCase())
+    );
     const availableIds = allTrainees
-      .filter((t) => !selectedPathForAssignment.assignedToTraineeIds?.includes(t.id))
+      .filter((t) => !assignedIdsSet.has(String(t.id).toLowerCase()))
       .map((t) => t.id);
     setNewlySelectedTraineeIds(availableIds);
   };
@@ -816,21 +1181,24 @@ export function LearningPathsSection({
     }
   };
 
-  // Delete Track
-  const handleDeletePath = async (path: LearningPath) => {
-    const pathTitle = path.title || path.name || "Untitled Track";
-    const { modulesCount, lessonsCount, tasksCount, enrolledCount } = getPathMetrics(path);
+  // Delete Track - opens custom confirmation modal
+  const handleDeleteClick = (path: LearningPath) => {
+    setDeleteTarget(path);
+  };
 
-    const message = `Are you sure you want to permanently delete "${pathTitle}"?\n\nThis will remove:\n• ${modulesCount} Modules\n• ${lessonsCount} Lessons\n• ${tasksCount} Tasks / Assignments\n• Roster progress for ${enrolledCount} enrolled trainees\n\nThis action cannot be undone.`;
-
-    if (!window.confirm(message)) return;
-
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    const pathTitle = deleteTarget.title || deleteTarget.name || "Untitled Track";
+    setIsDeletingPath(true);
     try {
-      await learningPathService.deletePath(path.id, accessToken);
-      setPaths((prev) => prev.filter((p) => p.id !== path.id));
+      await learningPathService.deletePath(deleteTarget.id, accessToken);
+      setPaths((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       toast.success(`Track "${pathTitle}" has been removed.`);
+      setDeleteTarget(null);
     } catch (err: any) {
       toast.error(err.message ?? "Failed to delete Learning Path.");
+    } finally {
+      setIsDeletingPath(false);
     }
   };
 
@@ -846,8 +1214,8 @@ export function LearningPathsSection({
           <h1 className="learning-paths-main-title">Learning Paths</h1>
           <p className="learning-paths-sub-heading">
             {isTrainee
-              ? "Follow structured engineering curricula to build hands-on skills, complete assessments, and track competencies."
-              : "Design structured curricula, sequence learning modules, and monitor cohort progression across all assigned tracks."}
+              ? ""
+              : ""}
           </p>
         </div>
 
@@ -878,11 +1246,12 @@ export function LearningPathsSection({
             }}
             role="button"
             tabIndex={0}
-            title="Click to view all tracks"
           >
-            <div className="lp-metric-icon-box">
-              <BookOpen size={18} />
-            </div>
+            {!isTrainee && (
+              <div className="lp-metric-icon-box">
+                <BookOpen size={18} />
+              </div>
+            )}
             <div className="lp-metric-content">
               <span className="lp-metric-label">All Tracks</span>
               <div className="lp-metric-value-row">
@@ -892,8 +1261,8 @@ export function LearningPathsSection({
             </div>
           </div>
 
-          {/* Metric 2 (Trainer/Admin): My Authored Tracks */}
-          {!isTrainee && (
+          {/* Metric 2 (Admin): My Authored Tracks */}
+          {isAdmin && (
             <div
               className={`lp-metric-card ${activeScope === "Mine" ? "active-metric-filter" : ""}`}
               onClick={() => {
@@ -902,7 +1271,6 @@ export function LearningPathsSection({
               }}
               role="button"
               tabIndex={0}
-              title="Click to view tracks created by you"
             >
               <div className="lp-metric-icon-box">
                 <Layers size={18} strokeWidth={1.75} />
@@ -926,11 +1294,12 @@ export function LearningPathsSection({
             }}
             role="button"
             tabIndex={0}
-            title="Click to view active cohorts"
           >
-            <div className="lp-metric-icon-box">
-              <TrendingUp size={18} />
-            </div>
+            {!isTrainee && (
+              <div className="lp-metric-icon-box">
+                <TrendingUp size={18} />
+              </div>
+            )}
             <div className="lp-metric-content">
               <span className="lp-metric-label">{isTrainee ? "In Progress" : "Active Cohorts"}</span>
               <div className="lp-metric-value-row">
@@ -944,7 +1313,6 @@ export function LearningPathsSection({
           {!isTrainee && (
             <div
               className="lp-metric-card"
-              title="Total unique trainees enrolled across your curricula"
               style={{ cursor: "default" }}
             >
               <div className="lp-metric-icon-box">
@@ -964,7 +1332,6 @@ export function LearningPathsSection({
           {!isTrainee && (
             <div
               className="lp-metric-card"
-              title="Average completion percentage across active cohorts"
               style={{ cursor: "default" }}
             >
               <div className="lp-metric-icon-box">
@@ -988,9 +1355,6 @@ export function LearningPathsSection({
               role="button"
               tabIndex={0}
             >
-              <div className="lp-metric-icon-box">
-                <Award size={18} />
-              </div>
               <div className="lp-metric-content">
                 <span className="lp-metric-label">Completed Tracks</span>
                 <div className="lp-metric-value-row">
@@ -1008,7 +1372,7 @@ export function LearningPathsSection({
         <div className="lp-filter-tabs-cluster" role="tablist">
           {(isTrainee
             ? (["All", "Active", "Completed"] as FilterScope[])
-            : isTrainer
+            : isAdmin
             ? (["All", "Mine", "Active", "Upcoming"] as FilterScope[])
             : (["All", "Active", "Upcoming"] as FilterScope[])
           ).map((scope) => {
@@ -1079,7 +1443,6 @@ export function LearningPathsSection({
             <option value="recent">Sort: Recently Created</option>
             <option value="title">Sort: Title (A - Z)</option>
             {!isTrainee && <option value="trainees">Sort: Most Trainees</option>}
-            <option value="progress">Sort: Highest Progress</option>
           </select>
         </div>
       </section>
@@ -1230,7 +1593,7 @@ export function LearningPathsSection({
                       className="card-avatar-image"
                     />
                   ) : (
-                    <div className="card-avatar-box" title={currentTitle}>
+                    <div className="card-avatar-box">
                       <BookOpen size={20} />
                     </div>
                   )}
@@ -1258,7 +1621,6 @@ export function LearningPathsSection({
                   <h2
                     className="card-title-string"
                     onClick={() => onNavigateToModules(path.id, currentTitle)}
-                    title="Click to manage curriculum"
                   >
                     {highlightMatch(currentTitle, debouncedSearchQuery)}
                   </h2>
@@ -1283,7 +1645,6 @@ export function LearningPathsSection({
                               e.stopPropagation();
                               setSearchQuery(tag);
                             }}
-                            title={`Filter tracks by skill "${tag}"`}
                           >
                             <span className="tag-hash">#</span>
                             <span>{highlightMatch(tag, debouncedSearchQuery)}</span>
@@ -1291,7 +1652,7 @@ export function LearningPathsSection({
                         );
                       })
                     ) : (
-                      <span className="card-skill-tag-chip" style={{ opacity: 0.7 }} title="Standard curriculum track">
+                      <span className="card-skill-tag-chip" style={{ opacity: 0.7 }}>
                         <span className="tag-hash">#</span>
                         <span>Curriculum</span>
                       </span>
@@ -1299,9 +1660,6 @@ export function LearningPathsSection({
                     {remainingTagsCount > 0 && (
                       <span
                         className="card-skill-tag-chip tag-more-count"
-                        title={`${remainingTagsCount} more tags: ${currentTags
-                          .slice(MAX_VISIBLE_TAGS)
-                          .join(", ")}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           if (isOwnerOrAdmin) {
@@ -1342,15 +1700,13 @@ export function LearningPathsSection({
                           type="button"
                           className="btn-cohort-view-progress"
                           onClick={() => setSelectedPathForTrainees(path.id)}
-                          title="Inspect individual trainee roster, scores, and completion"
                         >
                           <div className="btn-cohort-left">
-                            <BarChart2 size={15} className="btn-cohort-icon" />
-                            <span className="btn-cohort-title">View Cohort Progress</span>
+                            <span className="btn-cohort-title">Trainee Progress</span>
                           </div>
                           <div className="btn-cohort-right">
                             <span className="btn-cohort-count-chip">
-                              <Users size={12} />
+                              
                               <span>{enrolledCount} {enrolledCount === 1 ? "Trainee" : "Trainees"}</span>
                             </span>
                             <ChevronRight size={14} className="btn-cohort-arrow" />
@@ -1368,7 +1724,6 @@ export function LearningPathsSection({
                             type="button"
                             className="btn-prompt-assign"
                             onClick={() => handleOpenAssignModal(path)}
-                            title="Assign trainees to track"
                           >
                             + Assign Now
                           </button>
@@ -1386,7 +1741,6 @@ export function LearningPathsSection({
                     type="button"
                     className="btn-card-primary-action"
                     onClick={() => onNavigateToModules(path.id, currentTitle)}
-                    title={isTrainee ? "Continue coursework" : "Manage and sequence modules"}
                   >
                     <span>
                       {isTrainee
@@ -1408,7 +1762,6 @@ export function LearningPathsSection({
                           type="button"
                           className="btn-card-icon-action is-assign"
                           onClick={() => handleOpenAssignModal(path)}
-                          title="Assign trainees to track"
                           aria-label="Assign trainees"
                         >
                           <UserPlus size={15} />
@@ -1421,7 +1774,6 @@ export function LearningPathsSection({
                           type="button"
                           className="btn-card-icon-action is-edit"
                           onClick={() => navigate(`/learning-paths/${path.id}/edit`)}
-                          title="Edit track syllabus & metadata"
                           aria-label="Edit learning path"
                         >
                           <Edit size={14} />
@@ -1433,8 +1785,7 @@ export function LearningPathsSection({
                         <button
                           type="button"
                           className="btn-card-icon-action is-delete"
-                          onClick={() => handleDeletePath(path)}
-                          title="Delete learning path"
+                          onClick={() => handleDeleteClick(path)}
                           aria-label="Delete learning path"
                         >
                           <Trash2 size={14} />
@@ -1853,12 +2204,42 @@ export function LearningPathsSection({
                       );
                     }
 
-                    const available = filtered.filter(
-                      (t) => !selectedPathForAssignment.assignedToTraineeIds?.includes(t.id)
+                    const assignedIdsSet = new Set(
+                      (selectedPathForAssignment.assignedToTraineeIds || []).map((id: any) => String(id).toLowerCase())
                     );
-                    const alreadyAssigned = filtered.filter((t) =>
-                      selectedPathForAssignment.assignedToTraineeIds?.includes(t.id)
-                    );
+                    const isAssigned = (id: string) => assignedIdsSet.has(String(id).toLowerCase());
+
+                    const creatorId =
+                      selectedPathForAssignment.createdBy?.id ||
+                      (typeof selectedPathForAssignment.createdBy === "string" ? selectedPathForAssignment.createdBy : null) ||
+                      (selectedPathForAssignment as any).createdById;
+                    const creatorEmail =
+                      typeof selectedPathForAssignment.createdBy === "object" ? selectedPathForAssignment.createdBy?.email : null;
+
+                    const isCreator = (t: TraineeUser) => {
+                      const tId = String(t.id || "").toLowerCase();
+                      const tEmail = String(t.email || "").toLowerCase();
+                      if (creatorId && tId === String(creatorId).toLowerCase()) return true;
+                      if (creatorEmail && tEmail && tEmail === String(creatorEmail).toLowerCase()) return true;
+                      return false;
+                    };
+
+                    const available = filtered
+                      .filter((t) => !isAssigned(t.id))
+                      .sort((a, b) => {
+                        // Pin the path creator to the top so other trainers immediately see them!
+                        if (isCreator(a) && !isCreator(b)) return -1;
+                        if (!isCreator(a) && isCreator(b)) return 1;
+                        return (a.name || "").localeCompare(b.name || "");
+                      });
+
+                    const alreadyAssigned = filtered
+                      .filter((t) => isAssigned(t.id))
+                      .sort((a, b) => {
+                        if (isCreator(a) && !isCreator(b)) return -1;
+                        if (!isCreator(a) && isCreator(b)) return 1;
+                        return (a.name || "").localeCompare(b.name || "");
+                      });
 
                     return (
                       <>
@@ -1905,6 +2286,17 @@ export function LearningPathsSection({
                             </div>
                             {alreadyAssigned.map((trainee) => {
                               const displayName = `${trainee.firstName || ""} ${trainee.lastName || ""}`.trim() || trainee.name || trainee.email;
+
+                              const assigner =
+                                (selectedPathForAssignment as any)?.traineeAssigners?.[trainee.id] ||
+                                (selectedPathForAssignment as any)?.traineeAssigners?.[String(trainee.id).toLowerCase()];
+
+                              const assignerName = assigner
+                                ? (`${assigner.firstName || ""} ${assigner.lastName || ""}`.trim() || assigner.name || assigner.email)
+                                : (selectedPathForAssignment.createdBy
+                                    ? (`${selectedPathForAssignment.createdBy.firstName || ""} ${selectedPathForAssignment.createdBy.lastName || ""}`.trim() || selectedPathForAssignment.createdBy.name || selectedPathForAssignment.createdBy.email)
+                                    : null);
+
                               return (
                                 <div
                                   key={trainee.id}
@@ -1919,9 +2311,28 @@ export function LearningPathsSection({
                                       <span className="assign-trainee-email">{trainee.email}</span>
                                     </div>
                                   </label>
-                                  <span className="already-assigned-pill">
-                                    ✓ Enrolled
-                                  </span>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    {assignerName && (
+                                      <span
+                                        style={{
+                                          fontSize: "11px",
+                                          color: "#475569",
+                                          background: "#f1f5f9",
+                                          padding: "2px 8px",
+                                          borderRadius: "4px",
+                                          border: "1px solid #e2e8f0",
+                                          fontWeight: 500,
+                                          whiteSpace: "nowrap",
+                                        }}
+                                        title={`Assigned by ${assignerName}`}
+                                      >
+                                        Assigned by <strong style={{ color: "#1e293b", fontWeight: 600 }}>{assignerName}</strong>
+                                      </span>
+                                    )}
+                                    <span className="already-assigned-pill">
+                                      ✓ Enrolled
+                                    </span>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1964,6 +2375,16 @@ export function LearningPathsSection({
             </div>
           </div>
         </div>
+      )}
+
+      {deleteTarget && (
+        <DeletePathModal
+          path={deleteTarget}
+          isDeleting={isDeletingPath}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={handleConfirmDelete}
+          metrics={getPathMetrics(deleteTarget)}
+        />
       )}
     </div>
   );

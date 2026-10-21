@@ -23,6 +23,7 @@ type NotificationContextValue = {
   markRelatedRead: (entityType: string, entityId: string) => Promise<void>;
   markAllRead: () => Promise<void>;
   deleteNotification: (id: string) => Promise<void>;
+  deleteAllNotifications: () => Promise<void>;
 };
 
 const NotificationContext = createContext<NotificationContextValue | null>(null);
@@ -147,6 +148,13 @@ export function NotificationProvider({ accessToken, activeRole, children }: Prov
     });
   }, []);
 
+  const deleteAllNotifications = useCallback(async () => {
+    if (!tokenRef.current || !roleRef.current) return;
+    await notificationService.deleteAllNotifications(tokenRef.current, roleRef.current);
+    setNotifications([]);
+    setUnreadCount(0);
+  }, []);
+
   const value = useMemo(
     () => ({
       notifications,
@@ -158,8 +166,9 @@ export function NotificationProvider({ accessToken, activeRole, children }: Prov
       markRelatedRead,
       markAllRead,
       deleteNotification,
+      deleteAllNotifications,
     }),
-    [notifications, unreadCount, isLoading, refresh, markAsRead, markSectionRead, markRelatedRead, markAllRead, deleteNotification],
+    [notifications, unreadCount, isLoading, refresh, markAsRead, markSectionRead, markRelatedRead, markAllRead, deleteNotification, deleteAllNotifications],
   );
 
   return (
@@ -180,6 +189,7 @@ export function useNotifications() {
       markRelatedRead: async () => undefined,
       markAllRead: async () => undefined,
       deleteNotification: async () => undefined,
+      deleteAllNotifications: async () => undefined,
     };
   }
   return ctx;

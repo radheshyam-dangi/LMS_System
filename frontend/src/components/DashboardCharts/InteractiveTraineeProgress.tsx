@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar, Cell } from 'recharts';
-import { Compass } from 'lucide-react';
 
 type TraineeProgress = {
   traineeId: string;
@@ -27,44 +26,51 @@ export const InteractiveTraineeProgress: React.FC<InteractiveTraineeProgressProp
 
   if (isLoading) {
     return (
-      <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #f1f5f9', padding: '24px', minHeight: '400px' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 16px 0', color: '#0f172a' }}>Trainee Progress Overview</h3>
-        <div style={{ display: 'flex', gap: '16px', flexDirection: 'column' }}>
-          {[...Array(5)].map((_, i) => (
-            <div key={i} style={{ height: '32px', background: '#f1f5f9', borderRadius: '4px', animation: 'pulse 1.5s infinite ease-in-out' }} />
+      <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #f1f5f9', padding: '16px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <div style={{ width: '190px', height: '18px', background: '#f1f5f9', borderRadius: '4px', animation: 'progressSkeletonPulse 1.5s infinite ease-in-out' }} />
+          <div style={{ width: '110px', height: '28px', background: '#f1f5f9', borderRadius: '6px', animation: 'progressSkeletonPulse 1.5s infinite ease-in-out' }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', height: '160px', padding: '8px 16px', gap: '16px', borderBottom: '1px solid #f1f5f9' }}>
+          {[55, 80, 45, 90, 65, 75].map((h, i) => (
+            <div key={i} style={{ width: '36px', height: `${h}%`, background: '#f1f5f9', borderRadius: '4px 4px 0 0', animation: 'progressSkeletonPulse 1.5s infinite ease-in-out' }} />
           ))}
         </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '12px' }}>
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} style={{ width: '70px', height: '12px', background: '#f1f5f9', borderRadius: '3px', animation: 'progressSkeletonPulse 1.5s infinite ease-in-out' }} />
+          ))}
+        </div>
+        <style>{`
+          @keyframes progressSkeletonPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.45; }
+          }
+        `}</style>
       </div>
     );
   }
 
   if (data.length === 0) {
     return (
-      <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '40px 24px', textAlign: 'center' }}>
-        <div style={{ width: '48px', height: '48px', borderRadius: '10px', background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-          <Compass size={24} strokeWidth={1.75} />
-        </div>
-        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 6px 0', color: '#0f172a' }}>Cohort Progress Overview</h3>
-        <p style={{ color: '#64748b', fontSize: '13.5px', marginBottom: '20px' }}>No active trainee enrollments found for current curriculum tracks.</p>
-        <button 
-          onClick={() => window.location.href = '/learning-paths'}
-          className="hover-effect active-effect touch-target"
-          style={{ padding: '8px 18px', background: '#4f46e5', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, fontSize: '13px', cursor: 'pointer' }}>
-          Manage Learning Paths
-        </button>
+      <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #f1f5f9', padding: '28px 20px', textAlign: 'center' }}>
+        <h3 style={{ fontSize: '15px', fontWeight: 600, margin: '0 0 6px 0', color: '#0f172a' }}>Trainee Progress Overview</h3>
+        <p style={{ color: '#64748b', fontSize: '13px', margin: 0 }}>No active trainee enrollments found for your learning paths.</p>
       </div>
     );
   }
 
   return (
-    <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #f1f5f9', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#0f172a' }}>Trainee Progress Overview</h3>
+    <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #f1f5f9', padding: '16px 20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <div>
+          <h3 style={{ fontSize: '15px', fontWeight: 600, margin: 0, color: '#0f172a' }}>Trainee Progress Overview</h3>
+          <span style={{ fontSize: '12px', color: '#64748b' }}>Real-time learning progress for assigned trainees</span>
+        </div>
         <select 
           value={filterStatus}
           onChange={e => setFilterStatus(e.target.value)}
-          className="hover-effect touch-target"
-          style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '13px', color: '#475569', background: '#fff', outline: 'none', cursor: 'pointer' }}
+          style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '12px', color: '#475569', background: '#fff', outline: 'none', cursor: 'default' }}
         >
           <option value="All">All Statuses</option>
           <option value="Not Started">Not Started</option>
@@ -91,73 +97,66 @@ export const InteractiveTraineeProgress: React.FC<InteractiveTraineeProgressProp
         }
         .trainee-progress-chart-container .recharts-bar-rectangle {
           cursor: default !important;
+          pointer-events: none;
         }
       `}</style>
 
       <div 
         className="trainee-progress-chart-container" 
-        style={{ height: '350px', width: '100%', overflowX: 'auto', overflowY: 'hidden', outline: 'none', userSelect: 'none' }}
-        onMouseDown={e => {
-          if ((e.target as HTMLElement)?.tagName !== 'SELECT') {
-            e.preventDefault();
-          }
-        }}
+        style={{ height: '200px', width: '100%', overflowX: 'auto', overflowY: 'hidden', outline: 'none', userSelect: 'none', cursor: 'default' }}
       >
         {filteredData.length === 0 ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#64748b', fontSize: '13px' }}>
             No trainees match the selected filter.
           </div>
         ) : (
-          <div style={{ minWidth: `${Math.max(100, filteredData.length * 75)}px`, height: '100%' }}>
+          <div style={{ minWidth: `${Math.max(100, filteredData.length * 70)}px`, height: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
-            <BarChart 
-              data={filteredData} 
-              margin={{ top: 10, right: 10, left: -20, bottom: 20 }}
-              style={{ outline: 'none' }}
-              tabIndex={-1}
-            >
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="traineeName" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} domain={[0, 100]} />
-              <Tooltip 
-                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}
-                cursor={{ fill: 'rgba(241, 245, 249, 0.6)' }}
-                formatter={(value: any, name: any, props: any) => {
-                  if (name === 'Progress %') return [`${value}% (${props.payload.status})`, name];
-                  return [`${value}%`, name];
-                }}
-              />
-              <Bar 
-                dataKey="progressPercent" 
-                name="Progress %" 
-                radius={[4, 4, 0, 0]} 
-                maxBarSize={60}
-                style={{ transition: 'all 0.2s' }} 
-                minPointSize={3}
+              <BarChart 
+                data={filteredData} 
+                margin={{ top: 8, right: 10, left: -20, bottom: 8 }}
+                style={{ outline: 'none' }}
+                tabIndex={-1}
               >
-                {filteredData.map((entry, index) => {
-                  let color = '#4f46e5'; // default
-                  if (entry.status === 'Completed') color = '#10b981';
-                  else if (entry.status === 'On Track') color = '#3b82f6';
-                  else if (entry.status === 'At Risk') color = '#ef4444';
-                  else if (entry.status === 'Not Started') color = '#94a3b8';
-                  return <Cell 
-                           key={`cell-${index}`} 
-                           fill={color} 
-                         />;
-                })}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="traineeName" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '6px', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', fontSize: '12px', padding: '6px 10px' }}
+                  cursor={{ fill: 'rgba(241, 245, 249, 0.4)' }}
+                  formatter={(value: any, name: any, props: any) => {
+                    if (name === 'Progress %') return [`${value}% (${props.payload.status})`, name];
+                    return [`${value}%`, name];
+                  }}
+                />
+                <Bar 
+                  dataKey="progressPercent" 
+                  name="Progress %" 
+                  radius={[4, 4, 0, 0]} 
+                  maxBarSize={48}
+                  minPointSize={3}
+                  isAnimationActive={false}
+                >
+                  {filteredData.map((entry, index) => {
+                    let color = '#4f46e5';
+                    if (entry.status === 'Completed') color = '#10b981';
+                    else if (entry.status === 'On Track') color = '#3b82f6';
+                    else if (entry.status === 'At Risk') color = '#ef4444';
+                    else if (entry.status === 'Not Started') color = '#94a3b8';
+                    return <Cell key={`cell-${index}`} fill={color} />;
+                  })}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '16px', fontSize: '12px', color: '#64748b' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', background: '#10b981', borderRadius: '2px' }}/> Completed</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', background: '#3b82f6', borderRadius: '2px' }}/> On Track</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', background: '#ef4444', borderRadius: '2px' }}/> At Risk</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><div style={{ width: '12px', height: '12px', background: '#94a3b8', borderRadius: '2px' }}/> Not Started</div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '12px', fontSize: '11px', color: '#64748b' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '10px', height: '10px', background: '#10b981', borderRadius: '2px' }}/> Completed</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '10px', height: '10px', background: '#3b82f6', borderRadius: '2px' }}/> On Track</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '10px', height: '10px', background: '#ef4444', borderRadius: '2px' }}/> At Risk</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><div style={{ width: '10px', height: '10px', background: '#94a3b8', borderRadius: '2px' }}/> Not Started</div>
       </div>
     </div>
   );

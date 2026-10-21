@@ -679,4 +679,66 @@
     padding: 0 0 24px 0;
   }
 }
+
+/* ==========================================
+   SKELETON LOADERS & LOCKED MODULE STYLES
+   ========================================== */
+@keyframes mmShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.mm-shimmer {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: mmShimmer 1.5s infinite;
+  border-radius: 8px;
+}
+
+.module-card-skeleton {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
+}
+
+.module-card-skeleton-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.module-detail-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.module-detail-skeleton-hero {
+  height: 180px;
+  border-radius: 20px;
+}
+
+.module-detail-skeleton-card {
+  height: 90px;
+  border-radius: 14px;
+}
+
+/* Locked module styling */
+.module-card-item--locked {
+  cursor: not-allowed !important;
+  opacity: 0.78;
+  filter: grayscale(15%);
+  transition: opacity 0.2s ease;
+}
+
+.module-card-item--locked:hover {
+  transform: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03) !important;
+  border-color: #cbd5e1 !important;
+}
 

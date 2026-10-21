@@ -46,7 +46,8 @@ export function NotificationsPage({ activeRole }: { activeRole: string }) {
     refresh,
     markAsRead,
     markAllRead,
-    deleteNotification
+    deleteNotification,
+    deleteAllNotifications
   } = useNotifications();
 
   const navigate = useNavigate();
@@ -54,7 +55,19 @@ export function NotificationsPage({ activeRole }: { activeRole: string }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const itemsPerPage = 10;
+
+  const handleDeleteAll = async () => {
+    setIsDeletingAll(true);
+    try {
+      await deleteAllNotifications();
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -241,6 +254,19 @@ export function NotificationsPage({ activeRole }: { activeRole: string }) {
             >
               <CheckCheck size={16} />
               <span>Mark all as read</span>
+            </button>
+          )}
+
+          {notifications.length > 0 && (
+            <button
+              type="button"
+              className="btn-notif-action btn-notif-danger"
+              onClick={() => setShowDeleteConfirm(true)}
+              disabled={isDeletingAll}
+              title="Delete all notifications permanently"
+            >
+              <Trash2 size={14} />
+              <span>Delete all</span>
             </button>
           )}
         </div>
@@ -482,6 +508,63 @@ export function NotificationsPage({ activeRole }: { activeRole: string }) {
           </footer>
         )}
       </main>
+
+      {/* ── Confirmation Modal ── */}
+      {showDeleteConfirm && (
+        <div
+          className="notif-confirm-overlay"
+          onClick={() => !isDeletingAll && setShowDeleteConfirm(false)}
+        >
+          <div
+            className="notif-confirm-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="notif-confirm-icon-row">
+              <div className="notif-confirm-icon-box">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="notif-confirm-title">Delete all notifications?</h3>
+                <p className="notif-confirm-desc">
+                  This will permanently clear all {notifications.length} notifications from your inbox. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="notif-confirm-actions">
+              <button
+                type="button"
+                className="btn-notif-action"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeletingAll}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-notif-action btn-notif-danger"
+                onClick={handleDeleteAll}
+                disabled={isDeletingAll}
+                style={{ background: '#ef4444', color: '#ffffff', borderColor: '#ef4444' }}
+              >
+                {isDeletingAll ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Yes, delete all</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

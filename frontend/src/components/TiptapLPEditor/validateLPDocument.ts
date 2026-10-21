@@ -79,7 +79,7 @@ export function validateLPDocument(doc: ParsedLPDocument): ValidationError[] {
         errors.push({
           path: aPath,
           isWarning: true, // Non-blocking — submit still allowed
-          message: `⚠️ ${modLabel} → ${aLabel}: Lock is enabled but no preceding lessons exist. Assignment will be always-unlocked until lessons are added.`,
+          message: `${modLabel} → ${aLabel}: Lock is enabled but no preceding lessons exist. Assignment will be always-unlocked until lessons are added.`,
         });
       }
 

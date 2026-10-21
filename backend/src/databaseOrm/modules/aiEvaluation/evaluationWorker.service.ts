@@ -355,7 +355,7 @@ export class EvaluationWorkerService {
       remark: parsedResult.feedback,
       type: 'subjective',
       confidence: parsedResult.confidence,
-      groundingSource: context.groundingSourcePlan === 'module_fallback' ? 'module_fallback' : parsedResult.groundingSource,
+      groundingSource: context.groundingSourcePlan === 'module_fallback' ? 'module_fallback' : (parsedResult.groundingSource === 'rubric' ? 'lesson_context' : parsedResult.groundingSource),
       needsManualReview: parsedResult.confidence < 0.75, // Simple confidence gating
       contentVersionsUsed: context.contentVersionsUsed
     };
@@ -364,27 +364,38 @@ export class EvaluationWorkerService {
   private async callGroqForQuestion(question: any, answerText: string, context: EvaluationContext, assignment: AssignmentEntity) {
     if (!this.MODEL || !this.API_KEY) throw new Error('GROQ config missing');
 
-    const systemPrompt = `You are an expert evaluator grading a trainee's answer. Grade for MEANING, not exact wording. Semantic correctness matters more than word overlap.
+    const systemPrompt = `You are an expert evaluator grading a trainee's subjective answer. Grade for MEANING, conceptual understanding, and factual accuracy, not exact wording. Semantic correctness matters more than word overlap.
     
 INSTRUCTIONS:
-1. Grade primarily against the Rubric.
-2. If the trainee's answer contains a claim NOT covered by the Rubric, check the Retrieved Source Passages before marking it wrong. If a passage supports the claim, credit it.
-3. Score out of ${question.maxPoints}. Provide specific, constructive feedback.
-4. IMPORTANT: DO NOT simply give 0 or full marks. You MUST calculate a partial score proportional to the correctness.
+1. The question is evaluated directly against the Ground Truth Context of the dependent lessons (concepts, key points, and source material). Do NOT require or expect a separate rubric parameter.
+2. Evaluate whether the trainee demonstrates accurate understanding of the concepts and information covered in the dependent lesson context.
+3. Score out of ${question.maxPoints}. Provide specific, constructive feedback explaining what the trainee answered well and what concepts from the lesson context were missing or inaccurate.
+4. IMPORTANT: DO NOT simply give 0 or full marks. You MUST calculate a partial score proportional to correctness relative to the lesson context.
 
 Return ONLY valid JSON matching this exact shape:
 {
   "score": <number between 0 and maxScore>,
   "feedback": "<string>",
   "confidence": <0.0-1.0>,
-  "groundingSource": "rubric" | "retrieved_passage" | "unsupported" | "no_lesson_dependency"
+  "groundingSource": "lesson_context" | "retrieved_passage" | "unsupported" | "no_lesson_dependency"
 }`;
 
-    const rubricStr = context.rubrics.map(r => `[Lesson: ${r.lessonName}]\n${r.keyPoints.map((kp: any) => `- ${kp.point}`).join('\n')}`).join('\n\n').substring(0, 4000);
+    const lessonKeyPointsStr = context.rubrics.map(r => `[Lesson: ${r.lessonName}]\n${r.keyPoints.map((kp: any) => `- ${kp.point}`).join('\n')}`).join('\n\n').substring(0, 4000);
     const chunksStr = context.retrievedChunks.map(c => `[From ${c.lessonName}]: "${c.chunkText}"`).join('\n\n').substring(0, 8000);
     const safeAnswerText = answerText.substring(0, 5000);
 
-    const userPrompt = `QUESTION: ${question.text}\n\nTRAINEE'S ANSWER: ${safeAnswerText}\n\n--- Rubric ---\n${rubricStr || '[No rubric]'}\n\n--- Retrieved Source Passages ---\n${chunksStr || '[None]'}`;
+    const contextSections: string[] = [];
+    if (lessonKeyPointsStr) {
+      contextSections.push(`--- Dependent Lesson Key Concepts ---\n${lessonKeyPointsStr}`);
+    }
+    if (chunksStr) {
+      contextSections.push(`--- Dependent Lesson Source Passages ---\n${chunksStr}`);
+    }
+    const combinedContext = contextSections.length > 0
+      ? contextSections.join('\n\n')
+      : '--- Dependent Lesson Context ---\n[No lesson dependency context provided]';
+
+    const userPrompt = `QUESTION: ${question.text}\n\nTRAINEE'S ANSWER: ${safeAnswerText}\n\n${combinedContext}`;
 
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',

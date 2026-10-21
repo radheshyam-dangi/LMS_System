@@ -31,6 +31,7 @@ interface ParsedLesson {
   id: string;
   title: string;
   description: string;
+  lockRule?: string;
   videos: ParsedVideo[];
   audios: ParsedAudio[];
   resources: ParsedResource[];
@@ -43,6 +44,7 @@ interface ParsedAssignment {
   body: string;
   questions: ParsedQuestion[];
   dependsOnLessonIds: string[];
+  lockRule?: string;
   lockConfig: { enabled: boolean };
   evaluation: {
     autoEvaluateWithAI: boolean;
@@ -57,7 +59,9 @@ interface ParsedModule {
   id: string;
   title: string;
   description: string;
+  sequentialModuleLock?: boolean;
   sequentialLessonLock: boolean;
+  lockRule?: string;
   learningObjectives?: string[];
   learningOutcomes?: string[];
   moduleResources?: ParsedResource[];
@@ -188,6 +192,7 @@ function parseLesson(lessonNode: any): ParsedLesson {
     id: lessonNode.attrs?.id || crypto.randomUUID(),
     title: '',
     description: '',
+    lockRule: lessonNode.attrs?.lockRule || 'prerequisite',
     videos: [],
     audios: [],
     resources: [],
@@ -283,6 +288,7 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
     body: sanitizeTextInput(body),
     questions,
     dependsOnLessonIds: attrs.dependsOnLessonIds !== undefined ? attrs.dependsOnLessonIds : null, // will be resolved in parseModule
+    lockRule: attrs.lockRule || (attrs.lockUntilLessonsComplete !== false ? 'prerequisite' : 'unlocked'),
     lockConfig: {
       enabled: attrs.lockUntilLessonsComplete !== false,
     },
@@ -302,7 +308,9 @@ function parseModule(moduleNode: any): ParsedModule {
     id: attrs.id || crypto.randomUUID(),
     title: '',
     description: attrs.description || '',
+    sequentialModuleLock: attrs.sequentialModuleLock !== false,
     sequentialLessonLock: attrs.sequentialLessonLock !== false,
+    lockRule: attrs.lockRule || (attrs.sequentialModuleLock !== false ? 'prerequisite' : 'unlocked'),
     learningObjectives: attrs.learningObjectives || [],
     learningOutcomes: attrs.learningOutcomes || [],
     moduleResources: attrs.moduleResources || [],

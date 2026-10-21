@@ -1,3 +1,5 @@
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
+
 function cleanHTML(html: string | undefined): string {
   if (!html) return '';
   return html.replace(/<[^>]*>?/gm, '').trim();
@@ -38,7 +40,9 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
       type: 'module',
       attrs: {
         id: mod.id,
-        sequentialLessonLock: mod.lessonLocking ?? true,
+        sequentialModuleLock: mod.sequentialModuleLock ?? true,
+        sequentialLessonLock: mod.lessonLocking ?? mod.sequentialLessonLock ?? true,
+        lockRule: mod.lockRule || 'prerequisite',
         learningObjectives: mod.objectives || [],
         learningOutcomes: mod.outcomes || [],
         description: cleanHTML(mod.description) || '',
@@ -149,23 +153,35 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
         ]
       };
 
-      if (assignment.description) {
-        const assignmentDesc = createTextNode(assignment.description);
+      const rawInstructions = assignment.instructions || assignment.description;
+      if (rawInstructions && cleanHTML(rawInstructions)) {
+        const assignmentDesc = createTextNode(rawInstructions);
         assignmentNode.content.push({
           type: 'paragraph',
           ...(assignmentDesc.length ? { content: assignmentDesc } : {})
         });
+      } else {
+        assignmentNode.content.push({
+          type: 'paragraph',
+          content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }]
+        });
       }
 
       for (const q of assignment.questions || []) {
-        const qText = createTextNode(q.text);
+        const isPlaceholder = !q.text || q.text.trim() === 'Type your question here...' || q.text.trim() === 'New Question';
+        const qText = isPlaceholder ? [] : createTextNode(q.text);
+        const isMcq = q.type === 'MCQ';
+        const rawOptions = Array.isArray(q.options) ? q.options : [];
+        const qOptions = rawOptions.length > 0 ? rawOptions : (isMcq ? ['', '', '', ''] : []);
+
         const qNode: any = {
           type: 'questionBlock',
           attrs: {
             id: q.id,
             questionType: q.type || 'Subjective',
             maxPoints: q.maxPoints || 10,
-            correctIndex: q.correctIndex,
+            correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : (isMcq ? 0 : null),
+            options: qOptions,
             expectedAnswerGuideline: q.expectedAnswerGuideline || '',
             requiresLessonGrounding: q.requiresLessonGrounding !== false,
             lessonDependencies: Array.isArray(q.lessonDependencies) ? q.lessonDependencies : (Array.isArray(q.questionLessonDependencies) ? q.questionLessonDependencies.map((d: any) => d.lessonId || d) : [])
@@ -177,10 +193,13 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
             }
           ]
         };
-        if (q.options?.length > 0) {
+
+        // Note: For MCQ questions, options belong in attrs.options so they are rendered
+        // as interactive option choices with radio buttons, NOT as duplicate bullet points in question text.
+        if (!isMcq && rawOptions.length > 0) {
           qNode.content.push({
             type: 'bulletList',
-            content: q.options.map((opt: string) => {
+            content: rawOptions.map((opt: string) => {
               const optText = createTextNode(opt);
               return {
                 type: 'listItem',

@@ -30,7 +30,9 @@ export const ModuleNode = Node.create({
   addAttributes() {
     return {
       id: { default: null, parseHTML: el => el.getAttribute('data-id') || uid() },
+      sequentialModuleLock: { default: true },
       sequentialLessonLock: { default: true },
+      lockRule: { default: 'prerequisite' },
       learningObjectives: { default: [] },
       learningOutcomes: { default: [] },
       moduleResources: { default: [] },
@@ -63,6 +65,7 @@ export const LessonNode = Node.create({
   addAttributes() {
     return {
       id: { default: null, parseHTML: el => el.getAttribute('data-id') || uid() },
+      lockRule: { default: 'prerequisite' },
     };
   },
 
@@ -92,6 +95,7 @@ export const AssignmentNode = Node.create({
     return {
       id: { default: null, parseHTML: el => el.getAttribute('data-id') || uid() },
       lockUntilLessonsComplete: { default: true },
+      lockRule: { default: 'prerequisite' },
       autoEvaluateWithAI: { default: false },
       humanInterventionRequired: { default: true },
       countdownStart: { default: 'onAssignment' },
@@ -136,7 +140,7 @@ export const VideoBlockNode = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, {
       'data-type': 'videoBlock',
       class: 'tiptap-video-block',
-    }), `🎬 Video: ${HTMLAttributes.url || '(no URL)'}`];
+    }), `Video: ${HTMLAttributes.url || '(no URL)'}`];
   },
 });
 
@@ -163,7 +167,7 @@ export const AudioBlockNode = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, {
       'data-type': 'audioBlock',
       class: 'tiptap-audio-block',
-    }), `🎵 Audio: ${HTMLAttributes.url || '(no URL)'}`];
+    }), `Audio: ${HTMLAttributes.url || '(no URL)'}`];
   },
 });
 
@@ -191,7 +195,7 @@ export const ResourceBlockNode = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, {
       'data-type': 'resourceBlock',
       class: 'tiptap-resource-block',
-    }), `📎 Resource: ${HTMLAttributes.label || HTMLAttributes.url || '(no URL)'}`];
+    }), `Resource: ${HTMLAttributes.label || HTMLAttributes.url || '(no URL)'}`];
   },
 });
 
@@ -226,6 +230,6 @@ export const QuestionBlockNode = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, {
       'data-type': 'questionBlock',
       class: 'tiptap-question-block',
-    }), `❓ ${HTMLAttributes.questionType} Question: ${HTMLAttributes.text || '(empty)'}`];
+    }), `${HTMLAttributes.questionType} Question: ${HTMLAttributes.text || '(empty)'}`];
   },
 });

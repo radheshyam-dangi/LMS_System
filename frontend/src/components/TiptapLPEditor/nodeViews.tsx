@@ -2,14 +2,7 @@ import React from 'react';
 import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
 import { Settings, Lock, Unlock, Play, FileText, LayoutList, ChevronDown, ChevronRight, Video, FileAudio, Link2, Trash2, Clock } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-
-const defaultAssignmentInstructionBlocks = () => [
-  'Read the assignment brief fully and note the objective, deliverables, and deadline.',
-  'Revise the related lessons and concepts before you begin.',
-  'Prepare your tools, software, and reference materials.',
-  'Plan your work in steps and set an internal deadline.',
-  'Submit original, accurate work that follows the evaluation criteria.',
-].map(text => ({ type: 'paragraph', content: [{ type: 'text', text }] }));
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
 
 // ─────────────────────────────────────────────
 // MODULE NODE VIEW
@@ -23,7 +16,7 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
     <div className="module-metadata-editor">
       <div className="metadata-box" style={{ marginBottom: '4px' }}>
         <div className="metadata-box-header">
-          <span>📄 Module Overview & Description</span>
+          <span>Module Overview & Description</span>
           <span style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>(Visible to Trainees)</span>
         </div>
         <textarea
@@ -39,7 +32,7 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
       <div className="metadata-grid-2col">
         <div className="metadata-box">
           <div className="metadata-box-header">
-            <span>🎯 Learning Objectives</span>
+            <span>Learning Objectives</span>
             <span style={{ fontSize: '11px', fontWeight: 600, color: '#6b21a8' }}>({objectives.length})</span>
           </div>
           {objectives.map((obj: string, i: number) => (
@@ -81,7 +74,7 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
 
         <div className="metadata-box">
           <div className="metadata-box-header">
-            <span>🏆 Learning Outcomes</span>
+            <span>Learning Outcomes</span>
             <span style={{ fontSize: '11px', fontWeight: 600, color: '#15803d' }}>({outcomes.length})</span>
           </div>
           {outcomes.map((out: string, i: number) => (
@@ -127,7 +120,8 @@ const ModuleMetadataEditor = ({ node, updateAttributes }: any) => {
 
 export const ModuleNodeView = (props: any) => {
   const { node, updateAttributes, editor, getPos, deleteNode } = props;
-  const isLocked = node.attrs.sequentialLessonLock;
+  const isModuleLocked = node.attrs.sequentialModuleLock !== false;
+  const isLessonLocked = node.attrs.sequentialLessonLock !== false;
   const [isCollapsed, setIsCollapsed] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [index, setIndex] = React.useState(1);
@@ -202,14 +196,44 @@ export const ModuleNodeView = (props: any) => {
             <Settings size={14} />
             <span>Metadata</span>
           </button>
+
+          {/* Module Locking (Requires Prev Module 100%) */}
+          {index === 1 ? (
+            <span
+              className="lock-toggle unlocked"
+              style={{ cursor: 'default', background: '#ecfdf5', borderColor: '#a7f3d0', color: '#065f46' }}
+              title="Module 1 is always unlocked for trainees as the starting unit of this curriculum"
+            >
+              <Unlock size={14} />
+              <span>Module 1: Open</span>
+            </span>
+          ) : (
+            <button
+              className={`lock-toggle ${isModuleLocked ? 'locked' : 'unlocked'}`}
+              onClick={() => updateAttributes({ 
+                sequentialModuleLock: !isModuleLocked,
+                lockRule: !isModuleLocked ? 'prerequisite' : 'unlocked'
+              })}
+              title={isModuleLocked 
+                ? `Sequential Module Lock: Module ${index} unlocks only when Module ${index - 1} is 100% completed`
+                : 'Freeform: Module is unlocked immediately for all trainees'
+              }
+            >
+              {isModuleLocked ? <Lock size={14} /> : <Unlock size={14} />}
+              <span>{isModuleLocked ? `Prereq (M${index - 1} 100%)` : 'Module Open'}</span>
+            </button>
+          )}
+
+          {/* Lesson Locking (Sequential within module) */}
           <button
-            className={`lock-toggle ${isLocked ? 'locked' : 'unlocked'}`}
-            onClick={() => updateAttributes({ sequentialLessonLock: !isLocked })}
+            className={`lock-toggle ${isLessonLocked ? 'locked' : 'unlocked'}`}
+            onClick={() => updateAttributes({ sequentialLessonLock: !isLessonLocked })}
             title="Sequential Lesson Lock: Trainees must complete lessons in order"
           >
-            {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
-            <span>{isLocked ? 'Sequential' : 'Freeform'}</span>
+            {isLessonLocked ? <Lock size={14} /> : <Unlock size={14} />}
+            <span>{isLessonLocked ? 'Lessons: Sequential' : 'Lessons: Freeform'}</span>
           </button>
+
           <button className="delete-node-btn" onClick={handleDelete} title="Delete Module">
             <Trash2 size={16} />
           </button>
@@ -220,7 +244,6 @@ export const ModuleNodeView = (props: any) => {
         {node.attrs.description && !showSettings && (
           <div className="module-desc-preview-card" contentEditable={false}>
             <div className="module-desc-preview-header">
-              <span className="module-desc-preview-icon">📋</span>
               <span className="module-desc-preview-title">Module Description (Trainee View)</span>
               <button
                 type="button"
@@ -235,7 +258,7 @@ export const ModuleNodeView = (props: any) => {
         )}
         {!node.attrs.description && !showSettings && (
           <div className="module-desc-prompt-banner" contentEditable={false}>
-            <span>💡 No module overview added yet. Trainees see this on their module page.</span>
+            <span>No module overview added yet. Trainees see this on their module page.</span>
             <button
               type="button"
               className="module-add-desc-pill-btn"
@@ -251,7 +274,7 @@ export const ModuleNodeView = (props: any) => {
             <button className="ghost-add-btn" onClick={() => {
               if (typeof getPos === 'function') {
                 const pos = getPos() + node.nodeSize - 1;
-                editor.commands.insertContentAt(pos, { type: 'lesson', attrs: { id: uuidv4() }, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] }, { type: 'paragraph', content: [{ type: 'text', text: 'Lesson content...' }] }] });
+                editor.commands.insertContentAt(pos, { type: 'lesson', attrs: { id: uuidv4() }, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] }, { type: 'paragraph' }] });
               }
             }}>+ Add Lesson</button>
             <button className="ghost-add-btn" onClick={() => {
@@ -262,8 +285,8 @@ export const ModuleNodeView = (props: any) => {
                   attrs: { id: uuidv4() },
                   content: [
                     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-                    ...defaultAssignmentInstructionBlocks(),
-                    { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] }
+                    { type: 'paragraph', content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }] },
+                    { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph' }] }
                   ]
                 });
               }
@@ -279,9 +302,9 @@ export const ModuleNodeView = (props: any) => {
 // LESSON NODE VIEW
 // ─────────────────────────────────────────────
 export const LessonNodeView = (props: any) => {
-  const { node, editor, getPos, deleteNode } = props;
+  const { node, updateAttributes, editor, getPos, deleteNode } = props;
   const [isCollapsed, setIsCollapsed] = React.useState(false);
-  const [counts, setCounts] = React.useState({ video: 0, audio: 0, resource: 0, question: 0 });
+  const [counts, setCounts] = React.useState({ video: 0, resource: 0, question: 0 });
   const [index, setIndex] = React.useState(1);
 
   React.useEffect(() => {
@@ -314,14 +337,13 @@ export const LessonNodeView = (props: any) => {
 
   React.useEffect(() => {
     const updateCounts = () => {
-      let v = 0, a = 0, r = 0, q = 0;
+      let v = 0, r = 0, q = 0;
       node.descendants((n: any) => {
         if (n.type.name === 'videoBlock') v++;
-        if (n.type.name === 'audioBlock') a++;
         if (n.type.name === 'resourceBlock') r++;
         if (n.type.name === 'questionBlock') q++;
       });
-      setCounts({ video: v, audio: a, resource: r, question: q });
+      setCounts({ video: v, resource: r, question: q });
     };
     updateCounts();
     editor.on('transaction', updateCounts);
@@ -367,13 +389,37 @@ export const LessonNodeView = (props: any) => {
           <Play size={16} className="lesson-icon" />
           <span className="lesson-badge">LESSON {index}</span>
           <div className="lesson-chips">
-            {counts.video > 0 && <span className="lesson-chip">🎥 {counts.video}</span>}
-            {counts.audio > 0 && <span className="lesson-chip">🎵 {counts.audio}</span>}
-            {counts.resource > 0 && <span className="lesson-chip">📎 {counts.resource}</span>}
-            {counts.question > 0 && <span className="lesson-chip">❓ {counts.question}</span>}
+            {counts.video > 0 && <span className="lesson-chip">Videos: {counts.video}</span>}
+            {counts.resource > 0 && <span className="lesson-chip">Resources: {counts.resource}</span>}
+            {counts.question > 0 && <span className="lesson-chip">Questions: {counts.question}</span>}
           </div>
         </div>
         <div className="lesson-actions">
+          {index === 1 ? (
+            <span
+              className="lock-toggle unlocked"
+              style={{ cursor: 'default', background: '#ecfdf5', borderColor: '#a7f3d0', color: '#065f46', fontSize: '11px', padding: '3px 8px' }}
+              title="Lesson 1 is always unlocked"
+            >
+              <Unlock size={12} />
+              <span>Open</span>
+            </span>
+          ) : (
+            <button
+              className={`lock-toggle ${node.attrs.lockRule !== 'unlocked' ? 'locked' : 'unlocked'}`}
+              style={{ fontSize: '11px', padding: '3px 8px' }}
+              onClick={() => updateAttributes({ 
+                lockRule: node.attrs.lockRule !== 'unlocked' ? 'unlocked' : 'prerequisite' 
+              })}
+              title={node.attrs.lockRule !== 'unlocked' 
+                ? `Sequential: Unlocks when Lesson ${index - 1} is completed` 
+                : 'Open Access: Unlocked immediately without completing previous lesson'}
+            >
+              {node.attrs.lockRule !== 'unlocked' ? <Lock size={12} /> : <Unlock size={12} />}
+              <span>{node.attrs.lockRule !== 'unlocked' ? `Prereq (L${index - 1})` : 'Open'}</span>
+            </button>
+          )}
+
           <button className="delete-node-btn" onClick={handleDelete}>
             <Trash2 size={16} />
           </button>
@@ -387,13 +433,13 @@ export const LessonNodeView = (props: any) => {
               const pos = getPos() + node.nodeSize - 1;
               editor.commands.insertContentAt(pos, { type: 'videoBlock' });
             }
-          }}>+ Video</button>
+          }}>+ Add Video Lecture</button>
           <button className="ghost-add-btn" onClick={() => {
             if (typeof getPos === 'function') {
               const pos = getPos() + node.nodeSize - 1;
               editor.commands.insertContentAt(pos, { type: 'resourceBlock' });
             }
-          }}>+ Resource</button>
+          }}>+ Add Study Resource</button>
         </div>
       </div>
 
@@ -402,7 +448,7 @@ export const LessonNodeView = (props: any) => {
         <button className="sibling-add-btn" onClick={() => {
           if (typeof getPos === 'function') {
             const pos = getPos() + node.nodeSize;
-            editor.commands.insertContentAt(pos, { type: 'lesson', attrs: { id: uuidv4() }, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] }, { type: 'paragraph', content: [{ type: 'text', text: 'Lesson content...' }] }] });
+            editor.commands.insertContentAt(pos, { type: 'lesson', attrs: { id: uuidv4() }, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] }, { type: 'paragraph' }] });
           }
         }}>+ Add Lesson</button>
         <button className="sibling-add-btn" onClick={() => {
@@ -413,8 +459,8 @@ export const LessonNodeView = (props: any) => {
               attrs: { id: uuidv4() },
               content: [
                 { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-                ...defaultAssignmentInstructionBlocks(),
-                { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] }
+                { type: 'paragraph', content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }] },
+                { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph' }] }
               ]
             });
           }
@@ -534,15 +580,21 @@ export const AssignmentNodeView = (props: any) => {
     return () => editor.off('transaction', updateDependencies);
   }, [editor, getPos, node]);
 
-  // Check for subjective questions reactively
-  let hasSubjectiveQuestions = false;
-  if (node.content) {
-    node.content.forEach((childNode: any) => {
-      if (childNode.type.name === 'questionBlock' && childNode.attrs.questionType === 'Subjective') {
-        hasSubjectiveQuestions = true;
+  // Determine if this assignment is purely MCQ-based
+  const isMCQBased = React.useMemo(() => {
+    if (node.attrs.assignmentType === 'MCQ') return true;
+    let questionCount = 0;
+    let mcqCount = 0;
+    node.content?.forEach((child: any) => {
+      if (child.type.name === 'questionBlock') {
+        questionCount++;
+        if (child.attrs.questionType === 'MCQ') {
+          mcqCount++;
+        }
       }
     });
-  }
+    return questionCount > 0 && questionCount === mcqCount;
+  }, [node]);
 
   const handleDelete = () => {
     if (node.content && node.content.size > 0) {
@@ -618,18 +670,13 @@ export const AssignmentNodeView = (props: any) => {
                           checked={isSelected}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              // If they check it
                               if (selectedIds === null) {
-                                // Default was true anyway, so no op? Wait, if they just check one while null, all were checked. 
-                                // Actually, if null and they check, it's a no op because it's already selected.
-                                // It only matters if they UNCHECK.
+                                // Already selected by default
                               } else {
                                 updateAttributes({ dependsOnLessonIds: [...selectedIds, lesson.id] });
                               }
                             } else {
-                              // If they uncheck it
                               if (selectedIds === null) {
-                                // Transition from "all" to explicit array without this id
                                 updateAttributes({ dependsOnLessonIds: precedingLessons.map(l => l.id).filter(id => id !== lesson.id) });
                               } else {
                                 updateAttributes({ dependsOnLessonIds: selectedIds.filter((id: string) => id !== lesson.id) });
@@ -649,6 +696,7 @@ export const AssignmentNodeView = (props: any) => {
         </div>
         <div className="assignment-actions">
           <button
+            type="button"
             className={`lock-toggle ${node.attrs.lockUntilLessonsComplete ? 'locked' : 'unlocked'}`}
             onClick={() => updateAttributes({ lockUntilLessonsComplete: !node.attrs.lockUntilLessonsComplete })}
             title="Lock until lessons complete"
@@ -657,38 +705,48 @@ export const AssignmentNodeView = (props: any) => {
             <span>{node.attrs.lockUntilLessonsComplete ? 'Locked' : 'Unlocked'}</span>
           </button>
 
-          {hasSubjectiveQuestions && (
+          {!isMCQBased && (
             <>
               <button
-                className={`lock-toggle ${node.attrs.autoEvaluateWithAI ? 'locked' : 'unlocked'}`}
+                type="button"
+                className={`ai-toggle ${node.attrs.autoEvaluateWithAI ? 'on' : 'off'}`}
                 onClick={() => updateAttributes({ autoEvaluateWithAI: !node.attrs.autoEvaluateWithAI })}
-                title="Applies to subjective questions only. Multiple-choice questions are always graded automatically based on the correct answer(s) you selected."
+                title={node.attrs.autoEvaluateWithAI ? 'AI Automated Evaluation is ON' : 'AI Automated Evaluation is OFF'}
               >
                 <span>{node.attrs.autoEvaluateWithAI ? 'AI Eval ON' : 'AI Eval OFF'}</span>
               </button>
 
               {node.attrs.autoEvaluateWithAI && (
                 <button
-                  className={`lock-toggle ${node.attrs.humanInterventionRequired ? 'locked' : 'unlocked'}`}
-                  onClick={() => updateAttributes({ humanInterventionRequired: !node.attrs.humanInterventionRequired })}
-                  title="Human Intervention Required"
+                  type="button"
+                  className={`human-toggle ${node.attrs.humanInterventionRequired !== false ? 'on' : 'off'}`}
+                  onClick={() => updateAttributes({ humanInterventionRequired: node.attrs.humanInterventionRequired === false })}
+                  title={
+                    node.attrs.humanInterventionRequired !== false
+                      ? 'Human intervention is ON: Trainer review required'
+                      : 'Human intervention is OFF: Fully automated instant AI grading'
+                  }
                 >
-                  <span>{node.attrs.humanInterventionRequired ? 'Human Review' : 'Auto-Release'}</span>
+                  <span>
+                    {node.attrs.humanInterventionRequired !== false ? 'Human Review ON' : 'Human Review OFF'}
+                  </span>
                 </button>
               )}
             </>
           )}
 
           <button
+            type="button"
             className={`lock-toggle ${isSettingsExpanded ? 'locked' : 'unlocked'}`}
             onClick={() => { setIsSettingsExpanded(!isSettingsExpanded); setIsCollapsed(false); }}
             style={{ borderStyle: 'dashed' }}
+            title="Assignment Settings"
           >
             <Settings size={14} />
             <span>Settings</span>
           </button>
 
-          <button className="delete-node-btn" onClick={handleDelete}>
+          <button type="button" className="delete-node-btn" onClick={handleDelete} title="Delete Assignment">
             <Trash2 size={16} />
           </button>
         </div>
@@ -872,9 +930,9 @@ export const AssignmentNodeView = (props: any) => {
               const childType = (node.attrs.assignmentType && node.attrs.assignmentType !== 'Mixed')
                 ? node.attrs.assignmentType
                 : 'Subjective';
-              editor.commands.insertContentAt(pos, { type: 'questionBlock', attrs: { id: uuidv4(), questionType: childType, maxPoints: 10, correctIndex: 0, options: ['', '', '', ''] }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] });
+              editor.commands.insertContentAt(pos, { type: 'questionBlock', attrs: { id: uuidv4(), questionType: childType, maxPoints: 10, correctIndex: 0, options: ['', '', '', ''] }, content: [{ type: 'paragraph' }] });
             }
-          }}>+ Question</button>
+          }}>+ Add Question to Assignment</button>
         </div>
       </div>
 
@@ -883,7 +941,7 @@ export const AssignmentNodeView = (props: any) => {
         <button className="sibling-add-btn" onClick={() => {
           if (typeof getPos === 'function') {
             const pos = getPos() + node.nodeSize;
-            editor.commands.insertContentAt(pos, { type: 'lesson', attrs: { id: uuidv4() }, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] }, { type: 'paragraph', content: [{ type: 'text', text: 'Lesson content...' }] }] });
+            editor.commands.insertContentAt(pos, { type: 'lesson', attrs: { id: uuidv4() }, content: [{ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Lesson' }] }, { type: 'paragraph' }] });
           }
         }}>+ Add Lesson</button>
         <button className="sibling-add-btn" onClick={() => {
@@ -894,8 +952,8 @@ export const AssignmentNodeView = (props: any) => {
               attrs: { id: uuidv4() },
               content: [
                 { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-                ...defaultAssignmentInstructionBlocks(),
-                { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Type your question here...' }] }] }
+                { type: 'paragraph', content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }] },
+                { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph' }] }
               ]
             });
           }
@@ -910,67 +968,111 @@ export const AssignmentNodeView = (props: any) => {
 // ─────────────────────────────────────────────
 export const VideoBlockView = (props: any) => {
   const { node, updateAttributes } = props;
+  const url = node.attrs.url || '';
+  const isYouTube = url.includes('youtube') || url.includes('youtu.be');
+  const isVimeo = url.includes('vimeo');
+
   return (
     <NodeViewWrapper className="media-block-view video-block">
-      <div className="media-icon"><Video size={18} /></div>
+      <div className="media-block-header">
+        <div className="media-icon"><Video size={16} /></div>
+        <span className="media-type-label">Core Video Lecture</span>
+        {url && (
+          <span className="media-source-pill">
+            {isYouTube ? 'YouTube' : isVimeo ? 'Vimeo' : 'Direct Stream'}
+          </span>
+        )}
+      </div>
       <div className="media-inputs">
         <input
           type="text"
-          value={node.attrs.url || ''}
+          value={url}
           onChange={(e) => updateAttributes({ url: e.target.value })}
-          placeholder="Enter Video URL"
+          placeholder="Paste Video URL (YouTube, Vimeo, MP4)..."
           className="media-url-input"
         />
-        {node.attrs.url && <a href={node.attrs.url} target="_blank" rel="noreferrer" className="media-preview-link">Preview</a>}
+        {url && (
+          <a href={url} target="_blank" rel="noreferrer" className="media-preview-link">
+            Preview Link
+          </a>
+        )}
       </div>
-      <button className="delete-node-btn" onClick={() => props.deleteNode()}>×</button>
+      <button className="delete-node-btn" onClick={() => props.deleteNode()} title="Remove video">×</button>
     </NodeViewWrapper>
   );
 };
 
 export const AudioBlockView = (props: any) => {
   const { node, updateAttributes } = props;
+  const url = node.attrs.url || '';
+
   return (
     <NodeViewWrapper className="media-block-view audio-block">
-      <div className="media-icon"><FileAudio size={18} /></div>
+      <div className="media-block-header">
+        <div className="media-icon"><FileAudio size={16} /></div>
+        <span className="media-type-label">Audio Lecture / Podcast</span>
+      </div>
       <div className="media-inputs">
         <input
           type="text"
-          value={node.attrs.url || ''}
+          value={url}
           onChange={(e) => updateAttributes({ url: e.target.value })}
-          placeholder="Enter Audio URL"
+          placeholder="Paste Audio Stream URL (MP3, WAV)..."
           className="media-url-input"
         />
-        {node.attrs.url && <a href={node.attrs.url} target="_blank" rel="noreferrer" className="media-preview-link">Preview</a>}
+        {url && (
+          <a href={url} target="_blank" rel="noreferrer" className="media-preview-link">
+            Listen
+          </a>
+        )}
       </div>
-      <button className="delete-node-btn" onClick={() => props.deleteNode()}>×</button>
+      <button className="delete-node-btn" onClick={() => props.deleteNode()} title="Remove audio">×</button>
     </NodeViewWrapper>
   );
 };
 
 export const ResourceBlockView = (props: any) => {
   const { node, updateAttributes } = props;
+  const url = node.attrs.url || '';
+  const label = node.attrs.label || '';
+  const isPdf = url.toLowerCase().endsWith('.pdf') || url.includes('.pdf');
+  const isGit = url.includes('github') || url.includes('gitlab');
+
   return (
     <NodeViewWrapper className="media-block-view resource-block">
-      <div className="media-icon"><Link2 size={18} /></div>
-      <div className="media-inputs">
+      <div className="media-block-header">
+        <div className="media-icon"><Link2 size={16} /></div>
+        <span className="media-type-label">Attached Study Resource & Documentation</span>
+        {url && (
+          <span className="media-source-pill">
+            {isPdf ? 'PDF File' : isGit ? 'Code Repo' : 'Web Link'}
+          </span>
+        )}
+      </div>
+      <div className="media-inputs-grid">
         <input
           type="text"
-          value={node.attrs.label || ''}
+          value={label}
           onChange={(e) => updateAttributes({ label: e.target.value })}
-          placeholder="Resource Label (e.g., PDF Guide)"
+          placeholder="Resource Title (e.g. Architecture Reference Guide PDF)"
           className="media-label-input"
         />
-        <input
-          type="text"
-          value={node.attrs.url || ''}
-          onChange={(e) => updateAttributes({ url: e.target.value })}
-          placeholder="Enter Resource URL"
-          className="media-url-input"
-        />
-        {node.attrs.url && <a href={node.attrs.url} target="_blank" rel="noreferrer" className="media-preview-link">Preview</a>}
+        <div className="media-url-row">
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => updateAttributes({ url: e.target.value })}
+            placeholder="Paste Resource URL (PDF, GitHub, Google Doc)..."
+            className="media-url-input"
+          />
+          {url && (
+            <a href={url} target="_blank" rel="noreferrer" className="media-preview-link">
+              Open
+            </a>
+          )}
+        </div>
       </div>
-      <button className="delete-node-btn" onClick={() => props.deleteNode()}>×</button>
+      <button className="delete-node-btn" onClick={() => props.deleteNode()} title="Remove resource">×</button>
     </NodeViewWrapper>
   );
 };
@@ -1051,6 +1153,52 @@ export const QuestionBlockView = (props: any) => {
     return () => editor.off('transaction', updateContext);
   }, [editor, getPos, node]);
 
+  // Auto-sync options if question content accidentally contains a bulletList (cleans up legacy/converted questions)
+  React.useEffect(() => {
+    if (node.attrs.questionType !== 'MCQ') return;
+
+    let bulletListOffset = -1;
+    let bulletListNodeSize = 0;
+    const extractedListItems: string[] = [];
+
+    node.forEach((child: any, offset: number) => {
+      if (child.type.name === 'bulletList' || child.type.name === 'orderedList') {
+        bulletListOffset = offset;
+        bulletListNodeSize = child.nodeSize;
+        child.forEach((li: any) => {
+          const text = li.textContent?.trim();
+          if (text) extractedListItems.push(text);
+        });
+      }
+    });
+
+    const currentOpts: string[] = Array.isArray(node.attrs.options) ? node.attrs.options : [];
+    const hasMeaningfulOpts = currentOpts.some((o: string) => typeof o === 'string' && o.trim().length > 0);
+
+    if (extractedListItems.length > 0) {
+      if (!hasMeaningfulOpts) {
+        updateAttributes({
+          options: extractedListItems,
+          correctIndex: typeof node.attrs.correctIndex === 'number' ? node.attrs.correctIndex : 0,
+        });
+      }
+
+      if (typeof getPos === 'function') {
+        const timer = setTimeout(() => {
+          try {
+            const pos = getPos();
+            if (typeof pos === 'number') {
+              const deleteFrom = pos + 1 + bulletListOffset;
+              const deleteTo = deleteFrom + bulletListNodeSize;
+              editor.chain().deleteRange({ from: deleteFrom, to: deleteTo }).run();
+            }
+          } catch (e) { }
+        }, 50);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [node.attrs.questionType]);
+
   if (typeof getPos === 'function') {
     const pos = getPos();
     const $pos = editor.state.doc.resolve(pos);
@@ -1081,22 +1229,22 @@ export const QuestionBlockView = (props: any) => {
               onChange={e => updateAttributes({ questionType: e.target.value })}
               style={{ width: '220px' }}
             >
-              <option value="Subjective">📝 Subjective (Text Response)</option>
-              <option value="MCQ">🔘 Multiple Choice (MCQ)</option>
+              <option value="Subjective">Subjective (Text Response)</option>
+              <option value="MCQ">Multiple Choice (MCQ)</option>
             </select>
           ) : (
             <span
               className="styled-form-control question-type-select"
               style={{ display: 'inline-flex', alignItems: 'center', background: '#f8fafc', color: '#64748b', cursor: 'not-allowed', width: '220px' }}
             >
-              {node.attrs.questionType === 'Subjective' ? '📝 Subjective (Text Response)' : '🔘 Multiple Choice (MCQ)'}
+              {node.attrs.questionType === 'Subjective' ? 'Subjective (Text Response)' : 'Multiple Choice (MCQ)'}
             </span>
           )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div className="points-input">
-            <span>🏆 Points:</span>
+            <span>Points:</span>
             <input
               type="number"
               min="1"
@@ -1119,7 +1267,9 @@ export const QuestionBlockView = (props: any) => {
             onChange={e => updateAttributes({ requiresLessonGrounding: e.target.checked })}
             style={{ width: '16px', height: '16px', accentColor: '#8b5cf6', cursor: 'pointer' }}
           />
-          <span>🤖 AI Lesson Grounding Ground Truth</span>
+          <span title="When enabled, AI evaluates the answer strictly against the selected lesson materials">
+            Require lesson-based evaluation
+          </span>
         </label>
 
         {node.attrs.requiresLessonGrounding !== false && (
@@ -1169,18 +1319,6 @@ export const QuestionBlockView = (props: any) => {
         )}
       </div>
 
-      {node.attrs.questionType === 'Subjective' && (
-        <div className="question-rubric-box" contentEditable={false}>
-          <label className="question-rubric-label">💡 Expected Answer Guideline / AI Rubric:</label>
-          <textarea
-            value={node.attrs.expectedAnswerGuideline || ''}
-            onChange={e => updateAttributes({ expectedAnswerGuideline: e.target.value })}
-            placeholder="Describe the key concepts, terms, or steps the trainee must mention for full marks..."
-            className="styled-form-control"
-            style={{ width: '100%', minHeight: '64px' }}
-          />
-        </div>
-      )}
 
       <div className="question-body">
         <NodeViewContent className="question-content-inner" />
@@ -1188,13 +1326,11 @@ export const QuestionBlockView = (props: any) => {
 
       {node.attrs.questionType === 'MCQ' && (
         <div className="mcq-options-container" contentEditable={false}>
-          <label style={{ fontSize: '12px', fontWeight: 700, color: '#6b21a8', display: 'block', margin: '12px 0 8px 0', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Multiple Choice Options (Select radio for correct answer):
-          </label>
-          {(node.attrs.options || ['', '', '', '']).map((opt: string, idx: number) => {
+          {(node.attrs.options && node.attrs.options.length > 0 ? node.attrs.options : ['', '', '', '']).map((opt: string, idx: number) => {
             const isCorrect = node.attrs.correctIndex === idx;
+            const letter = String.fromCharCode(65 + idx);
             return (
-              <div key={idx} className="mcq-option-row">
+              <div key={idx} className={`mcq-option-row ${isCorrect ? 'correct-row' : ''}`}>
                 <input
                   type="radio"
                   name={`correct-option-${node.attrs.id}`}
@@ -1203,6 +1339,7 @@ export const QuestionBlockView = (props: any) => {
                   className="mcq-radio"
                   title="Mark as correct answer"
                 />
+                <span className="mcq-letter-badge">{letter}</span>
                 <input
                   type="text"
                   value={opt}
@@ -1211,9 +1348,14 @@ export const QuestionBlockView = (props: any) => {
                     newOpts[idx] = e.target.value;
                     updateAttributes({ options: newOpts });
                   }}
-                  placeholder={`Option ${String.fromCharCode(65 + idx)}`}
+                  placeholder={`Choice ${letter}...`}
                   className={`styled-form-control mcq-text-input ${isCorrect ? 'correct' : ''}`}
                 />
+                {isCorrect && (
+                  <span className="mcq-correct-indicator">
+                    ✓ Correct Answer
+                  </span>
+                )}
                 {(node.attrs.options || []).length > 2 && (
                   <button
                     type="button"
@@ -1225,7 +1367,7 @@ export const QuestionBlockView = (props: any) => {
                       else if (newCorrect > idx) newCorrect--;
                       updateAttributes({ options: newOpts, correctIndex: newCorrect });
                     }}
-                    title="Remove option"
+                    title="Remove choice"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -1233,13 +1375,15 @@ export const QuestionBlockView = (props: any) => {
               </div>
             );
           })}
-          <button
-            type="button"
-            onClick={() => updateAttributes({ options: [...(node.attrs.options || []), ''] })}
-            style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5', background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 0', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-          >
-            + Add Option
-          </button>
+          <div className="mcq-options-footer">
+            <button
+              type="button"
+              className="mcq-add-opt-btn"
+              onClick={() => updateAttributes({ options: [...(node.attrs.options || ['', '', '', '']), ''] })}
+            >
+              + Add Option
+            </button>
+          </div>
         </div>
       )}
     </NodeViewWrapper>

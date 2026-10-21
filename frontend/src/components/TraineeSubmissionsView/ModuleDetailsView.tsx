@@ -8,7 +8,13 @@ import { useNotifications } from '../../context/NotificationContext';
 import { useToast } from '../../context/ToastContext';
 import { useScrollLock } from '../../hooks/useScrollLock';
 import { LessonCard } from '../SharedCards/LessonCard';
-import { isLessonUnlocked, isAssignmentUnlocked } from '../../shared/lockLogic';
+import {
+  isLessonUnlocked,
+  isAssignmentUnlocked,
+  getLessonLockInfo,
+  getAssignmentLockInfo,
+  sortCurriculumLessons,
+} from '../../shared/lockLogic';
 import { RichText } from '../common/RichText';
 import { ModuleDescriptionPreview, ModuleShowMoreModal } from '../common/ModuleShowMoreModal';
 import { renderMultilineText } from '../../utils/textUtils';
@@ -88,6 +94,136 @@ const getCardData = (a: any, sub: any, isLocked: boolean) => {
 
   return { displayStatus, isOverdue, isExpired, isBelowCutoff, rawStatus };
 };
+
+/**
+ * Safely resolves and formats trainee answers for view details modal.
+ * Prevents raw JSON strings from being shown on UI.
+ */
+function resolveTraineeAnswer(
+  q: any,
+  idx: number,
+  parsedAnswers: any,
+  rawText: string,
+  submissionAnswers?: any[]
+): { selectedVal: any; formattedAnswer: string } {
+  const ansObj = parsedAnswers?.answers || (parsedAnswers && !parsedAnswers.textAnswers ? parsedAnswers : {});
+  const textAnsObj = parsedAnswers?.textAnswers || {};
+  const qId = q?.id != null ? String(q.id) : null;
+
+  let val: any = undefined;
+
+  // 1. Check submission.answers array
+  if (Array.isArray(submissionAnswers) && submissionAnswers.length > 0) {
+    const match = submissionAnswers.find(
+      (item: any) =>
+        (qId && String(item.questionId) === qId) ||
+        String(item.questionId) === String(idx) ||
+        String(item.questionId) === String(idx + 1) ||
+        (item.questionIndex !== undefined && (item.questionIndex === idx || item.questionIndex === idx + 1))
+    );
+    if (match) {
+      val = match.answer ?? match.selectedOption ?? match.traineeAnswer;
+    }
+  }
+
+  // 2. Candidate keys in JSON payload (support 0-index, 1-index, and question ID)
+  if (val === undefined || val === null || val === '') {
+    const candidateKeys = [
+      qId,
+      idx,
+      String(idx),
+      idx + 1,
+      String(idx + 1),
+    ].filter((k) => k !== null && k !== undefined);
+
+    for (const k of candidateKeys) {
+      if (textAnsObj && textAnsObj[k!] !== undefined && textAnsObj[k!] !== null && textAnsObj[k!] !== '') {
+        val = textAnsObj[k!];
+        break;
+      }
+    }
+
+    if (val === undefined || val === null || val === '') {
+      for (const k of candidateKeys) {
+        if (ansObj && ansObj[k!] !== undefined && ansObj[k!] !== null && ansObj[k!] !== '') {
+          val = ansObj[k!];
+          break;
+        }
+      }
+    }
+
+    if (val === undefined || val === null || val === '') {
+      if (parsedAnswers && typeof parsedAnswers === 'object') {
+        for (const k of candidateKeys) {
+          if (parsedAnswers[k!] !== undefined && parsedAnswers[k!] !== null && parsedAnswers[k!] !== '') {
+            val = parsedAnswers[k!];
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Fallback to raw text if not JSON
+  if (val === undefined || val === null || val === '') {
+    if (parsedAnswers?.raw && typeof parsedAnswers.raw === 'string' && !parsedAnswers.raw.trim().startsWith('{')) {
+      val = parsedAnswers.raw.trim();
+    } else if (rawText && typeof rawText === 'string' && !rawText.trim().startsWith('{')) {
+      val = rawText.trim();
+    }
+  }
+
+  // 4. Format into clean human-readable output
+  let formatted = 'No answer provided';
+  if (val !== undefined && val !== null && val !== '') {
+    if (typeof val === 'number') {
+      if (q?.options && Array.isArray(q.options) && q.options[val] !== undefined) {
+        const letter = String.fromCharCode(65 + val);
+        formatted = `Option ${letter}: ${q.options[val]}`;
+      } else {
+        const letter = String.fromCharCode(65 + val);
+        formatted = `Option ${letter} (Selected index ${val})`;
+      }
+    } else if (Array.isArray(val)) {
+      formatted = val
+        .map((item) => {
+          if (typeof item === 'number' && q?.options && q.options[item] !== undefined) {
+            const letter = String.fromCharCode(65 + item);
+            return `Option ${letter}: ${q.options[item]}`;
+          }
+          return String(item);
+        })
+        .join(', ');
+    } else if (typeof val === 'string') {
+      if (val.trim().startsWith('{')) {
+        try {
+          const inner = JSON.parse(val);
+          if (inner.raw && typeof inner.raw === 'string' && !inner.raw.trim().startsWith('{')) {
+            formatted = inner.raw.trim();
+          } else {
+            formatted = 'Answer recorded';
+          }
+        } catch {
+          formatted = 'Answer recorded';
+        }
+      } else if (/^\d+$/.test(val.trim())) {
+        const num = parseInt(val.trim(), 10);
+        if (q?.options && Array.isArray(q.options) && q.options[num] !== undefined) {
+          const letter = String.fromCharCode(65 + num);
+          formatted = `Option ${letter}: ${q.options[num]}`;
+        } else {
+          formatted = val;
+        }
+      } else {
+        formatted = val;
+      }
+    } else {
+      formatted = String(val);
+    }
+  }
+
+  return { selectedVal: val, formattedAnswer: formatted };
+}
 
 /**
  * Module Details: lessons watched, tasks submitted, resources visited → progress.
@@ -251,7 +387,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     return map;
   }, [mySubs]);
 
-  const lessons = moduleData?.lessons || [];
+  const lessons = useMemo(() => sortCurriculumLessons(moduleData?.lessons || []), [moduleData]);
   const resources = moduleData?.resources || [];
   const tasks = useMemo(() => {
     const fromLessons = (lessons || []).flatMap((l: any) =>
@@ -306,6 +442,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
 
   const markLessonWatched = async (lessonId: string) => {
     try {
+      const lid = String(lessonId);
+      setStats((prev: any) => ({
+        ...prev,
+        completedLessonIds: Array.from(new Set([...(prev?.completedLessonIds || []), lid])),
+        completedLessons: (prev?.completedLessons || 0) + 1,
+      }));
       await progressService.completeLesson(lessonId, accessToken);
       await load();
       await refreshNotifications();
@@ -420,12 +562,13 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   // Shared row renderer for Tasks + Assessments tabs (same UI as TraineeAssignmentsView)
   const renderTaskRow = (task: any) => {
     const sub = subByAssignment.get(task.id);
-    const isLocked =
-      isTrainee &&
-      !isAssignmentUnlocked(
-        { lockUntilLessonsComplete: task.lockUntilLessonsComplete, dependsOnLessonIds: task.dependsOnLessonIds },
-        { completedLessonIds: Array.from(completedLessonIds) },
-      );
+    const lockInfo = getAssignmentLockInfo(
+      { lockUntilLessonsComplete: task.lockUntilLessonsComplete, dependsOnLessonIds: task.dependsOnLessonIds },
+      { completedLessonIds: Array.from(completedLessonIds) },
+      lessons
+    );
+    const isLocked = isTrainee && !lockInfo.isUnlocked;
+    const taskLockReason = lockInfo.lockReason;
 
     const { displayStatus, isOverdue, isExpired, isBelowCutoff, rawStatus } = getCardData(task, sub, isLocked);
 
@@ -438,6 +581,7 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
     else if (displayStatus === 'Rejected') { bg = '#fee2e2'; color = '#b91c1c'; }
     else if (displayStatus === 'Submitted') { bg = '#fef3c7'; color = '#b45309'; }
     else if (displayStatus === 'Missed/Overdue') { bg = '#fecaca'; color = '#991b1b'; }
+    else if (displayStatus === 'Locked') { bg = '#fef2f2'; color = '#991b1b'; }
 
     const showDeadline = displayStatus !== 'Locked';
     const isLockedByLessons =
@@ -447,11 +591,21 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
       <div
         key={task.id}
         className={displayStatus === 'Locked' ? 'locked-item interactive-lock' : ''}
-        title={displayStatus === 'Locked' ? task.lockReason || 'Locked task' : ''}
+        title={displayStatus === 'Locked' ? taskLockReason || task.lockReason || 'Locked task' : ''}
+        onClick={() => {
+          if (displayStatus === 'Locked') {
+            toast.warning(taskLockReason || 'This assignment is locked until prerequisite lessons are completed.');
+          }
+        }}
         style={{
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16,
-          padding: '14px 18px', border: '1px solid #e2e8f0', borderRadius: 12, background: '#fff',
-          opacity: displayStatus === 'Locked' ? 0.75 : 1, transition: 'box-shadow 0.15s',
+          padding: '14px 18px',
+          border: displayStatus === 'Locked' ? '1px dashed #fca5a5' : '1px solid #e2e8f0',
+          borderRadius: 12,
+          background: displayStatus === 'Locked' ? '#fffbfa' : '#fff',
+          opacity: displayStatus === 'Locked' ? 0.85 : 1,
+          transition: 'all 0.15s ease',
+          cursor: displayStatus === 'Locked' ? 'not-allowed' : 'default',
           flexWrap: 'wrap', // Allow wrapping on small screens
         }}
       >
@@ -484,10 +638,10 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
 
         {/* CENTER: deadline / lock message */}
         <div style={{ flex: '0 0 240px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', fontSize: 12, color: '#64748b', gap: 6, flexWrap: 'wrap' }}>
-          {isLockedByLessons ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-              Unlocks after prerequisite lessons
+          {displayStatus === 'Locked' ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#dc2626', fontWeight: 600, fontSize: 12 }}>
+              <span style={{ fontSize: 14 }}>🔒</span>
+              {taskLockReason || 'Unlocks after prerequisite lessons'}
             </span>
           ) : showDeadline && (sub || task.computedDeadline) ? (
             <DeadlineDisplay task={task} submission={sub} />
@@ -700,23 +854,26 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
           <div className="mdv-tab-content">
             {lessons.map((lesson: any, index: number) => {
               const isDone = completedLessonIds.has(String(lesson.id));
-              const isLocked = isTrainee && !isLessonUnlocked(
-                { id: lesson.id },
+              const lockInfo = getLessonLockInfo(
+                { id: lesson.id, title: lesson.title },
                 index,
                 { sequentialLessonLock: moduleData.sequentialLessonLock, lessons },
                 { completedLessonIds: Array.from(completedLessonIds) }
               );
+              const isLocked = isTrainee && !lockInfo.isUnlocked;
+              const lockReason = lockInfo.lockReason || 'Complete the previous lesson to unlock this lesson.';
               return (
                 <LessonCard
                   key={lesson.id}
                   lesson={lesson}
                   isDone={isDone}
                   isLocked={isLocked}
+                  lockReason={lockReason}
                   isTrainee={isTrainee}
                   resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
                   onVisitResource={(res) => res.id && progressService.visitResource(res.id, accessToken).catch(() => { })}
                   onMarkWatched={() => markLessonWatched(lesson.id)}
-                  onClickLocked={() => toast.warning('Complete the previous lesson to unlock this lesson.')}
+                  onClickLocked={() => toast.warning(lockReason)}
                 />
               );
             })}
@@ -855,27 +1012,17 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                 {questions.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {questions.map((q: any, idx: number) => {
-                      const ansObj = parsedAnswers.answers || parsedAnswers || {};
-                      const textAnsObj = parsedAnswers.textAnswers || parsedAnswers || {};
-
-                      let userAnswer = '';
-                      if (isMcq) {
-                        const picked = ansObj[idx];
-                        userAnswer = Array.isArray(picked)
-                          ? picked.map((i: number) => q.options?.[i]).filter(Boolean).join(', ') || 'No answer provided'
-                          : typeof picked === 'number' && q.options
-                            ? q.options[picked]
-                            : 'No answer provided';
-                      } else {
-                        const extracted = textAnsObj[idx] || ansObj[idx] || parsedAnswers[idx];
-                        userAnswer =
-                          (extracted && typeof extracted === 'string' ? extracted : parsedAnswers.raw || rawText) ||
-                          'No answer provided';
-                      }
+                      const { selectedVal, formattedAnswer } = resolveTraineeAnswer(
+                        q,
+                        idx,
+                        parsedAnswers,
+                        rawText,
+                        submission.answers
+                      );
 
                       const qPoints = q.maxPoints || q.points || 10;
                       const qText = (q.text || q.questionText || q.question || '').replace(/\\n/g, '\n').replace(/\n$/, '').trim();
-                      const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ';
+                      const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ' || (q.options && q.options.length > 0);
 
                       return (
                         <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
@@ -890,8 +1037,9 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                             <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               <span style={{ fontWeight: 600, color: '#64748b', fontSize: '11px', textTransform: 'uppercase', marginBottom: '2px' }}>Options & Evaluation:</span>
                               {q.options.map((opt: string, optIdx: number) => {
-                                const ansVal = ansObj[idx];
-                                const isSelected = Array.isArray(ansVal) ? ansVal.includes(optIdx) : ansVal === optIdx;
+                                const isSelected = Array.isArray(selectedVal)
+                                  ? selectedVal.includes(optIdx) || selectedVal.map(String).includes(String(optIdx))
+                                  : selectedVal === optIdx || String(selectedVal) === String(optIdx);
                                 const isCorrect = Array.isArray(q.correctIndex) ? q.correctIndex.includes(optIdx) : q.correctIndex === optIdx;
                                 
                                 let bg = '#f8fafc';
@@ -925,9 +1073,9 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                               })}
                             </div>
                           ) : (
-                            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13.5px', color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                               <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Answer:</span>
-                              {userAnswer}
+                              {formattedAnswer}
                             </div>
                           )}
                         </div>
@@ -936,9 +1084,12 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                   </div>
                 ) : (
                   <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13px', color: '#334155', whiteSpace: 'pre-wrap' }}>
+                    <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', fontSize: '13.5px', color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
                       <span style={{ fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px', fontSize: '11px', textTransform: 'uppercase' }}>Your Submission:</span>
-                      {parsedAnswers.raw || rawText}
+                      {(() => {
+                        const { formattedAnswer } = resolveTraineeAnswer(null, 0, parsedAnswers, rawText, submission.answers);
+                        return formattedAnswer;
+                      })()}
                     </div>
                   </div>
                 )}
