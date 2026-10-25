@@ -260,7 +260,7 @@ export function TrainerEvaluationDashboard({
   const activeMode = localFiltersState['evaluationMode'] || undefined;
   const setEvaluationMode = (mode: string | null) => {
     const newFilters = { ...localFiltersState };
-    if (!mode) {
+    if (!mode || mode === 'all') {
       delete newFilters.evaluationMode;
     } else {
       newFilters.evaluationMode = mode;
@@ -268,33 +268,92 @@ export function TrainerEvaluationDashboard({
     setSearchParams(newFilters);
   };
 
+  // ─── Classification Helpers ──────────────────────────────────────────
+  const checkIsApproved = useCallback((s: any) => {
+    const st = String(s.status || '').toLowerCase();
+    if (st === 'approved' || st === 'passed' || st === 'accepted') return true;
+    if (st === 'evaluated') {
+      const maxScore = s.assignment?.maxScore || s.totalMaxScore || 100;
+      const finalScore = s.score ?? s.totalScore ?? s.aiTotalScore ?? 0;
+      return maxScore > 0 ? (finalScore / maxScore) >= 0.35 : finalScore > 0;
+    }
+    return false;
+  }, []);
+
+  const checkIsRejected = useCallback((s: any) => {
+    const st = String(s.status || '').toLowerCase();
+    if (st === 'rejected' || st === 'needs_improvement' || st === 'failed') return true;
+    if (st === 'evaluated') {
+      const maxScore = s.assignment?.maxScore || s.totalMaxScore || 100;
+      const finalScore = s.score ?? s.totalScore ?? s.aiTotalScore ?? 0;
+      return maxScore > 0 ? (finalScore / maxScore) < 0.35 : false;
+    }
+    return false;
+  }, []);
+
+  const checkIsPending = useCallback((s: any) => {
+    if (checkIsApproved(s) || checkIsRejected(s)) return false;
+    const st = String(s.status || '').toLowerCase();
+    return (
+      st === 'ai_evaluated_pending_review' ||
+      st === 'pending_manual_review' ||
+      st === 'submitted' ||
+      st === 'pending' ||
+      st === 'in_review' ||
+      !st ||
+      st === 'locked'
+    );
+  }, [checkIsApproved, checkIsRejected]);
+
+  const checkIsAiEvaluated = useCallback((s: any) => {
+    const isAuto = s.evaluationMethod === 'ai_auto';
+    const isAssisted = s.evaluationMethod === 'ai_assisted' || s.status === 'ai_evaluated_pending_review';
+    const hasAiScore = s.aiTotalScore != null || (s.aiEvaluationResult && s.aiEvaluationResult.totalScore != null);
+    return isAuto || isAssisted || hasAiScore;
+  }, []);
+
+  const checkIsManualReview = useCallback((s: any) => {
+    // 1) AI evaluated but trainer intervention is needed
+    if (s.status === 'ai_evaluated_pending_review') return true;
+    // 2) Assignment submitted awaiting trainer grading
+    if (s.status === 'pending_manual_review' || s.status === 'SUBMITTED' || s.status === 'submitted' || s.status === 'pending') {
+      return true;
+    }
+    // 3) Pure manual review assignments awaiting grading
+    if (s.evaluationMethod !== 'ai_auto' && !checkIsApproved(s) && !checkIsRejected(s)) {
+      return true;
+    }
+    return false;
+  }, [checkIsApproved, checkIsRejected]);
+
+  // ─── Filtered Sets ───────────────────────────────────────────────────
+  const allPending = useMemo(() => {
+    return filteredSubs.filter(checkIsPending);
+  }, [filteredSubs, checkIsPending]);
+
   const aiEvaluated = useMemo(() => {
-    return filteredSubs.filter((s: any) => {
-      // Submissions evaluated by AI where NO human intervention is required
-      const isAuto = s.evaluationMethod === 'ai_auto';
-      const isAiApproved = (s.status === 'APPROVED' || s.status === 'EVALUATED') && s.aiTotalScore != null;
-      const noReviewNeeded = s.status !== 'ai_evaluated_pending_review' && s.status !== 'pending_manual_review' && s.status !== 'SUBMITTED' && s.status !== 'submitted';
-      return isAuto || (isAiApproved && noReviewNeeded) || (s.aiTotalScore != null && noReviewNeeded);
-    });
-  }, [filteredSubs]);
+    return filteredSubs.filter(checkIsAiEvaluated);
+  }, [filteredSubs, checkIsAiEvaluated]);
 
   const manualPending = useMemo(() => {
-    return filteredSubs.filter((s: any) => {
-      // 1) AI evaluated but trainer review IS needed
-      if (s.status === 'ai_evaluated_pending_review') return true;
-      // 2) Assignment submitted by trainee where trainer needs to review
-      if (s.status === 'pending_manual_review' || s.status === 'SUBMITTED' || s.status === 'submitted') return true;
-      // 3) Any submission without auto AI evaluation that is not already completed
-      if (s.evaluationMethod !== 'ai_auto' && s.status !== 'APPROVED' && s.status !== 'REJECTED') return true;
-      return false;
-    });
-  }, [filteredSubs]);
+    return filteredSubs.filter(checkIsManualReview);
+  }, [filteredSubs, checkIsManualReview]);
+
+  const approvedSubs = useMemo(() => {
+    return filteredSubs.filter(checkIsApproved);
+  }, [filteredSubs, checkIsApproved]);
+
+  const rejectedSubs = useMemo(() => {
+    return filteredSubs.filter(checkIsRejected);
+  }, [filteredSubs, checkIsRejected]);
 
   const currentModeSubs = useMemo(() => {
     if (activeMode === 'ai-assisted') return aiEvaluated;
     if (activeMode === 'manual') return manualPending;
+    if (activeMode === 'approved') return approvedSubs;
+    if (activeMode === 'rejected') return rejectedSubs;
     return filteredSubs;
-  }, [activeMode, aiEvaluated, manualPending, filteredSubs]);
+  }, [activeMode, aiEvaluated, manualPending, approvedSubs, rejectedSubs, filteredSubs]);
 
   return (
     <div className="trainer-evaluation-container">
@@ -305,35 +364,58 @@ export function TrainerEvaluationDashboard({
         </div>
       </header>
 
-
-
       {/* ── 3. SEARCH & SUBMODE CONTROLS BAR ── */}
       <section className="eval-controls-bar" aria-label="Controls and filters">
         <div className="eval-submode-pill-row" role="tablist">
           <button
             type="button"
-            className={`eval-submode-pill ${!activeMode ? 'is-active' : ''}`}
-            onClick={() => setEvaluationMode(null)}
+            className={`eval-submode-pill ${!activeMode || activeMode === 'all' ? 'is-active' : ''}`}
+            onClick={() => setEvaluationMode('all')}
+            role="tab"
+            aria-selected={!activeMode || activeMode === 'all'}
           >
-            <span>All Pending</span>
+            <span>All Task</span>
             <span className="eval-tab-badge-counter">{filteredSubs.length}</span>
           </button>
           <button
             type="button"
             className={`eval-submode-pill ${activeMode === 'ai-assisted' ? 'is-active' : ''}`}
             onClick={() => setEvaluationMode('ai-assisted')}
+            role="tab"
+            aria-selected={activeMode === 'ai-assisted'}
           >
             <span>AI Evaluated</span>
-            <span className="eval-tab-badge-counter">{aiEvaluated.length}</span>
+            <span className="eval-tab-badge-counter badge-ai">{aiEvaluated.length}</span>
           </button>
           <button
             type="button"
             className={`eval-submode-pill ${activeMode === 'manual' ? 'is-active' : ''}`}
             onClick={() => setEvaluationMode('manual')}
+            role="tab"
+            aria-selected={activeMode === 'manual'}
           >
-          
             <span>Manual Review</span>
-            <span className="eval-tab-badge-counter">{manualPending.length}</span>
+            <span className="eval-tab-badge-counter badge-manual">{manualPending.length}</span>
+          </button>
+          <button
+            type="button"
+            className={`eval-submode-pill is-approved ${activeMode === 'approved' ? 'is-active' : ''}`}
+            onClick={() => setEvaluationMode('approved')}
+            role="tab"
+            aria-selected={activeMode === 'approved'}
+          >
+            <span>Approved</span>
+            <span className="eval-tab-badge-counter badge-approved">{approvedSubs.length}</span>
+          </button>
+          <button
+            type="button"
+            className={`eval-submode-pill is-rejected ${activeMode === 'rejected' ? 'is-active' : ''}`}
+            onClick={() => setEvaluationMode('rejected')}
+            role="tab"
+            aria-selected={activeMode === 'rejected'}
+          >
+            <span>Rejected</span>
+            <span className="eval-tab-badge-counter badge-rejected">{rejectedSubs.length}</span>
           </button>
         </div>
 
@@ -428,13 +510,19 @@ export function TrainerEvaluationDashboard({
               <p className="eval-empty-desc">
                 {targetId
                   ? 'No pending submissions found for this specific assignment.'
+                  : activeMode === 'approved'
+                  ? 'No approved submissions found.'
+                  : activeMode === 'rejected'
+                  ? 'No rejected submissions found.'
                   : activeMode === 'ai-assisted'
-                  ? 'No automated AI-evaluated submissions found.'
+                  ? 'No automated or AI-evaluated submissions found.'
                   : activeMode === 'manual'
                   ? 'No submissions requiring manual review at this time.'
+                  : activeMode === 'all'
+                  ? 'No submissions found.'
                   : searchQuery
                   ? `No evaluations matching "${searchQuery}".`
-                  : 'There are no pending submissions awaiting review. Great work!'}
+                  : 'No submissions found. Great work!'}
               </p>
               {searchQuery || activeMode || targetId ? (
                 <button
@@ -442,7 +530,7 @@ export function TrainerEvaluationDashboard({
                   className="eval-chip-clear-all-link"
                   onClick={() => {
                     setSearchQuery('');
-                    setEvaluationMode(null);
+                    setEvaluationMode('all');
                     clearIdParam();
                   }}
                 >
@@ -459,7 +547,10 @@ export function TrainerEvaluationDashboard({
                   sub.trainee?.email ||
                   'Trainee';
                 const taskTitle = sub.assignment?.title || 'Assignment Task';
-                const maxScore = sub.assignment?.maxScore || 100;
+                const maxScore = sub.assignment?.maxScore || sub.totalMaxScore || 100;
+                const subIsApproved = checkIsApproved(sub);
+                const subIsRejected = checkIsRejected(sub);
+                const awardedScore = sub.score ?? sub.totalScore ?? sub.aiTotalScore;
                 const isAiEvaluated = sub.status === 'ai_evaluated_pending_review' || sub.aiTotalScore != null;
                 const aiScore = sub.aiEvaluationResult?.totalScore ?? sub.aiTotalScore;
                 const isAiNeedsTrainerReview =
@@ -498,9 +589,9 @@ export function TrainerEvaluationDashboard({
                               onError={(e) => {
                                 const wrapper = e.currentTarget.parentElement;
                                 if (wrapper) {
-                                  e.currentTarget.style.display = 'none';
-                                  const initEl = wrapper.querySelector('.eval-trainee-avatar-fallback') as HTMLElement | null;
-                                  if (initEl) initEl.style.display = 'flex';
+                                   e.currentTarget.style.display = 'none';
+                                   const initEl = wrapper.querySelector('.eval-trainee-avatar-fallback') as HTMLElement | null;
+                                   if (initEl) initEl.style.display = 'flex';
                                 }
                               }}
                             />
@@ -536,7 +627,49 @@ export function TrainerEvaluationDashboard({
                       <h3 className="eval-assignment-title">{taskTitle}</h3>
 
                       <div className="eval-badges-row">
-                        {sub.status === 'ai_evaluated_pending_review' ? (
+                        {subIsApproved ? (
+                          <>
+                            <span
+                              className="eval-badge-pill"
+                              style={{
+                                background: '#ecfdf5',
+                                color: '#047857',
+                                border: '1px solid #a7f3d0',
+                                fontWeight: 700,
+                              }}
+                            >
+                              <span>✓ Approved {awardedScore != null ? `(${awardedScore}/${maxScore})` : ''}</span>
+                            </span>
+                            <span className="eval-badge-pill" style={{ background: '#f1f5f9', color: '#475569' }}>
+                              {sub.evaluationMethod === 'ai_auto'
+                                ? 'AI Auto-Evaluated'
+                                : sub.evaluationMethod === 'ai_assisted' || sub.aiTotalScore != null
+                                ? 'AI Assisted · Trainer Approved'
+                                : 'Trainer Approved'}
+                            </span>
+                          </>
+                        ) : subIsRejected ? (
+                          <>
+                            <span
+                              className="eval-badge-pill"
+                              style={{
+                                background: '#ffe4e6',
+                                color: '#be123c',
+                                border: '1px solid #fecdd3',
+                                fontWeight: 700,
+                              }}
+                            >
+                              <span>✕ Rejected {awardedScore != null ? `(${awardedScore}/${maxScore})` : ''}</span>
+                            </span>
+                            <span className="eval-badge-pill" style={{ background: '#f1f5f9', color: '#475569' }}>
+                              {sub.evaluationMethod === 'ai_auto'
+                                ? 'AI Auto-Evaluated'
+                                : sub.evaluationMethod === 'ai_assisted' || sub.aiTotalScore != null
+                                ? 'AI Assisted · Trainer Rejected'
+                                : 'Trainer Rejected'}
+                            </span>
+                          </>
+                        ) : sub.status === 'ai_evaluated_pending_review' ? (
                           <span
                             className="eval-badge-pill eval-badge-ai"
                             style={{
@@ -546,7 +679,6 @@ export function TrainerEvaluationDashboard({
                               fontWeight: 700,
                             }}
                           >
-                  
                             <span>AI Evaluated · Review Needed {aiScore != null ? `(${aiScore}/${maxScore})` : ''}</span>
                           </span>
                         ) : sub.evaluationMethod === 'ai_auto' || (isAiEvaluated && sub.status !== 'pending_manual_review') ? (
@@ -559,12 +691,10 @@ export function TrainerEvaluationDashboard({
                               fontWeight: 700,
                             }}
                           >
-                        
                             <span>AI Auto-Evaluated {aiScore != null ? `(${aiScore}/${maxScore})` : ''}</span>
                           </span>
                         ) : (
                           <span className="eval-badge-pill eval-badge-manual">
-                            
                             <span>Manual Review Required</span>
                           </span>
                         )}
@@ -589,7 +719,17 @@ export function TrainerEvaluationDashboard({
                           }
                         }}
                       >
-                        {isAiDone ? (
+                        {subIsApproved ? (
+                          <>
+                            <span>View Evaluation</span>
+                            <ArrowRight size={14} />
+                          </>
+                        ) : subIsRejected ? (
+                          <>
+                            <span>View / Re-evaluate</span>
+                            <ArrowRight size={14} />
+                          </>
+                        ) : isAiDone ? (
                           isAiNeedsTrainerReview ? (
                             <>
                               <span>Review & Confirm</span>

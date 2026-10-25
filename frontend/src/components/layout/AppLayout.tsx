@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutGrid,
@@ -25,12 +25,18 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
-  Clock
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
 import { getNotificationRoute } from '../../utils/notificationUtils';
+
+// AI Assistant — lazy-loaded so non-trainee users never load the bundle
+const GlobalAiAssistantDrawer = lazy(() => import('../../features/ai-assistant/GlobalAiAssistant'));
+
+const AI_ASSISTANT_ITEM = 'AI Assistant';
 
 const CustomRoleSwitcher = ({ effectiveRole, availableRoles, onRoleChange }: any) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -111,7 +117,7 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
     main: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutGrid },
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
-      { name: 'Evaluations', path: '/assignments', icon: ClipboardList },
+      { name: 'Evaluation', path: '/assignments', icon: ClipboardList },
     ],
     tools: [
       { name: 'Settings', path: '/settings', icon: Settings },
@@ -123,7 +129,10 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
       { name: 'Learning Paths', path: '/learning-paths', icon: BookOpen },
       { name: 'Assignments', path: '/assignments', icon: ClipboardList },
     ],
-    tools: [{ name: 'Settings', path: '/settings', icon: Settings }],
+    tools: [
+      { name: AI_ASSISTANT_ITEM, path: '#ai-assistant', icon: Sparkles},
+      { name: 'Settings', path: '/settings', icon: Settings },
+    ],
   },
 };
 
@@ -165,6 +174,11 @@ export function AppLayout({
   const panelRef = useRef<HTMLDivElement>(null);
   const hoverTimerRef = useRef<any>(null);
   const count = Math.max(notificationCount, unreadCount);
+
+  // ── AI Assistant state (Trainee only, feature-flagged) ────────────────
+  const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
+  const aiAssistantEnabled = import.meta.env.VITE_AI_ASSISTANT_ENABLED !== 'false';
+  const aiTriggerRef = useRef<HTMLButtonElement>(null);
 
   const handleMouseEnter = () => {
     if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
@@ -270,6 +284,18 @@ export function AppLayout({
       return isNowCollapsed;
     });
   };
+
+  // ── Ctrl+Shift+K shortcut for AI Assistant ────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'K' && effectiveRole === 'Trainee' && aiAssistantEnabled) {
+        e.preventDefault();
+        setIsAiDrawerOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [effectiveRole, aiAssistantEnabled]);
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -388,22 +414,35 @@ export function AppLayout({
           {!isSidebarCollapsed && <p className="side-nav-header">TOOLS</p>}
           {navigation.tools.map((item) => {
             const IconComponent = item.icon;
-            const active = isCurrentPath(item.path);
+            const isAiItem = item.name === AI_ASSISTANT_ITEM;
+
+            // AI Assistant: skip rendering if feature is off or role is not Trainee
+            if (isAiItem && (!aiAssistantEnabled || effectiveRole !== 'Trainee')) return null;
+
+            const active = isAiItem ? isAiDrawerOpen : isCurrentPath(item.path);
             return (
               <button
+                ref={isAiItem ? aiTriggerRef : undefined}
                 className={`side-nav-item hover-effect focus-ring touch-target ${active ? 'active' : ''}`}
                 key={item.name}
                 type="button"
-                onClick={() => handleNavClick(item.path)}
-                title={item.name}
+                onClick={() => {
+                  if (isAiItem) {
+                    setIsAiDrawerOpen((prev) => !prev);
+                  } else {
+                    handleNavClick(item.path);
+                  }
+                }}
+                title={isAiItem ? `${item.name} (Ctrl+Shift+K)` : item.name}
                 data-title={item.name}
+                aria-pressed={isAiItem ? isAiDrawerOpen : undefined}
               >
                 <div className="nav-item-left">
-                  <IconComponent className="nav-icon-svg" size={18} />
+                  <IconComponent className="nav-icon-svg" size={16} />
                   {!isSidebarCollapsed && <span>{item.name}</span>}
                 </div>
                 {!isSidebarCollapsed && item.tag && <span className="nav-tag">{item.tag}</span>}
-                {!isSidebarCollapsed && active && !item.tag && <ChevronRight size={16} className="active-arrow-svg" />}
+                {!isSidebarCollapsed && active && !item.tag && !isAiItem && <ChevronRight size={16} className="active-arrow-svg" />}
               </button>
             );
           })}
@@ -436,7 +475,7 @@ export function AppLayout({
         </div>
       </aside>
 
-      <section className="workspace">
+      <section className={`workspace ${effectiveRole === 'Trainee' && isAiDrawerOpen ? 'ai-panel-open' : ''}`}>
         <header className="workspace-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <button
@@ -676,6 +715,21 @@ export function AppLayout({
 
         <div className="workspace-content">{children}</div>
       </section>
+
+      {/* ── Global AI Assistant Drawer (Trainee only, lazy-loaded) ──────── */}
+      {effectiveRole === 'Trainee' && aiAssistantEnabled && isAiDrawerOpen && (
+        <Suspense fallback={null}>
+          <GlobalAiAssistantDrawer
+            isOpen={isAiDrawerOpen}
+            onClose={() => {
+              setIsAiDrawerOpen(false);
+              // Return focus to the trigger button on close
+              setTimeout(() => aiTriggerRef.current?.focus(), 50);
+            }}
+            accessToken={user ? (localStorage.getItem('skillforge_access_token') || '') : ''}
+          />
+        </Suspense>
+      )}
 
       <style>{`
         @keyframes pulse-bell {

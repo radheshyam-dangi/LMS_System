@@ -505,7 +505,9 @@ export function ModulesManagementSection({
 
       const completedTasksCount = uniqueTasks.filter((t: any) => {
         const sub = subByAssignment.get(t.id);
-        return sub && String(sub.status || '').toUpperCase() !== 'AVAILABLE';
+        if (!sub || !sub.submittedAt) return false;
+        const status = String(sub.status || '').toUpperCase();
+        return status !== 'AVAILABLE' && status !== 'LOCKED' && status !== 'DRAFT';
       }).length;
 
       const livePct = Math.min(100, Math.round(((completedLessonsCount + completedTasksCount) / totalItems) * 100));
@@ -649,9 +651,9 @@ export function ModulesManagementSection({
     
     const isTaskCompleted = (t: any) => {
       const sub = subByAssignment.get(t.id);
-      if (!sub) return false;
+      if (!sub || !sub.submittedAt) return false;
       const status = String(sub.status || '').toUpperCase();
-      return status !== 'AVAILABLE' && status !== 'LOCKED' && status !== '';
+      return status !== 'AVAILABLE' && status !== 'LOCKED' && status !== 'DRAFT' && status !== '';
     };
 
     const tasksSubmitted = Math.min(

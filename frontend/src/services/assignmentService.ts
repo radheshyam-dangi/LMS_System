@@ -207,10 +207,14 @@ export const assignmentService = {
   /**
    * 11. FETCH PENDING SUBMISSIONS FOR REVIEW (Trainer / Admin Dashboard Queue)
    */
-  fetchPendingSubmissions: async (token: string, activeRole?: string) => {
+  fetchPendingSubmissions: async (token: string, activeRole?: string, status?: string) => {
+    const config: any = getAuthHeaders(token, activeRole);
+    if (status) {
+      config.params = { ...(config.params || {}), status };
+    }
     const response = await axios.get(
       `${API_BASE_URL}/assignments/submissions/pending`,
-      getAuthHeaders(token, activeRole)
+      config
     );
     return response.data;
   },

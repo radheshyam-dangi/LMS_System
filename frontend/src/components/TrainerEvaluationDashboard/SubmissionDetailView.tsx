@@ -226,8 +226,9 @@ export function SubmissionDetailView({
   });
 
   const [evalScore, setEvalScore] = useState<number | ''>(() => {
-    if (submission.aiTotalScore != null) return submission.aiTotalScore;
     if (submission.score != null) return submission.score;
+    if (submission.totalScore != null) return submission.totalScore;
+    if (submission.aiTotalScore != null) return submission.aiTotalScore;
     // Auto-calculate sum from MCQ initial scores if available
     const scoreSum = Object.values(questionScores).reduce((sum, s) => sum + (Number(s) || 0), 0);
     return Object.keys(questionScores).length > 0 ? scoreSum : '';

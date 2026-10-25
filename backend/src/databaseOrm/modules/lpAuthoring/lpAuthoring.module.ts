@@ -11,6 +11,7 @@ import { LpDraftEntity } from '../../entities/lpDraft.entity';
 import { AuthModule } from '../../auth/auth.module';
 import { AiEvaluationModule } from '../aiEvaluation/aiEvaluation.module';
 import { LearningPathModule } from '../learningPath/learningPath.module';
+import { AiAssistantModule } from '../aiAssistant/aiAssistant.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { LearningPathModule } from '../learningPath/learningPath.module';
     AuthModule,
     forwardRef(() => AiEvaluationModule),
     forwardRef(() => LearningPathModule),
+    forwardRef(() => AiAssistantModule),
   ],
   controllers: [LpAuthoringController],
   providers: [LpAuthoringService],

@@ -224,63 +224,65 @@ export const AssignmentCard: React.FC<Props> = ({
         className="assignment-card-actions-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <span
-          className="assignment-status-pill"
-          style={{
-            background: badgeTheme.bg,
-            color: badgeTheme.color,
-            border: `1.5px solid ${badgeTheme.border}`,
-          }}
-        >
-          {isApproved ? <CheckCircle2 size={13} /> : null}
-          <span>{displayStatus}</span>
-          {typeof submission?.score === 'number' ? <strong>({submission.score}/{maxScore} pts)</strong> : null}
-        </span>
-
-        {isTrainee && !isEffectiveLocked && (
-          isApproved || displayStatus === 'Submitted' || displayStatus === 'Under Review' ? (
-            <button
-              type="button"
-              className="assignment-action-btn assignment-action-btn--review"
-              onClick={() => onAttempt?.(task)}
-              title="Review submission and evaluation results"
-            >
-              <FileCheck size={14} />
-              <span>Review Details</span>
-            </button>
-          ) : displayStatus === 'Need Improvement' ? (
-            <button
-              type="button"
-              className="assignment-action-btn assignment-action-btn--retry"
-              onClick={() => onAttempt?.(task)}
-              title="Resubmit improved assignment"
-            >
-              <span>Resubmit Task</span>
-              <ArrowRight size={14} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="assignment-action-btn assignment-action-btn--primary"
-              onClick={() => onAttempt?.(task)}
-              title="Start assignment"
-            >
-              <span>Start Assessment</span>
-              <ArrowRight size={14} />
-            </button>
-          )
-        )}
-
-        {isEffectiveLocked && (
+        {isEffectiveLocked ? (
           <button
             type="button"
             className="assignment-action-btn assignment-action-btn--locked"
             onClick={() => onClickLocked?.(lockReason)}
-            title="Complete prerequisites to unlock"
+            title={lockReason || 'Complete prerequisites to unlock'}
           >
             <Lock size={13} />
             <span>Locked</span>
           </button>
+        ) : (
+          <>
+            <span
+              className="assignment-status-pill"
+              style={{
+                background: badgeTheme.bg,
+                color: badgeTheme.color,
+                border: `1.5px solid ${badgeTheme.border}`,
+              }}
+            >
+              {isApproved ? <CheckCircle2 size={13} /> : null}
+              <span>{displayStatus}</span>
+              {typeof submission?.score === 'number' ? <strong>({submission.score}/{maxScore} pts)</strong> : null}
+            </span>
+
+            {isTrainee && (
+              isApproved || displayStatus === 'Submitted' || displayStatus === 'Under Review' ? (
+                <button
+                  type="button"
+                  className="assignment-action-btn assignment-action-btn--review"
+                  onClick={() => onAttempt?.(task)}
+                  title="Review submission and evaluation results"
+                >
+                  <FileCheck size={14} />
+                  <span>Review Details</span>
+                </button>
+              ) : displayStatus === 'Need Improvement' ? (
+                <button
+                  type="button"
+                  className="assignment-action-btn assignment-action-btn--retry"
+                  onClick={() => onAttempt?.(task)}
+                  title="Resubmit improved assignment"
+                >
+                  <span>Resubmit Task</span>
+                  <ArrowRight size={14} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="assignment-action-btn assignment-action-btn--primary"
+                  onClick={() => onAttempt?.(task)}
+                  title="Start assignment"
+                >
+                  <span>Start Assessment</span>
+                  <ArrowRight size={14} />
+                </button>
+              )
+            )}
+          </>
         )}
       </div>
     </div>

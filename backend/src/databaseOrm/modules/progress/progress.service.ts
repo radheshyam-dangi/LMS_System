@@ -367,10 +367,9 @@ export class ProgressEntityService {
       maxScoreSum += Number(a.maxScore || 100);
       
       const sub = subByAssign.get(a.id);
-      if (!sub) continue;
-      if (
-        sub.status && sub.status.toUpperCase() !== 'AVAILABLE' && sub.status.toUpperCase() !== 'LOCKED'
-      ) {
+      if (!sub || !sub.submittedAt) continue;
+      const subStatus = String(sub.status || '').toUpperCase();
+      if (!['AVAILABLE', 'LOCKED', 'DRAFT', ''].includes(subStatus)) {
         tasksSubmitted++;
       }
       if (sub.status === 'APPROVED' || sub.status === 'EVALUATED' || sub.status === 'ACCEPTED')
@@ -436,8 +435,11 @@ export class ProgressEntityService {
       let mCompletedTasks = 0;
       modAssignments.forEach(a => {
         const sub = subByAssign.get(a.id);
-        if (sub && sub.status && sub.status.toUpperCase() !== 'AVAILABLE' && sub.status.toUpperCase() !== 'LOCKED') {
-          mCompletedTasks++;
+        if (sub && sub.submittedAt) {
+          const subStatus = String(sub.status || '').toUpperCase();
+          if (!['AVAILABLE', 'LOCKED', 'DRAFT', ''].includes(subStatus)) {
+            mCompletedTasks++;
+          }
         }
       });
 
@@ -722,16 +724,18 @@ export class ProgressEntityService {
       });
     }
 
-    // Completed tasks (any submitted/evaluated/reviewed submission)
+    // Completed tasks (only tasks that have actually been submitted by trainee)
     let completedTasks = 0;
     if (assignmentIds.length > 0) {
-      completedTasks = await this.submissionRepository.count({
-        where: {
-          trainee: { id: userId },
-          assignment: { id: In(assignmentIds) },
-          status: Not(In(['AVAILABLE', 'LOCKED'])),
-        } as any,
-      });
+      completedTasks = await this.submissionRepository
+        .createQueryBuilder('sub')
+        .where('sub.trainee_id = :userId', { userId })
+        .andWhere('sub.assignment_id IN (:...assignmentIds)', { assignmentIds })
+        .andWhere('sub.submitted_at IS NOT NULL')
+        .andWhere('UPPER(COALESCE(sub.status, \'\')) NOT IN (:...nonSubmitted)', {
+          nonSubmitted: ['AVAILABLE', 'LOCKED', 'DRAFT', ''],
+        })
+        .getCount();
     }
 
     // Average score — compute from graded submissions

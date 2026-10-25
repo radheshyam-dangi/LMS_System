@@ -11,14 +11,6 @@ export const DeadlineDisplay = ({ task, submission }: { task: any; submission?: 
     const rawStatus = String(submission?.status || '').toUpperCase();
     const isAlreadyAttempted = ['SUBMITTED', 'EVALUATED', 'APPROVED', 'REJECTED', 'NEEDS_IMPROVEMENT', 'PENDING_MANUAL_REVIEW', 'AI_EVALUATED_PENDING_REVIEW'].includes(rawStatus);
 
-    if (task.lockUntilLessonsComplete && !isAlreadyAttempted && (!submission || !submission.taskUnlockedAt)) {
-      return (
-        <span style={{ fontSize: 13, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
-          <Lock size={14} /> Unlocks after prerequisite lessons
-        </span>
-      );
-    }
-    
     const durationStr = [
       task.durationDays ? `${task.durationDays}d` : '',
       task.durationHours ? `${task.durationHours}h` : '',
@@ -28,7 +20,7 @@ export const DeadlineDisplay = ({ task, submission }: { task: any; submission?: 
 
     return (
       <span style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
-        <Clock size={14} /> Duration: {durationStr}
+        <Clock size={14} /> Duration: {durationStr || 'Flexible'}
       </span>
     );
   }

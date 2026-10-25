@@ -251,10 +251,18 @@
 }
 
 .assignment-action-btn--locked {
+  background: #f8fafc !important;
+  color: #64748b !important;
+  border: 1.5px solid #e2e8f0 !important;
+  cursor: pointer !important;
+  font-weight: 600 !important;
+  user-select: none !important;
+}
+
+.assignment-action-btn--locked:hover {
   background: #f1f5f9 !important;
-  color: #94a3b8 !important;
-  border: 1px solid #e2e8f0 !important;
-  cursor: not-allowed !important;
+  color: #475569 !important;
+  border-color: #cbd5e1 !important;
 }
 
 /* ── Responsive Adaptations ───────────────────────────────────────────── */

@@ -728,33 +728,41 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       .leftJoinAndSelect('module.learningPath', 'modulePath')
       .leftJoinAndSelect('assignment.learningPath', 'learningPath');
 
-    // Default status filtering if none provided, or map the provided statuses
+    // Status filtering: support all, pending, approved, rejected, ai_evaluated, manual
     if (filters?.status) {
       const statuses = filters.status.split(',').map(s => s.trim().toLowerCase());
-      const orConditions = [];
+      const orConditions: string[] = [];
       const params: any = {};
 
-      if (statuses.includes('pending') || statuses.includes('all')) {
-        orConditions.push("LOWER(submission.status) IN ('submitted', 'pending', 'ai_evaluated_pending_review', 'pending_manual_review')");
-        orConditions.push("(LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.evaluation_method = 'ai_auto' OR submission.ai_total_score IS NOT NULL))");
-      }
-      if (statuses.includes('approved')) {
-        orConditions.push("LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.score * 1.0 / NULLIF(assignment.max_score, 0)) >= 0.35");
-      }
-      if (statuses.includes('rejected')) {
-        orConditions.push("LOWER(submission.status) = 'rejected'");
-      }
-      if (statuses.includes('needs improvement')) {
-        orConditions.push("LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.score * 1.0 / NULLIF(assignment.max_score, 0)) < 0.35");
+      if (statuses.includes('all')) {
+        // Return all submitted / evaluated submissions (exclude unsubmitted locked drafts)
+        orConditions.push("LOWER(submission.status) NOT IN ('locked')");
+      } else {
+        if (statuses.includes('pending')) {
+          orConditions.push("LOWER(submission.status) IN ('submitted', 'pending', 'ai_evaluated_pending_review', 'pending_manual_review')");
+        }
+        if (statuses.includes('approved')) {
+          orConditions.push("LOWER(submission.status) IN ('approved', 'evaluated')");
+        }
+        if (statuses.includes('rejected') || statuses.includes('needs improvement') || statuses.includes('needs_improvement')) {
+          orConditions.push("LOWER(submission.status) IN ('rejected', 'needs_improvement')");
+        }
+        if (statuses.includes('ai_evaluated') || statuses.includes('ai-assisted')) {
+          orConditions.push("(submission.evaluation_method IN ('ai_auto', 'ai_assisted') OR submission.ai_total_score IS NOT NULL OR LOWER(submission.status) = 'ai_evaluated_pending_review')");
+        }
+        if (statuses.includes('manual')) {
+          orConditions.push("(submission.evaluation_method != 'ai_auto' OR LOWER(submission.status) IN ('pending_manual_review', 'submitted', 'pending'))");
+        }
       }
 
       if (orConditions.length > 0) {
         qb.andWhere(`(${orConditions.join(' OR ')})`, params);
       } else {
-        qb.andWhere("LOWER(submission.status) IN ('submitted', 'pending', 'ai_evaluated_pending_review', 'pending_manual_review') OR (LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.evaluation_method = 'ai_auto' OR submission.ai_total_score IS NOT NULL))");
+        qb.andWhere("LOWER(submission.status) NOT IN ('locked')");
       }
     } else {
-      qb.andWhere("LOWER(submission.status) IN ('submitted', 'pending', 'ai_evaluated_pending_review', 'pending_manual_review') OR (LOWER(submission.status) IN ('approved', 'evaluated') AND (submission.evaluation_method = 'ai_auto' OR submission.ai_total_score IS NOT NULL))");
+      // Default: Return all actionable and completed submissions (exclude locked placeholders)
+      qb.andWhere("LOWER(submission.status) NOT IN ('locked')");
     }
 
     if (filters?.type) {

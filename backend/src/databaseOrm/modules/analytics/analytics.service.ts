@@ -474,7 +474,8 @@ export class AnalyticsEntityService {
                 .filter(
                   (s) =>
                     (s.trainee?.id === uid || (s as any).traineeId === uid) &&
-                    ['Accepted', 'Evaluated', 'Approved', 'Submitted'].includes(String(s.status)) &&
+                    s.submittedAt &&
+                    ['Accepted', 'Evaluated', 'Approved', 'Submitted', 'accepted', 'evaluated', 'approved', 'submitted'].includes(String(s.status)) &&
                     assignmentIds.includes(s.assignment?.id),
                 )
                 .map((s) => s.assignment?.id),
@@ -895,8 +896,11 @@ export class AnalyticsEntityService {
     const submittedAssignmentIds = new Set<string>();
     const submittedStatuses = ['submitted', 'rejected', 'accepted', 'evaluated', 'approved', 'under review', 'needs revision'];
     allSubmissions.forEach((s) => {
+      const sStatus = String(s.status || '').toLowerCase();
       if (
-        submittedStatuses.includes(String(s.status).toLowerCase()) &&
+        s.submittedAt &&
+        !['locked', 'available', 'draft', ''].includes(sStatus) &&
+        submittedStatuses.includes(sStatus) &&
         s.assignment?.id &&
         scopedAssignmentIds.has(s.assignment.id)
       ) {
@@ -932,7 +936,11 @@ export class AnalyticsEntityService {
     const recent7dTasksCount = allSubmissions.filter(s => {
         const tId = s.trainee?.id || (s as any).traineeId || (s as any).user?.id;
         const sStatus = String(s.status || '').toLowerCase();
-        return String(tId) === String(userId) && ['submitted', 'accepted', 'evaluated', 'approved', 'under review'].includes(sStatus) && new Date(s.submittedAt || s.createdAt).getTime() >= sevenDaysAgo;
+        return String(tId) === String(userId) && 
+               Boolean(s.submittedAt) &&
+               !['locked', 'available', 'draft', ''].includes(sStatus) &&
+               ['submitted', 'accepted', 'evaluated', 'approved', 'under review'].includes(sStatus) && 
+               new Date(s.submittedAt).getTime() >= sevenDaysAgo;
     }).length;
     
     const learningVelocity = recent7dProgressCount + recent7dVisitsCount + recent7dTasksCount;
@@ -1268,24 +1276,52 @@ export class AnalyticsEntityService {
 
     const activityTimestamps: string[] = [];
     allSubmissions.forEach((s) => {
-      if (s.submittedAt || s.createdAt)
-        activityTimestamps.push(
-          new Date(s.submittedAt || s.createdAt).toISOString(),
-        );
-    });
-    progressRows.forEach((p) => {
-      if (p.completedAt || p.createdAt)
-        activityTimestamps.push(
-          new Date(p.completedAt || p.createdAt).toISOString(),
-        );
-    });
-    visitRows.forEach((v) => {
-      if (v.visitedAt || v.createdAt)
-        activityTimestamps.push(
-          new Date(v.visitedAt || v.createdAt).toISOString(),
-        );
+      // ONLY actual task submissions count toward streak / submission activity
+      if (s.submittedAt) {
+        const st = String(s.status || '').toUpperCase();
+        if (st !== 'LOCKED' && st !== 'AVAILABLE' && st !== 'DRAFT') {
+          activityTimestamps.push(new Date(s.submittedAt).toISOString());
+        }
+      }
     });
 
+    // Compute active streak strictly from task submission dates
+    const toLocalDateStr = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const submissionDates = new Set<string>();
+    activityTimestamps.forEach((ts) => {
+      const d = new Date(ts);
+      if (!isNaN(d.getTime())) {
+        submissionDates.add(toLocalDateStr(d));
+      }
+    });
+
+    let computedStreak = 0;
+    const today = new Date();
+    const todayStr = toLocalDateStr(today);
+    const activeToday = submissionDates.has(todayStr);
+
+    const checkDate = new Date();
+    if (!activeToday) {
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+
+    if (activeToday || submissionDates.has(toLocalDateStr(checkDate))) {
+      while (true) {
+        const key = toLocalDateStr(checkDate);
+        if (submissionDates.has(key)) {
+          computedStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
 
     const trainerLpsCreated = paths.filter(p => p.createdBy?.id === userId).length;
     const myAllAssignments = allAssignments.filter(a => a.createdBy?.id === userId);
@@ -1327,7 +1363,7 @@ export class AnalyticsEntityService {
       recentActivity,
       tasksCompleted: actualTasksCompleted,
       learningVelocity: learningVelocity,
-      currentStreak: currentUser?.lastCelebratedStreak || 0,
+      currentStreak: computedStreak,
       trainingEffectiveness: Math.round(
         averageScore * 0.5 + completionRate * 0.5,
       ),
@@ -1541,7 +1577,9 @@ export class AnalyticsEntityService {
       });
 
       for (const p of progressRows) {
-        const d = new Date(p.updatedAt || p.createdAt);
+        const isCompleted = p.isCompleted || String(p.status || '').toLowerCase() === 'completed';
+        if (!isCompleted) continue;
+        const d = new Date(p.completedAt || p.updatedAt);
         if (d >= startDate && d <= endDate) {
           const isoKey = getIsoKey(d);
           if (days[isoKey] && p.lesson?.id) days[isoKey].activitySets.lessons.add(p.lesson.id);
@@ -1549,7 +1587,8 @@ export class AnalyticsEntityService {
       }
 
       for (const v of visitRows) {
-        const d = new Date(v.visitedAt || v.createdAt);
+        if (!v.visitedAt) continue;
+        const d = new Date(v.visitedAt);
         if (d >= startDate && d <= endDate) {
           const isoKey = getIsoKey(d);
           if (days[isoKey] && v.resource?.id) days[isoKey].activitySets.resources.add(v.resource.id);
@@ -1563,9 +1602,16 @@ export class AnalyticsEntityService {
     });
 
     for (const sub of allSubmissions) {
-      const dateVal = sub.submittedAt || sub.createdAt || sub.updatedAt;
-      if (!dateVal) continue;
-      const subDate = new Date(dateVal);
+      const subStatus = String(sub.status || '').toLowerCase();
+      const isActualSubmission = Boolean(
+        sub.submittedAt &&
+        !['locked', 'available', 'draft', ''].includes(subStatus)
+      );
+
+      // If not submitted by trainee, this record is an unattempted placeholder - DO NOT COUNT!
+      if (!isActualSubmission) continue;
+
+      const subDate = new Date(sub.submittedAt);
       if (subDate >= startDate && subDate <= endDate) {
         const isoKey = getIsoKey(subDate);
         if (days[isoKey]) {
@@ -1575,7 +1621,7 @@ export class AnalyticsEntityService {
             days[isoKey].activitySets.tasks.add(sub.assignment.id);
           }
 
-          if (['accepted', 'evaluated', 'approved', 'submitted', 'under review'].includes(String(sub.status).toLowerCase())) {
+          if (['accepted', 'evaluated', 'approved', 'submitted', 'under review', 'needs revision', 'rejected', 'needs_improvement'].includes(subStatus)) {
             days[isoKey].completions += 1;
             const score = Number(sub.score);
             const maxScore = Number(sub.assignment?.maxScore || 100);

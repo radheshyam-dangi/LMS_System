@@ -820,22 +820,51 @@ export function LearningPathsSection({
      FILTERING & SORTING LOGIC
      ========================================================================== */
 
+  // Helper to verify if a path is assigned to the current trainee
+  const isPathAssignedToCurrentTrainee = (path: LearningPath): boolean => {
+    if (!Array.isArray(path.assignedToTraineeIds)) return false;
+    const curId = String(currentUser.id || "").toLowerCase();
+    const curEmail = String(currentUser.email || "").toLowerCase();
+    return path.assignedToTraineeIds.some((id: string) => {
+      const str = String(id).toLowerCase();
+      return str === curId || (curEmail && str === curEmail);
+    });
+  };
+
+  // Trainee-scoped base paths (or all paths for trainers/admins)
+  const accessiblePaths = useMemo(() => {
+    if (isTrainee) {
+      return paths.filter((p) => isPathAssignedToCurrentTrainee(p));
+    }
+    return paths;
+  }, [paths, isTrainee, currentUser.id, currentUser.email]);
+
+  const allTracksCount = useMemo(() => {
+    return accessiblePaths.length;
+  }, [accessiblePaths]);
+
   const myAuthoredTracksCount = useMemo(() => {
     return paths.filter((p) => isCurrentAuthor(p)).length;
   }, [paths, currentUser.id]);
 
   const activePathsCount = useMemo(() => {
+    if (isTrainee) {
+      return accessiblePaths.filter((p) => {
+        const prog = calculateLPProgress(p);
+        return prog < 100 && (p.status || "Active").toLowerCase() !== "upcoming";
+      }).length;
+    }
     return paths.filter((p) => (p.status || "Active").toLowerCase() === "active").length;
-  }, [paths]);
+  }, [accessiblePaths, paths, isTrainee, progressSummary]);
 
   const upcomingPathsCount = useMemo(() => {
-    return paths.filter((p) => (p.status || "").toLowerCase() === "upcoming").length;
-  }, [paths]);
+    return accessiblePaths.filter((p) => (p.status || "").toLowerCase() === "upcoming").length;
+  }, [accessiblePaths]);
 
   const completedPathsCount = useMemo(() => {
     if (!isTrainee) return 0;
-    return paths.filter((p) => calculateLPProgress(p) === 100).length;
-  }, [paths, isTrainee, progressSummary]);
+    return accessiblePaths.filter((p) => calculateLPProgress(p) === 100).length;
+  }, [accessiblePaths, isTrainee, progressSummary]);
 
   const totalEnrolledAcrossTracks = useMemo(() => {
     const uniqueIds = new Set<string>();
@@ -853,18 +882,13 @@ export function LearningPathsSection({
   }, [paths, progressSummary]);
 
   const filteredPaths = useMemo(() => {
-    let result = paths;
+    let result = accessiblePaths;
 
     if (highlightPathId) {
       result = result.filter((p) => p.id === highlightPathId);
     }
 
     result = result.filter((path) => {
-      // Trainee role guard
-      if (isTrainee && !path.assignedToTraineeIds?.includes(currentUser.id)) {
-        return false;
-      }
-
       // Scope Tab Filtering
       if (activeScope === "Mine") {
         if (!isCurrentAuthor(path)) return false;
@@ -1235,7 +1259,7 @@ export function LearningPathsSection({
       </header>
 
       {/* 2. INTERACTIVE METRICS STRIP (CLICKABLE FILTER COUNTERS) */}
-      {!isTrainer && (
+      {!isTrainer && !isTrainee && (
         <section className="learning-paths-metrics-grid" aria-label="Learning path quick metrics">
           {/* Metric 1: Total Tracks */}
           <div
@@ -1376,7 +1400,7 @@ export function LearningPathsSection({
             ? (["All", "Mine", "Active", "Upcoming"] as FilterScope[])
             : (["All", "Active", "Upcoming"] as FilterScope[])
           ).map((scope) => {
-            let count = paths.length;
+            let count = allTracksCount;
             if (scope === "Mine") count = myAuthoredTracksCount;
             if (scope === "Active") count = activePathsCount;
             if (scope === "Upcoming") count = upcomingPathsCount;

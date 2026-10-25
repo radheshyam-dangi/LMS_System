@@ -1192,9 +1192,14 @@ export function DashboardPage({
     const currentPathTitle = traineePath?.title || traineePath?.name || 'No path assigned';
     const progressPercent = dbData.completionRate || 0;
 
+    // Streak is strictly upgraded when the trainee submits a task
+    const taskSubmissionTimestamps = (mySubmissions || [])
+      .filter((s: any) => s.submittedAt && String(s.status || '').toUpperCase() !== 'LOCKED' && String(s.status || '').toUpperCase() !== 'AVAILABLE')
+      .map((s: any) => new Date(s.submittedAt).toISOString());
+
     const combinedTimestamps = [
       ...(dbData.activityTimestamps || []),
-      ...mySubmissions.map(s => s.submittedAt || s.createdAt),
+      ...taskSubmissionTimestamps,
     ];
     const { streak: currentStreak, activeToday } = calculateStreak(combinedTimestamps);
 
@@ -1338,13 +1343,17 @@ export function DashboardPage({
     const heatmapDaysLimit = heatmapRange * 24 * 60 * 60 * 1000;
     const nowMs = Date.now();
     const subsInRange = mySubmissions.filter((s: any) => {
-      const d = new Date(s.submittedAt || s.createdAt).getTime();
+      const status = String(s.status || '').toUpperCase();
+      if (!s.submittedAt || status === 'LOCKED' || status === 'AVAILABLE' || status === 'DRAFT') {
+        return false;
+      }
+      const d = new Date(s.submittedAt).getTime();
       return !isNaN(d) && nowMs - d <= heatmapDaysLimit;
     });
 
     const activeDaysSet = new Set<string>();
     subsInRange.forEach((s: any) => {
-      const d = new Date(s.submittedAt || s.createdAt);
+      const d = new Date(s.submittedAt);
       if (!isNaN(d.getTime())) {
         activeDaysSet.add(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`);
       }

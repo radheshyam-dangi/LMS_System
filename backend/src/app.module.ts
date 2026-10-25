@@ -28,6 +28,7 @@ import { HealthModule } from './databaseOrm/modules/health/health.module';
 import { LpAuthoringModule } from './databaseOrm/modules/lpAuthoring/lpAuthoring.module';
 import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluation.module';
 import { AssignmentChatModule } from './databaseOrm/modules/assignmentChat/assignmentChat.module';
+import { AiAssistantModule } from './databaseOrm/modules/aiAssistant/aiAssistant.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { AssignmentChatModule } from './databaseOrm/modules/assignmentChat/assig
     LpAuthoringModule,
     AiEvaluationModule,
     AssignmentChatModule,
+    AiAssistantModule,
   ],
 })
 export class AppModule {}

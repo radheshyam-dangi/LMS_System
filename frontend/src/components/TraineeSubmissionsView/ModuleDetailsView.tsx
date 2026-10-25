@@ -415,7 +415,11 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
   });
 
   const tasksPassedCount = passedTasks.length;
-  const isTaskSubmitted = (sub: any) => sub && sub.status !== 'AVAILABLE' && sub.status !== 'LOCKED';
+  const isTaskSubmitted = (sub: any) => {
+    if (!sub || !sub.submittedAt) return false;
+    const status = String(sub.status || '').toUpperCase();
+    return status !== 'AVAILABLE' && status !== 'LOCKED' && status !== 'DRAFT';
+  };
   const tasksSubmitted = tasks.filter((t: any) => isTaskSubmitted(subByAssignment.get(t.id))).length;
 
   // Client-side avg score calculation for display (score/maxScore format)

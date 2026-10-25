@@ -27,6 +27,7 @@ import { LpDraftEntity } from '../../entities/lpDraft.entity';
 import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
 import { ContentExtractionService } from '../aiEvaluation/contentExtraction.service';
 import { LearningPathEntityService } from '../learningPath/learningPath.service';
+import { EmbeddingOutboxService } from '../aiAssistant/embeddingOutbox.service';
 import { forwardRef, Inject } from '@nestjs/common';
 
 @Injectable()
@@ -45,6 +46,7 @@ export class LpAuthoringService {
     private readonly contentExtraction: ContentExtractionService,
     @Inject(forwardRef(() => LearningPathEntityService))
     private readonly LearningPathEntityService: LearningPathEntityService,
+    private readonly embeddingOutbox: EmbeddingOutboxService,
   ) {
     this.lpRepo = this.datasource.getRepository(LearningPathEntity);
     this.moduleRepo = this.datasource.getRepository(ModuleEntity);
@@ -436,6 +438,16 @@ export class LpAuthoringService {
 
       for (const lesson of lessons) {
         this.contentExtraction.extractLessonContentAsync(lesson.id);
+      }
+
+      // Enqueue LP embedding job and trigger immediate vector processing
+      try {
+        await this.embeddingOutbox.enqueue('lp_saved', savedLP.id);
+        this.embeddingOutbox.processEntityImmediate('lp_saved', savedLP.id).catch(err => {
+          this.logger.warn(`Immediate embedding processing failed for LP ${savedLP.id}: ${(err as Error).message}`);
+        });
+      } catch (err) {
+        this.logger.error(`Embedding outbox enqueue failed for LP ${savedLP.id}: ${(err as Error).message}`);
       }
 
       // 🌟 Fix: Re-run trainee assignment fan-out so new assignments get submissions for enrolled trainees
