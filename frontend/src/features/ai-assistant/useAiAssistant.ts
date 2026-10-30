@@ -42,7 +42,7 @@ export interface Conversation {
 }
 
 function getToken(): string {
-  return localStorage.getItem('skillforge_access_token') || '';
+  return localStorage.getItem('skillforge_token') || '';
 }
 
 function authHeaders() {

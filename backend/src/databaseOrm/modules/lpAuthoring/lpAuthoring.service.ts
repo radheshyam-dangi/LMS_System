@@ -102,7 +102,7 @@ export class LpAuthoringService {
         existingLP.title = payload.title;
         existingLP.description = payload.description || null;
         existingLP.difficulty = payload.level ? payload.level.charAt(0).toUpperCase() + payload.level.slice(1) : (payload.difficulty || 'Intermediate');
-        existingLP.status = payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : (existingLP.status || 'Active');
+        existingLP.status = payload.status === 'ai_draft' ? 'ai_draft' : (payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : (existingLP.status || 'Active'));
         existingLP.duration = payload.duration || '12 weeks';
         existingLP.skillsTags = Array.isArray(payload.skillsTags)
           ? payload.skillsTags
@@ -176,7 +176,8 @@ export class LpAuthoringService {
           difficulty: payload.level ? payload.level.charAt(0).toUpperCase() + payload.level.slice(1) : (payload.difficulty || 'Intermediate'),
           duration: payload.duration || '12 weeks',
           skillsTags: payload.skillsTags || [],
-          status: payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : 'Active',
+          status: payload.status === 'ai_draft' ? 'ai_draft' : (payload.status ? payload.status.charAt(0).toUpperCase() + payload.status.slice(1) : 'Active'),
+          origin: payload.origin || 'manual',
           imageUrl: payload.imageUrl || null,
           createdBy: creator,
           assignedToTraineeIds: [],

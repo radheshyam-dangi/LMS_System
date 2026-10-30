@@ -589,6 +589,14 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
   async deleteAssignment(id: string): Promise<void> {
     const assignment = await this.findOne(id);
     await this.submissionRepository.delete({ assignment: { id } });
+    try {
+      await this.datasource.query(
+        `DELETE FROM lp_embedding_chunks WHERE source_key LIKE $1`,
+        [`%${id}%`],
+      );
+    } catch {
+      // non-fatal
+    }
     await this.repository.remove(assignment);
   }
 
@@ -748,10 +756,10 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
           orConditions.push("LOWER(submission.status) IN ('rejected', 'needs_improvement')");
         }
         if (statuses.includes('ai_evaluated') || statuses.includes('ai-assisted')) {
-          orConditions.push("(submission.evaluation_method IN ('ai_auto', 'ai_assisted') OR submission.ai_total_score IS NOT NULL OR LOWER(submission.status) = 'ai_evaluated_pending_review')");
+          orConditions.push("(submission.evaluation_method = 'ai_auto' AND LOWER(submission.status) NOT IN ('approved', 'evaluated', 'rejected', 'needs_improvement', 'failed', 'ai_evaluated_pending_review'))");
         }
         if (statuses.includes('manual')) {
-          orConditions.push("(submission.evaluation_method != 'ai_auto' OR LOWER(submission.status) IN ('pending_manual_review', 'submitted', 'pending'))");
+          orConditions.push("(LOWER(submission.status) IN ('ai_evaluated_pending_review', 'pending_manual_review', 'submitted', 'pending', 'in_review') OR (submission.evaluation_method IN ('ai_assisted', 'mixed') AND LOWER(submission.status) NOT IN ('approved', 'evaluated', 'rejected', 'needs_improvement', 'failed')))");
         }
       }
 
@@ -865,7 +873,11 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
     answers?: Array<{ questionId: string; answer: string }>,
   ): Promise<AssignmentSubmissionEntity> {
     const assignment = await this.findOne(assignmentId, traineeId);
-    // Check if overdue? Wait, due date check is removed.
+    
+    // Check if assignment deadline/dueDate has passed
+    if (assignment.dueDate && new Date() > new Date(assignment.dueDate)) {
+      throw new BadRequestException('Task submission deadline has passed. This task is overdue and submissions are closed.');
+    }
 
     // External: only assigned trainees may submit
     const assigned = assignment.assignedToTraineeIds || [];
@@ -897,8 +909,9 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
         return submission;
       }
 
-      if (submission.deadline && new Date() > new Date(submission.deadline)) {
-        throw new BadRequestException('Task submission deadline has passed. This task is overdue.');
+      const effectiveDeadline = submission.deadline || assignment.dueDate;
+      if (effectiveDeadline && new Date() > new Date(effectiveDeadline)) {
+        throw new BadRequestException('Task submission deadline has passed. This task is overdue and submissions are closed.');
       }
       submission.submissionText = submissionText;
       submission.attachmentUrl = attachmentUrl || submission.attachmentUrl;

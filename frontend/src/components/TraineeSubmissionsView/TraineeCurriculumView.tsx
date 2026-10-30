@@ -677,14 +677,7 @@ export function TraineeCurriculumView({
                             </div>
                           </div>
 
-                          {hasPrevAnswer && (
-                            <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '8px', border: '1px dashed #94a3b8', marginBottom: '16px' }}>
-                              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px', letterSpacing: '0.05em' }}>Your Previous Answer</span>
-                              <div style={{ fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap' }}>
-                                {isMcq ? (q.options?.[Number(prevAnsVal)] || 'None') : prevAnsVal}
-                              </div>
-                            </div>
-                          )}
+
 
                           {isResubmit && previousEvaluation && previousEvaluation.feedback && (
                             <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 13, color: '#92400e', display: 'flex', gap: '8px' }}>

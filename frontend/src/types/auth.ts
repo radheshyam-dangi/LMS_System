@@ -16,6 +16,7 @@ export interface LearningPath {
   modulesCount: number;
   tasksCount: number;
   weeksCount: number;
+  durationWeeks?: number | string;
   enrolledCount: number;
   overallProgress: number;
   skillsTags: string[];

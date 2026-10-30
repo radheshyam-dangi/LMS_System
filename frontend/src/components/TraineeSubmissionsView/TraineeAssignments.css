@@ -1140,6 +1140,10 @@
   animation: eval-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.assignment-submit-modal-container.has-chat-open {
+  transition: none !important;
+}
+
 @media (max-width: 768px) {
   .assignment-submit-modal-overlay {
     padding: 12px;

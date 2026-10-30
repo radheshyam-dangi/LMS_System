@@ -7,14 +7,13 @@
  * draft auto-saving, and the final submission pipeline.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
   ArrowLeft,
   Send,
   Save,
-  Bot,
   HelpCircle,
   Paperclip,
   AlertCircle,
@@ -23,6 +22,7 @@ import {
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { extractModalQuestions } from '../SharedCards/SharedAssignmentModal';
+import { extractAnswersFromSubmission } from '../../utils/assignmentAnswers';
 import { AssignmentChatDrawer } from '../TraineeSubmissionsView/AssignmentChatDrawer';
 import { assignmentService } from '../../services/assignmentService';
 import { useToast } from '../../context/ToastContext';
@@ -53,51 +53,120 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [chatDrawerWidth, setChatDrawerWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('skillforge_assignment_chat_width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 360 && parsed <= 850) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return 440;
+  });
   const [focusedQuestionId, setFocusedQuestionId] = useState<string | null>(null);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
 
-  // Normalize questions
-  const questionsArray = extractModalQuestions(task);
+  // Normalize questions once per task
+  const questionsArray = useMemo(() => extractModalQuestions(task), [task]);
 
-  // Load drafts or previous submissions
+  const [activeSubmission, setActiveSubmission] = useState<any>(submission);
+  const fetchedAssignmentIdRef = useRef<string | null>(null);
+  const initializedIdRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (!task?.id) return;
-    const draftKey = `draft_assignment_${task.id}`;
-    let prefilledSubj: Record<number, any> = {};
-    let prefilledText = '';
-    let prefilledAtt = '';
-    let prefilledMcq: Record<number, any> = {};
+    if (submission) {
+      setActiveSubmission(submission);
+    }
+  }, [submission]);
 
-    // Check localStorage draft first
-    const savedDraft = localStorage.getItem(draftKey);
-    if (savedDraft) {
-      try {
-        const parsed = JSON.parse(savedDraft);
-        prefilledText = parsed.text || '';
-        prefilledSubj = parsed.subj || {};
-        prefilledMcq = parsed.mcq || {};
-        prefilledAtt = parsed.att || '';
-      } catch {}
-    } else if (submission?.submissionText) {
-      try {
-        prefilledText = submission.submissionText;
-        if (submission.submissionText.startsWith('{')) {
-          const parsed = JSON.parse(submission.submissionText);
-          prefilledSubj = parsed.textAnswers || parsed.answers || {};
-          prefilledMcq = parsed.mcqAnswers || {};
+  // If no submission is passed or answers are empty, fetch from assignmentService (once per open)
+  useEffect(() => {
+    if (!isOpen) {
+      fetchedAssignmentIdRef.current = null;
+      return;
+    }
+    if (!task?.id || !accessToken || fetchedAssignmentIdRef.current === String(task.id)) return;
+    if (submission?.submissionText || submission?.answers) return;
+
+    fetchedAssignmentIdRef.current = String(task.id);
+    assignmentService
+      .fetchMySubmissions(accessToken)
+      .then((subs) => {
+        if (Array.isArray(subs)) {
+          const found = subs.find(
+            (s: any) =>
+              String(s.assignment?.id) === String(task.id) ||
+              String(s.assignmentId) === String(task.id) ||
+              String(s.id) === String(task.id)
+          );
+          if (found) {
+            setActiveSubmission(found);
+          }
         }
-      } catch {}
+      })
+      .catch(() => {});
+  }, [task?.id, accessToken, isOpen, submission]);
+
+  const deadlineValue =
+    activeSubmission?.deadline ||
+    submission?.deadline ||
+    task?.deadline ||
+    task?.dueDate ||
+    task?.computedDeadline;
+  const isExpired = Boolean(deadlineValue && new Date(deadlineValue).getTime() < Date.now());
+
+  // Load previous submissions or drafts once when modal opens or task/submission changes
+  useEffect(() => {
+    if (!isOpen || !task?.id) {
+      initializedIdRef.current = null;
+      return;
+    }
+
+    const currentKey = `${task.id}_${activeSubmission?.id || 'none'}_${activeSubmission?.submittedAt || 'draft'}`;
+    if (initializedIdRef.current === currentKey) return;
+    initializedIdRef.current = currentKey;
+
+    const draftKey = `draft_assignment_${task.id}`;
+
+    // 1. Extract answers directly from submission
+    const fromSub = extractAnswersFromSubmission(activeSubmission, questionsArray);
+    const hasSubmittedData =
+      Object.keys(fromSub.subj).length > 0 ||
+      Object.keys(fromSub.mcq).length > 0 ||
+      Boolean(fromSub.text.trim()) ||
+      Boolean(fromSub.att.trim()) ||
+      Boolean(activeSubmission?.submittedAt);
+
+    let prefilledSubj = fromSub.subj;
+    let prefilledMcq = fromSub.mcq;
+    let prefilledText = fromSub.text;
+    let prefilledAtt = fromSub.att;
+
+    // 2. Only if NOT expired and no submitted answers exist, check localStorage draft
+    if (!isExpired && !hasSubmittedData) {
+      const savedDraft = localStorage.getItem(draftKey);
+      if (savedDraft) {
+        try {
+          const parsed = JSON.parse(savedDraft);
+          if (parsed.subj && Object.keys(parsed.subj).length > 0) prefilledSubj = parsed.subj;
+          if (parsed.mcq && Object.keys(parsed.mcq).length > 0) prefilledMcq = parsed.mcq;
+          if (parsed.text) prefilledText = parsed.text;
+          if (parsed.att) prefilledAtt = parsed.att;
+        } catch {}
+      }
     }
 
     setSubmissionText(prefilledText);
     setSubjectiveAnswers(prefilledSubj);
     setMcqAnswers(prefilledMcq);
     setAttachmentUrl(prefilledAtt);
-  }, [task?.id, submission]);
+  }, [isOpen, task?.id, activeSubmission, isExpired, questionsArray]);
 
-  // Autosave draft to localStorage
+  // Autosave draft to localStorage (only if NOT expired)
   useEffect(() => {
-    if (!task?.id || !isOpen) return;
+    if (!task?.id || !isOpen || isExpired) return;
     const draftData = {
       text: submissionText,
       subj: subjectiveAnswers,
@@ -105,24 +174,32 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
       att: attachmentUrl,
     };
     localStorage.setItem(`draft_assignment_${task.id}`, JSON.stringify(draftData));
-  }, [task?.id, isOpen, submissionText, subjectiveAnswers, mcqAnswers, attachmentUrl]);
+  }, [task?.id, isOpen, isExpired, submissionText, subjectiveAnswers, mcqAnswers, attachmentUrl]);
 
-  // Handle MCQ Selection
+  // Handle MCQ Selection using functional state update
   const handleMcqSelect = (qIdx: number, optIdx: number, isMulti: boolean) => {
-    if (isMulti) {
-      const current = (mcqAnswers[qIdx] as number[]) || [];
-      const updated = current.includes(optIdx)
-        ? current.filter((x) => x !== optIdx)
-        : [...current, optIdx];
-      setMcqAnswers({ ...mcqAnswers, [qIdx]: updated });
-    } else {
-      setMcqAnswers({ ...mcqAnswers, [qIdx]: optIdx });
-    }
+    if (isExpired) return;
+    setMcqAnswers((prev) => {
+      if (isMulti) {
+        const current = Array.isArray(prev[qIdx]) ? (prev[qIdx] as number[]) : [];
+        const updated = current.includes(optIdx)
+          ? current.filter((x) => x !== optIdx)
+          : [...current, optIdx];
+        return { ...prev, [qIdx]: updated };
+      } else {
+        return { ...prev, [qIdx]: optIdx };
+      }
+    });
   };
 
   // Submit Handler
   const handleSubmit = async () => {
     if (isSubmitting) return;
+
+    if (isExpired) {
+      toast.error('The deadline for this assignment has expired. Submissions and resubmissions are closed.');
+      return;
+    }
 
     // Check if at least some questions or answers are filled
     const hasSubj = Object.values(subjectiveAnswers).some((val) => typeof val === 'string' && val.trim().length > 0);
@@ -138,15 +215,25 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
     try {
       // Build structured submission payload
       const formattedAnswers: { questionId: string; answer: string }[] = questionsArray.map((q, idx) => {
-        if (q.type === 'MCQ') {
+        const isMcq = q.type === 'MCQ' || (Array.isArray(q.options) && q.options.length > 0);
+        if (isMcq) {
+          const sel = mcqAnswers[idx] !== undefined ? mcqAnswers[idx] : (mcqAnswers as any)[String(idx)];
+          let ansStr = '';
+          if (typeof sel === 'number') {
+            ansStr = q.options?.[sel] ? q.options[sel] : String(sel);
+          } else if (Array.isArray(sel)) {
+            ansStr = sel.map((i: number) => q.options?.[i] ?? String(i)).join(', ');
+          } else if (sel !== undefined && sel !== null) {
+            ansStr = String(sel);
+          }
           return {
             questionId: String(q.id ?? idx),
-            answer: mcqAnswers[idx] !== undefined ? String(mcqAnswers[idx]) : '',
+            answer: ansStr,
           };
         }
         return {
           questionId: String(q.id ?? idx),
-          answer: subjectiveAnswers[idx] || '',
+          answer: subjectiveAnswers[idx] || (subjectiveAnswers as any)[String(idx)] || '',
         };
       });
 
@@ -158,7 +245,12 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
       const payload = {
         answers: formattedAnswers,
         mcqAnswers: normalizedMcqAnswers,
-        submissionText: submissionText.trim() || JSON.stringify({ answers: formattedAnswers, textAnswers: subjectiveAnswers }),
+        submissionText: JSON.stringify({
+          answers: formattedAnswers,
+          mcqAnswers: normalizedMcqAnswers,
+          textAnswers: subjectiveAnswers,
+          raw: submissionText.trim(),
+        }),
         attachmentUrl: attachmentUrl.trim(),
       };
 
@@ -193,16 +285,15 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
         display: 'flex',
         alignItems: 'center',
         justifyContent: isChatDrawerOpen ? 'flex-start' : 'center',
-        padding: isChatDrawerOpen ? '16px calc(min(450px, 42vw)) 16px 20px' : '16px',
+        padding: isChatDrawerOpen ? '16px 0 16px 16px' : '16px',
         animation: 'aimFadeIn 0.2s ease-out',
-        transition: 'padding 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
       }}
     >
       <div
         className="aim-modal-container"
         style={{
-          width: '100%',
-          maxWidth: isChatDrawerOpen ? '880px' : '820px',
+          width: isChatDrawerOpen ? `calc(100vw - ${chatDrawerWidth}px - 32px)` : '100%',
+          maxWidth: isChatDrawerOpen ? `calc(100vw - ${chatDrawerWidth}px - 32px)` : '820px',
           height: '92vh',
           maxHeight: '92vh',
           background: '#ffffff',
@@ -213,7 +304,6 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
           flexDirection: 'column',
           overflow: 'hidden',
           position: 'relative',
-          transition: 'max-width 0.25s ease',
         }}
       >
         {/* ── Workspace Header ── */}
@@ -294,7 +384,6 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
               }}
               title="Ask AI Assistant about this Assignment"
             >
-              <Bot size={15} />
               <span>{isChatDrawerOpen ? 'Close AI Chat' : 'Ask AI'}</span>
             </button>
 
@@ -315,6 +404,26 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
             </button>
           </div>
         </div>
+
+        {/* Expired Deadline Warning Notice */}
+        {isExpired && (
+          <div
+            style={{
+              padding: '10px 20px',
+              background: '#fef2f2',
+              borderBottom: '1px solid #fecaca',
+              color: '#991b1b',
+              fontSize: '12.5px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <AlertCircle size={16} color="#dc2626" style={{ flexShrink: 0 }} />
+            <span>The deadline for this assignment has expired. Responses are displayed in read-only mode and cannot be submitted or resubmitted.</span>
+          </div>
+        )}
 
         {/* ── Workspace Questions Body (Scrollable) ── */}
         <div
@@ -410,7 +519,6 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
                       return (
                         <label
                           key={optIdx}
-                          onClick={() => handleMcqSelect(qIdx, optIdx, Boolean(q.allowMultipleCorrect))}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -419,21 +527,29 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
                             borderRadius: '8px',
                             border: `1.5px solid ${isSelected ? '#6366f1' : '#e2e8f0'}`,
                             background: isSelected ? '#f5f3ff' : '#ffffff',
-                            cursor: 'pointer',
+                            cursor: isExpired ? 'default' : 'pointer',
+                            opacity: isExpired && !isSelected ? 0.7 : 1,
                             transition: 'all 0.15s ease',
                           }}
                         >
                           <input
                             type={q.allowMultipleCorrect ? 'checkbox' : 'radio'}
-                            checked={isSelected}
-                            onChange={() => {}}
-                            style={{ accentColor: '#4f46e5', cursor: 'pointer' }}
+                            name={`workspace_mcq_q_${qIdx}`}
+                            checked={Boolean(isSelected)}
+                            disabled={isExpired}
+                            onChange={() => {
+                              if (!isExpired) {
+                                handleMcqSelect(qIdx, optIdx, Boolean(q.allowMultipleCorrect));
+                              }
+                            }}
+                            style={{ accentColor: '#4f46e5', cursor: isExpired ? 'default' : 'pointer' }}
                           />
                           <span
                             style={{
                               fontSize: '13.5px',
                               color: isSelected ? '#312e81' : '#334155',
                               fontWeight: isSelected ? 600 : 400,
+                              userSelect: 'none',
                             }}
                           >
                             {optText}
@@ -446,8 +562,9 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
                   <div style={{ paddingLeft: '36px' }}>
                     <textarea
                       value={currentSubj}
-                      onChange={(e) => setSubjectiveAnswers({ ...subjectiveAnswers, [qIdx]: e.target.value })}
-                      placeholder="Type your response here..."
+                      onChange={(e) => !isExpired && setSubjectiveAnswers({ ...subjectiveAnswers, [qIdx]: e.target.value })}
+                      disabled={isExpired}
+                      placeholder={isExpired ? 'No response submitted.' : 'Type your response here...'}
                       rows={5}
                       style={{
                         width: '100%',
@@ -458,12 +575,13 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
                         fontFamily: 'inherit',
                         lineHeight: 1.6,
                         color: '#0f172a',
-                        resize: 'vertical',
+                        resize: isExpired ? 'none' : 'vertical',
                         outline: 'none',
                         boxSizing: 'border-box',
+                        background: isExpired ? '#f8fafc' : '#ffffff',
                       }}
-                      onFocus={(e) => (e.target.style.borderColor = '#6366f1')}
-                      onBlur={(e) => (e.target.style.borderColor = '#cbd5e1')}
+                      onFocus={(e) => !isExpired && (e.target.style.borderColor = '#6366f1')}
+                      onBlur={(e) => !isExpired && (e.target.style.borderColor = '#cbd5e1')}
                     />
                   </div>
                 )}
@@ -489,7 +607,8 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
             <input
               type="url"
               value={attachmentUrl}
-              onChange={(e) => setAttachmentUrl(e.target.value)}
+              disabled={isExpired}
+              onChange={(e) => !isExpired && setAttachmentUrl(e.target.value)}
               placeholder="https://github.com/your-username/project or Drive link"
               style={{
                 width: '100%',
@@ -499,9 +618,10 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
                 fontSize: '13px',
                 outline: 'none',
                 boxSizing: 'border-box',
+                background: isExpired ? '#f8fafc' : '#ffffff',
               }}
-              onFocus={(e) => (e.target.style.borderColor = '#6366f1')}
-              onBlur={(e) => (e.target.style.borderColor = '#cbd5e1')}
+              onFocus={(e) => !isExpired && (e.target.style.borderColor = '#6366f1')}
+              onBlur={(e) => !isExpired && (e.target.style.borderColor = '#cbd5e1')}
             />
           </div>
         </div>
@@ -533,34 +653,53 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
                 cursor: 'pointer',
               }}
             >
-              Save & Exit
+              {isExpired ? 'Close' : 'Save & Exit'}
             </button>
 
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              style={{
-                padding: '9px 24px',
-                background: isSubmitting
-                  ? '#94a3b8'
-                  : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: 700,
-                color: '#ffffff',
-                cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: isSubmitting ? 'none' : '0 2px 6px rgba(22, 163, 74, 0.3)',
-                transition: 'all 0.15s ease',
-              }}
-            >
-             
-              <span>{isSubmitting ? 'Submitting...' : 'Submit Assessment'}</span>
-            </button>
+            {isExpired ? (
+              <div
+                style={{
+                  padding: '9px 18px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#b91c1c',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <AlertCircle size={15} />
+                <span>Deadline Expired (Submissions Closed)</span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                style={{
+                  padding: '9px 24px',
+                  background: isSubmitting
+                    ? '#94a3b8'
+                    : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#ffffff',
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: isSubmitting ? 'none' : '0 2px 6px rgba(22, 163, 74, 0.3)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <span>{isSubmitting ? 'Submitting...' : submission?.submittedAt ? 'Resubmit Assignment' : 'Submit Assessment'}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -574,6 +713,8 @@ export const AssignmentWorkspaceModal: React.FC<AssignmentWorkspaceModalProps> =
             accessToken={accessToken}
             questions={questionsArray}
             focusedQuestionId={focusedQuestionId}
+            onWidthChange={setChatDrawerWidth}
+            initialWidth={chatDrawerWidth}
           />
         )}
       </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { Bot, X, Send, BookOpen } from 'lucide-react';
+import { X, Send, ExternalLink, AlertCircle, Sparkles } from 'lucide-react';
 import { API_BASE_URL } from '../../api';
 import './AssignmentChatDrawer.css';
 
@@ -21,7 +22,13 @@ interface Props {
   isOpen: boolean;
   questions: any[];
   focusedQuestionId?: string | null;
+  onWidthChange?: (width: number) => void;
+  initialWidth?: number;
 }
+
+const MIN_WIDTH = 360;
+// Maximum width stops expanding before crushing the left modal (keeps at least 340px for assessment)
+const getMaxWidth = () => Math.min(950, Math.max(MIN_WIDTH, window.innerWidth - 340));
 
 export function AssignmentChatDrawer({
   assignmentId,
@@ -31,17 +38,45 @@ export function AssignmentChatDrawer({
   isOpen,
   questions,
   focusedQuestionId,
+  onWidthChange,
+  initialWidth,
 }: Props) {
+  const navigate = useNavigate();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedQuestions, setSelectedQuestions] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const effectiveToken = accessToken || localStorage.getItem('skillforge_access_token') || localStorage.getItem('token') || '';
+  // ── Resizable drawer state ───────────────────────────────────────────────
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    if (initialWidth && initialWidth >= MIN_WIDTH && initialWidth <= 850) {
+      return initialWidth;
+    }
+    try {
+      const saved = localStorage.getItem('skillforge_assignment_chat_width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= MIN_WIDTH && parsed <= 850) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return 440;
+  });
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [isHoveringHandle, setIsHoveringHandle] = useState(false);
+
+  const dragStartXRef = useRef<number>(0);
+  const dragStartWidthRef = useRef<number>(panelWidth);
+  const currentWidthRef = useRef<number>(panelWidth);
+
+  const effectiveToken = accessToken || localStorage.getItem('skillforge_token') || '';
 
   useEffect(() => {
     if (isOpen) {
+      onWidthChange?.(panelWidth);
       fetchHistory();
     }
   }, [isOpen, assignmentId]);
@@ -55,6 +90,101 @@ export function AssignmentChatDrawer({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // ── Drag & Resize listeners ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Drawer is anchored to the right viewport edge; dragging left increases drawer width
+      const deltaX = dragStartXRef.current - e.clientX;
+      const targetWidth = dragStartWidthRef.current + deltaX;
+      const clamped = Math.max(MIN_WIDTH, Math.min(getMaxWidth(), targetWidth));
+      setPanelWidth(clamped);
+      currentWidthRef.current = clamped;
+      onWidthChange?.(clamped);
+    };
+
+    const suppressClick = () => {
+      const preventClick = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        window.removeEventListener('click', preventClick, true);
+      };
+      window.addEventListener('click', preventClick, true);
+      setTimeout(() => {
+        window.removeEventListener('click', preventClick, true);
+      }, 150);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      suppressClick();
+      try {
+        localStorage.setItem('skillforge_assignment_chat_width', String(currentWidthRef.current));
+      } catch {}
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!e.touches[0]) return;
+      const deltaX = dragStartXRef.current - e.touches[0].clientX;
+      const targetWidth = dragStartWidthRef.current + deltaX;
+      const clamped = Math.max(MIN_WIDTH, Math.min(getMaxWidth(), targetWidth));
+      setPanelWidth(clamped);
+      currentWidthRef.current = clamped;
+      onWidthChange?.(clamped);
+    };
+
+    const handleTouchEnd = () => {
+      setIsDragging(false);
+      suppressClick();
+      try {
+        localStorage.setItem('skillforge_assignment_chat_width', String(currentWidthRef.current));
+      } catch {}
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove);
+    window.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [isDragging, onWidthChange]);
+
+  const handleHandleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    dragStartXRef.current = e.clientX;
+    dragStartWidthRef.current = panelWidth;
+  };
+
+  const handleHandleTouchStart = (e: React.TouchEvent) => {
+    if (!e.touches[0]) return;
+    setIsDragging(true);
+    dragStartXRef.current = e.touches[0].clientX;
+    dragStartWidthRef.current = panelWidth;
+  };
+
+  const resetWidth = () => {
+    setPanelWidth(440);
+    currentWidthRef.current = 440;
+    onWidthChange?.(440);
+    try {
+      localStorage.setItem('skillforge_assignment_chat_width', '440');
+    } catch {}
+  };
 
   const fetchHistory = async () => {
     try {
@@ -99,9 +229,88 @@ export function AssignmentChatDrawer({
     }
   };
 
+  /**
+   * Helper to strip asterisks, backticks, hashes, and markdown formatting
+   * to ensure a simple, clean, concise plain-text response.
+   */
+  const cleanPlainText = (str: string): string => {
+    if (!str) return '';
+    return str
+      .replace(/\*\*([^*]+)\*\*/g, '$1') // **bold** -> bold
+      .replace(/\*([^*]+)\*/g, '$1')     // *italic* -> italic
+      .replace(/`([^`]+)`/g, '$1')       // `code` -> code
+      .replace(/_{2}([^_]+)_{2}/g, '$1') // __bold__ -> bold
+      .replace(/_([^_]+)_/g, '$1')       // _italic_ -> italic
+      .replace(/[*`#_~]/g, '')           // stray markdown artifacts
+      .trim();
+  };
+
+  /**
+   * Formats the response content into natural, clean paragraphs:
+   * - Eliminates inline "Citations: Review Lesson..." clauses when structured lesson citations are attached
+   * - Strips robotic template headers ("Question Objective:", "Socratic Approach:") for natural tutor guidance
+   * - Strips asterisks, backticks, and raw formatting symbols for simple, clean reading
+   */
+  const formatAnswerBody = (body: string, hasSuggestedLessons?: boolean) => {
+    if (!body) return null;
+
+    let processed = body;
+
+    // 1. If structured lessons are rendered below, remove redundant inline "Citations: ..." descriptions
+    if (hasSuggestedLessons) {
+      // Strips "Citations: Review Lesson X..." up until the next section or end
+      processed = processed.replace(/(?:^|\s)Citations:\s*(?:Review|Consult|See|Check)?[\s\S]*?(?=(?:Socratic Approach|Socratic Guidance|Question Objective|\n\n|$))/gi, ' ');
+    } else {
+      // If no structured cards, break inline citations onto its own line
+      processed = processed.replace(/(?:^|\s)Citations:\s*/gi, '\n\nRecommended Citations:\n');
+    }
+
+    // 2. Break robotic boilerplate markers into natural paragraph breaks
+    processed = processed
+      .replace(/(?:^|\s)(?:Question Objective|Objective):\s*/gi, '\n\n')
+      .replace(/(?:^|\s)(?:Socratic Approach|Socratic Guidance):\s*/gi, '\n\n')
+      .replace(/(?:^|\s)(?:Key Concepts?):\s*/gi, '\n\n');
+
+    // 3. Strip asterisks, backticks, and special markdown formatting characters
+    processed = cleanPlainText(processed);
+
+    // 4. Split into clean paragraphs
+    const rawParagraphs = processed.split(/\n+/);
+    const cleanBlocks: string[] = [];
+
+    for (const p of rawParagraphs) {
+      const trimmed = p.trim();
+      if (!trimmed) continue;
+      if (hasSuggestedLessons && /^Citations:\s*/i.test(trimmed)) continue;
+      cleanBlocks.push(trimmed);
+    }
+
+    if (cleanBlocks.length === 0) {
+      return <div className="chat-body-p">{cleanPlainText(body)}</div>;
+    }
+
+    return (
+      <div className="chat-body-paragraphs">
+        {cleanBlocks.map((text, idx) => (
+          <p key={idx} className="chat-body-p">
+            {text}
+          </p>
+        ))}
+      </div>
+    );
+  };
+
   const renderAssistantContent = (content: string, blocked?: boolean) => {
     if (blocked) {
-      return <div className="chat-blocked-message">{content}</div>;
+      return (
+        <div className="chat-blocked-message">
+          <div className="chat-blocked-header">
+            <AlertCircle size={15} className="chat-blocked-icon" />
+            <span>Scope Notice</span>
+          </div>
+          <div className="chat-blocked-body">{content}</div>
+        </div>
+      );
     }
     try {
       let parsed = JSON.parse(content);
@@ -116,22 +325,58 @@ export function AssignmentChatDrawer({
                 q => String(q.id) === String(ans.questionId) || String(questions.indexOf(q)) === String(ans.questionId)
               );
               const qNum = qObj ? questions.indexOf(qObj) + 1 : (ans.questionNumber || (idx + 1));
-              const title = ans.questionId === 'general' ? 'Assignment Overview Guidance' : `Question ${qNum} Guidance`;
+              const hasSuggestedLessons = Boolean(ans.suggestedLessons && ans.suggestedLessons.length > 0);
 
               return (
                 <div key={idx} className="chat-answer-block">
-                  <div className="chat-answer-header">{title}</div>
-                  <div className="chat-answer-body" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>
-                    {ans.content}
+                  <div className="chat-answer-header">
+                    <div className="chat-q-badge-wrap">
+                      <span className="chat-q-badge">{ans.questionId === 'general' ? 'Overview' : `Question ${qNum}`}</span>
+                    </div>
+                  </div>
+
+                  <div className="chat-answer-body">
+                    {formatAnswerBody(ans.content, hasSuggestedLessons)}
                   </div>
                   
                   {ans.coverage === 'weak' && (
                     <div className="chat-coverage-warning">Note: The module lessons don't explicitly cover this in depth.</div>
                   )}
-                  {ans.suggestedLessons && ans.suggestedLessons.length > 0 && (
+
+                  {hasSuggestedLessons && (
                     <div className="chat-lesson-suggestions">
-                      <span className="chat-lesson-icon"><BookOpen size={14} /></span>
-                      <span style={{ fontWeight: 600 }}>Prerequisite Lessons:</span> {ans.suggestedLessons.join(', ')}
+                      <div className="chat-citation-links">
+                        {ans.suggestedLessons.map((item: any, sIdx: number) => {
+                          const itemTitle = typeof item === 'string' ? item : item.lessonTitle || item.title || 'Lesson';
+                          const itemUrl = typeof item === 'object' && item.url ? item.url : null;
+
+                          if (itemUrl) {
+                            return (
+                              <a
+                                key={sIdx}
+                                href={itemUrl}
+                                className="chat-citation-pill"
+                                title={`Open ${itemTitle}`}
+                                onClick={(e) => {
+                                  if (!e.ctrlKey && !e.metaKey) {
+                                    e.preventDefault();
+                                    navigate(itemUrl);
+                                  }
+                                }}
+                              >
+                                <span className="chat-pill-title">{itemTitle}</span>
+                                <ExternalLink size={12} className="chat-pill-icon" />
+                              </a>
+                            );
+                          }
+
+                          return (
+                            <span key={sIdx} className="chat-citation-pill chat-citation-pill-static" title={itemTitle}>
+                              <span className="chat-pill-title">{itemTitle}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -143,31 +388,84 @@ export function AssignmentChatDrawer({
     } catch (e) {
       // not JSON
     }
-    return <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{content}</div>;
+    return <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{cleanPlainText(content)}</div>;
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className={`assignment-chat-overlay ${isOpen ? 'open' : ''}`} onClick={onClose}>
-      <div className={`assignment-chat-drawer ${isOpen ? 'open' : ''}`} onClick={e => e.stopPropagation()}>
-        <div className="chat-header">
-          <div className="chat-header-title">
-            <Bot size={20} color="#4f46e5" />
-            <div>
-              <h3>Assignment Assistant</h3>
-              <span>{assignmentTitle}</span>
+    <>
+      {/* Transparent full-screen shield while dragging to isolate mouse events from underlying elements */}
+      {isDragging && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 99999,
+            cursor: 'col-resize',
+            userSelect: 'none',
+            background: 'transparent',
+          }}
+        />
+      )}
+      <div className={`assignment-chat-overlay ${isOpen ? 'open' : ''}`}>
+        <div
+          className={`assignment-chat-drawer ${isOpen ? 'open' : ''} ${isDragging ? 'is-dragging' : ''}`}
+          style={{ width: `${panelWidth}px` }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* ── Left Edge Border Handle with col-resize cursor ──────────────── */}
+          <div
+            className={`chat-resize-handle ${isHoveringHandle || isDragging ? 'active' : ''}`}
+            onMouseDown={handleHandleMouseDown}
+            onTouchStart={handleHandleTouchStart}
+            onMouseEnter={() => setIsHoveringHandle(true)}
+            onMouseLeave={() => setIsHoveringHandle(false)}
+            onDoubleClick={resetWidth}
+            title="Drag to resize drawer width (Double-click to reset)"
+            role="separator"
+            aria-orientation="vertical"
+          >
+            <div className="chat-handle-indicator">
+              <span />
+              <span />
+              <span />
             </div>
           </div>
-          <button className="chat-close-btn" onClick={onClose}><X size={20} /></button>
-        </div>
 
+          {/* ── Drawer Header ──────────────────────────────────────────────── */}
+          <div className="chat-header">
+            <div className="chat-header-title">
+              <div>
+                <h3>Assignment Assistant</h3>
+                <span title={assignmentTitle}>{assignmentTitle}</span>
+              </div>
+            </div>
+            <div className="chat-header-actions">
+              <button
+                type="button"
+                className="chat-header-icon-btn chat-close-btn"
+                onClick={onClose}
+                title="Close Assistant"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+
+        {/* ── Chat Messages ──────────────────────────────────────────────── */}
         <div className="chat-messages">
           {messages.length === 0 && (
             <div className="chat-empty-state">
-              <Bot size={48} color="#cbd5e1" />
-              <p>Hi! I'm here to help you understand the requirements and concepts for this assignment.</p>
-              <p className="chat-empty-note">I cannot give you the answers, but I can guide you to the right lessons.</p>
+              <div className="chat-empty-avatar">
+                <Sparkles size={24} style={{ color: '#4f46e5' }} />
+              </div>
+              <h4>Assignment Concept Assistant</h4>
+              <p>Ask questions about any problem to review core concepts, principles, and prerequisite lessons.</p>
+              <div className="chat-empty-hint">
+                <Sparkles size={13} style={{ color: '#4f46e5' }} />
+                <span>I provide guided conceptual reasoning without giving away direct test answers.</span>
+              </div>
             </div>
           )}
           {messages.map((msg, i) => (
@@ -187,6 +485,7 @@ export function AssignmentChatDrawer({
           <div ref={messagesEndRef} />
         </div>
 
+        {/* ── Chat Input Area ────────────────────────────────────────────── */}
         <div className="chat-input-area">
           {questions.length > 0 && (
             <div className="chat-question-selector">
@@ -214,68 +513,9 @@ export function AssignmentChatDrawer({
             </div>
           )}
 
-          {/* Quick Prompts */}
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-            <button
-              type="button"
-              onClick={() => {
-                const targetQ = selectedQuestions.length > 0 ? `for ${selectedQuestions.map(id => {
-                  const qIdx = questions.findIndex(q => String(q.id) === String(id) || String(questions.indexOf(q)) === String(id));
-                  return qIdx >= 0 ? `Question ${qIdx + 1}` : id;
-                }).join(', ')}` : '';
-                sendMessage(`What are the key requirements and concepts ${targetQ}?`);
-              }}
-              style={{
-                fontSize: '11px',
-                padding: '3px 8px',
-                background: '#f1f5f9',
-                border: '1px solid #e2e8f0',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: '#475569',
-              }}
-            >
-              💡 Concepts
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                sendMessage('Which dependent lessons should I review for this?');
-              }}
-              style={{
-                fontSize: '11px',
-                padding: '3px 8px',
-                background: '#f1f5f9',
-                border: '1px solid #e2e8f0',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: '#475569',
-              }}
-            >
-              📚 Dependent Lessons
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                sendMessage('How should I structure my answer?');
-              }}
-              style={{
-                fontSize: '11px',
-                padding: '3px 8px',
-                background: '#f1f5f9',
-                border: '1px solid #e2e8f0',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                color: '#475569',
-              }}
-            >
-              📝 Approach
-            </button>
-          </div>
-
           <div className="chat-input-wrapper">
             <textarea
-              placeholder="Ask for an explanation of concepts..."
+              placeholder="Ask about concepts, approaches, or prerequisites..."
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {
@@ -286,12 +526,20 @@ export function AssignmentChatDrawer({
               }}
               rows={2}
             />
-            <button className="chat-send-btn" onClick={() => sendMessage()} disabled={isLoading || !input.trim()}>
-              <Send size={18} />
+            <button
+              type="button"
+              className="chat-send-btn"
+              onClick={() => sendMessage()}
+              disabled={isLoading || !input.trim()}
+              title="Send question"
+            >
+              <Send size={16} />
             </button>
           </div>
         </div>
       </div>
     </div>
+    </>
   );
 }
+

@@ -29,6 +29,7 @@ import { LpAuthoringModule } from './databaseOrm/modules/lpAuthoring/lpAuthoring
 import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluation.module';
 import { AssignmentChatModule } from './databaseOrm/modules/assignmentChat/assignmentChat.module';
 import { AiAssistantModule } from './databaseOrm/modules/aiAssistant/aiAssistant.module';
+import { TrainerAiAssistantModule } from './databaseOrm/modules/trainerAiAssistant/trainerAiAssistant.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { AiAssistantModule } from './databaseOrm/modules/aiAssistant/aiAssistant
     AiEvaluationModule,
     AssignmentChatModule,
     AiAssistantModule,
+    TrainerAiAssistantModule,
   ],
 })
 export class AppModule {}

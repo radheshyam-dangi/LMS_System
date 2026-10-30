@@ -165,8 +165,8 @@ const getTraineeInitials = (
   // 2. Parse from fullName if distinct fields were not provided
   const cleanName =
     fullName &&
-    fullName !== "undefined" &&
-    fullName !== "undefined undefined"
+      fullName !== "undefined" &&
+      fullName !== "undefined undefined"
       ? fullName.trim()
       : "";
 
@@ -335,7 +335,6 @@ const ExpandableDescription = ({
   title: string;
   description: string;
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const plainText = useMemo(() => {
@@ -348,34 +347,21 @@ const ExpandableDescription = ({
 
   return (
     <div className="expandable-description-container" onClick={(e) => e.stopPropagation()}>
-      <p className={`card-description-string ${!isExpanded && isLong ? "is-clamped" : ""}`}>
+      <p className={`card-description-string ${isLong ? "is-clamped" : ""}`}>
         {textToDisplay}
       </p>
       {isLong && (
-        <div style={{ display: "flex", gap: "10px", marginTop: "4px" }}>
+        <div style={{ display: "flex", marginTop: "4px" }}>
           <button
             type="button"
             className="expand-toggle-btn"
             onClick={(e) => {
               e.stopPropagation();
-              setIsExpanded(!isExpanded);
+              setIsModalOpen(true);
             }}
           >
-            {isExpanded ? "Show less ↑" : "Show more ↓"}
+            Show more ↗
           </button>
-          {textToDisplay.length > 250 && (
-            <button
-              type="button"
-              className="expand-toggle-btn"
-              style={{ color: "#64748b" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsModalOpen(true);
-              }}
-            >
-              Full dialog ↗
-            </button>
-          )}
         </div>
       )}
 
@@ -571,7 +557,7 @@ export function LearningPathsSection({
             }
             const activeRoleStr = localStorage.getItem("skillforge_active_role");
             if (activeRoleStr) storedUserRoles.push(activeRoleStr);
-          } catch (e) {}
+          } catch (e) { }
 
           const currentUserHasTrainee =
             isUserTraineeEligible(currentUser) ||
@@ -692,7 +678,7 @@ export function LearningPathsSection({
 
           setAllTrainees(eligible);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [accessToken, isAdmin, isTrainer, currentUser, paths]);
 
@@ -998,7 +984,7 @@ export function LearningPathsSection({
         }
         const activeRoleStr = localStorage.getItem("skillforge_active_role");
         if (activeRoleStr) storedUserRoles.push(activeRoleStr);
-      } catch (e) {}
+      } catch (e) { }
 
       const currentUserHasTrainee =
         isUserTraineeEligible(currentUser) ||
@@ -1178,15 +1164,15 @@ export function LearningPathsSection({
         prev.map((p) =>
           p.id === selectedPathForAssignment.id
             ? {
-                ...p,
-                assignedToTraineeIds: [
-                  ...new Set([
-                    ...(p.assignedToTraineeIds || []),
-                    ...(updatedPath.assignedToTraineeIds || []),
-                    ...newlySelectedTraineeIds,
-                  ]),
-                ],
-              }
+              ...p,
+              assignedToTraineeIds: [
+                ...new Set([
+                  ...(p.assignedToTraineeIds || []),
+                  ...(updatedPath.assignedToTraineeIds || []),
+                  ...newlySelectedTraineeIds,
+                ]),
+              ],
+            }
             : p
         )
       );
@@ -1194,8 +1180,7 @@ export function LearningPathsSection({
       setIsAssignModalOpen(false);
       await refreshNotifications();
       toast.success(
-        `Successfully assigned ${newlySelectedTraineeIds.length} ${
-          newlySelectedTraineeIds.length === 1 ? "trainee" : "trainees"
+        `Successfully assigned ${newlySelectedTraineeIds.length} ${newlySelectedTraineeIds.length === 1 ? "trainee" : "trainees"
         } to track.`
       );
     } catch (err: any) {
@@ -1397,8 +1382,8 @@ export function LearningPathsSection({
           {(isTrainee
             ? (["All", "Active", "Completed"] as FilterScope[])
             : isAdmin
-            ? (["All", "Mine", "Active", "Upcoming"] as FilterScope[])
-            : (["All", "Active", "Upcoming"] as FilterScope[])
+              ? (["All", "Mine", "Active", "Upcoming"] as FilterScope[])
+              : (["All", "Active", "Upcoming"] as FilterScope[])
           ).map((scope) => {
             let count = allTracksCount;
             if (scope === "Mine") count = myAuthoredTracksCount;
@@ -1411,8 +1396,8 @@ export function LearningPathsSection({
               scope === "All"
                 ? "All Tracks"
                 : scope === "Mine"
-                ? "My Tracks"
-                : scope;
+                  ? "My Tracks"
+                  : scope;
 
             return (
               <button
@@ -1545,8 +1530,8 @@ export function LearningPathsSection({
             {searchQuery || activeScope !== "All"
               ? `No tracks matched your filter criteria (${activeScope !== "All" ? `Scope: ${activeScope}` : ""}${searchQuery ? `, Query: "${searchQuery}"` : ""}). Try adjusting or clearing your filters.`
               : isTrainee
-              ? "You haven't been assigned to any curriculum tracks yet. Once your trainer assigns you, they will appear here."
-              : "No curriculum tracks have been created yet. Launch your first track to sequence modules and start training cohorts."}
+                ? "You haven't been assigned to any curriculum tracks yet. Once your trainer assigns you, they will appear here."
+                : "No curriculum tracks have been created yet. Launch your first track to sequence modules and start training cohorts."}
           </p>
           {searchQuery || activeScope !== "All" ? (
             <button
@@ -1604,9 +1589,8 @@ export function LearningPathsSection({
             return (
               <article
                 key={path.id}
-                className={`learning-path-card-item ${
-                  highlightPathId === path.id ? "is-highlighted" : ""
-                }`}
+                className={`learning-path-card-item ${highlightPathId === path.id ? "is-highlighted" : ""
+                  }`}
               >
                 {/* Card Header: Icon/Image + Badges */}
                 <div className="card-top-badges-row">
@@ -1698,21 +1682,36 @@ export function LearningPathsSection({
                 </div>
 
                 {/* Curriculum Scope Strip (Modules, Lessons, Duration) */}
-                
+                <div className="card-curriculum-scope-strip">
+                  <div className="scope-item" title={`${modulesCount} Curriculum Modules`}>
+                  
+                    <span>{modulesCount} {modulesCount === 1 ? 'Module' : 'Modules'}</span>
+                  </div>
+                  <div className="scope-item" title={`${lessonsCount} Interactive Lessons`}>
+                    
+                    <span>{lessonsCount} {lessonsCount === 1 ? 'Lesson' : 'Lessons'}</span>
+                  </div>
+                  <div className="scope-item" title={`Estimated Duration: ${path.duration || `${path.durationWeeks || path.weeksCount || 4} Weeks`}`}>
+                   
+                    <span>{path.duration || `${path.durationWeeks || path.weeksCount || 4} Weeks`}</span>
+                  </div>
+                </div>
 
                 {/* Cohort Section (For Trainer/Admin) OR Trainee Progress Bar (For Trainee) */}
                 {isTrainee ? (
                   <div className="card-trainee-progress-box">
                     <div className="trainee-progress-header">
-                      <span>My Learning Progress</span>
-                      <strong>
-                        {traineeProgressVal}% {traineeProgressVal === 100 ? "Completed" : ""}
-                      </strong>
+                      <div className="trainee-progress-label-wrap">
+                        <span>Progress</span>
+                      </div>
+                      <span className={`trainee-progress-pct-badge ${traineeProgressVal === 100 ? "is-complete" : ""}`}>
+                        {traineeProgressVal}%
+                      </span>
                     </div>
                     <div className="cohort-progress-track">
                       <div
                         className={`cohort-progress-fill ${traineeProgressVal === 100 ? "is-complete" : ""}`}
-                        style={{ width: `${traineeProgressVal}%` }}
+                        style={{ width: `${Math.max(traineeProgressVal, 0)}%` }}
                       />
                     </div>
                   </div>
@@ -1730,7 +1729,7 @@ export function LearningPathsSection({
                           </div>
                           <div className="btn-cohort-right">
                             <span className="btn-cohort-count-chip">
-                              
+
                               <span>{enrolledCount} {enrolledCount === 1 ? "Trainee" : "Trainees"}</span>
                             </span>
                             <ChevronRight size={14} className="btn-cohort-arrow" />
@@ -1758,7 +1757,7 @@ export function LearningPathsSection({
                 )}
 
                 {/* Action Toolbar */}
-                
+
                 <div className="card-action-toolbar">
                   {/* Primary CTA */}
                   <button
@@ -1768,11 +1767,11 @@ export function LearningPathsSection({
                   >
                     <span>
                       {isTrainee
-                        ? traineeProgressVal === 100  
+                        ? traineeProgressVal === 100
                           ? "Review Curriculum →"
                           : traineeProgressVal > 0
-                          ? "Continue Learning →"
-                          : "Start Learning →"
+                            ? "Continue Learning →"
+                            : "Start Learning →"
                         : "Manage Curriculum →"}
                     </span>
                   </button>
@@ -2318,8 +2317,8 @@ export function LearningPathsSection({
                               const assignerName = assigner
                                 ? (`${assigner.firstName || ""} ${assigner.lastName || ""}`.trim() || assigner.name || assigner.email)
                                 : (selectedPathForAssignment.createdBy
-                                    ? (`${selectedPathForAssignment.createdBy.firstName || ""} ${selectedPathForAssignment.createdBy.lastName || ""}`.trim() || selectedPathForAssignment.createdBy.name || selectedPathForAssignment.createdBy.email)
-                                    : null);
+                                  ? (`${selectedPathForAssignment.createdBy.firstName || ""} ${selectedPathForAssignment.createdBy.lastName || ""}`.trim() || selectedPathForAssignment.createdBy.name || selectedPathForAssignment.createdBy.email)
+                                  : null);
 
                               return (
                                 <div

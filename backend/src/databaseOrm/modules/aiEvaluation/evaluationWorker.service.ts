@@ -127,12 +127,12 @@ export class EvaluationWorkerService {
 
       (assignment as any).dynamicRecipientId = recipientId;
 
-      const questions = assignment.questions || [];
+      const questions = this.normalizeQuestions(assignment);
       const submittedAnswers = this.extractSubmittedAnswers(submission, questions);
 
       const rubricCache = new Map();
       const evaluationPromises = questions.map((q, idx) => {
-        const ans = this.findAnswerForQuestion(submittedAnswers, q, idx);
+        const ans = this.findAnswerForQuestion(submittedAnswers, q, idx, questions.length);
         return this.evaluateQuestion(q, ans, assignment, rubricCache);
       });
 
@@ -176,23 +176,101 @@ export class EvaluationWorkerService {
     }
   }
 
+  private resolveOptionIndex(val: any, options: string[] = []): number | null {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'number') {
+      if (!isNaN(val) && val >= 0 && (options.length === 0 || val < options.length)) return val;
+    }
+
+    const str = String(val).trim();
+    if (!str) return null;
+
+    const num = Number(str);
+    if (!isNaN(num) && num >= 0 && (options.length === 0 || num < options.length)) {
+      return num;
+    }
+
+    if (options && options.length > 0) {
+      const cleanStr = str.toLowerCase().replace(/^[a-d][\.\)]\s*/i, '').trim();
+      for (let i = 0; i < options.length; i++) {
+        const opt = String(options[i]).trim();
+        const cleanOpt = opt.toLowerCase().replace(/^[a-d][\.\)]\s*/i, '').trim();
+        if (opt.toLowerCase() === str.toLowerCase() || cleanOpt === cleanStr) {
+          return i;
+        }
+      }
+      for (let i = 0; i < options.length; i++) {
+        const cleanOpt = String(options[i]).toLowerCase().replace(/^[a-d][\.\)]\s*/i, '').trim();
+        if (cleanOpt.length > 2 && (cleanOpt.includes(cleanStr) || cleanStr.includes(cleanOpt))) {
+          return i;
+        }
+      }
+    }
+
+    const letterMatch = str.match(/^(?:option\s+)?([A-D])(?:\.|\)|:|$|\s)/i);
+    if (letterMatch) {
+      const letterIdx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+      if (letterIdx >= 0 && (options.length === 0 || letterIdx < options.length)) {
+        return letterIdx;
+      }
+    }
+
+    return null;
+  }
+
   private extractSubmittedAnswers(submission: AssignmentSubmissionEntity, questions: any[]): Array<{ questionId?: string; index?: number; answer: string }> {
     const results: Array<{ questionId?: string; index?: number; answer: string }> = [];
 
+    // Helper to merge or insert an answer
+    const mergeAnswer = (qId: string | undefined, idx: number | undefined, ans: any) => {
+      if (ans === undefined || ans === null) return;
+      const strVal = String(ans).trim();
+      if (!strVal) return;
+
+      const existing = results.find(r => 
+        (qId && r.questionId === qId) || 
+        (idx !== undefined && r.index === idx)
+      );
+
+      if (existing) {
+        if (!existing.answer || existing.answer.trim() === '') {
+          existing.answer = strVal;
+        }
+      } else {
+        results.push({ questionId: qId, index: idx, answer: strVal });
+      }
+    };
+
     // 1. Direct submission.answers array
     if (Array.isArray(submission.answers) && submission.answers.length > 0) {
-      for (const item of submission.answers) {
-        if (item && (item.answer !== undefined || (item as any).value !== undefined)) {
+      submission.answers.forEach((item, i) => {
+        if (item && typeof item === 'object') {
+          const qId = item.questionId ? String(item.questionId) : undefined;
+          const ans = item.answer ?? (item as any).value ?? (item as any).selectedOption;
           results.push({
-            questionId: item.questionId ? String(item.questionId) : undefined,
-            answer: String(item.answer ?? (item as any).value ?? '').trim(),
+            questionId: qId,
+            index: i,
+            answer: String(ans ?? '').trim(),
+          });
+        } else if (item != null) {
+          results.push({
+            index: i,
+            answer: String(item).trim(),
           });
         }
-      }
-      if (results.length > 0) return results;
+      });
     }
 
-    // 2. Parse submission.submissionText
+    // 2. Direct mcqAnswers field if attached
+    const directMcq = (submission as any).mcqAnswers || (submission as any).mcq_answers;
+    if (directMcq && typeof directMcq === 'object') {
+      for (const [key, val] of Object.entries(directMcq)) {
+        const idx = parseInt(key, 10);
+        mergeAnswer(isNaN(idx) ? key : undefined, !isNaN(idx) ? idx : undefined, val);
+      }
+    }
+
+    // 3. Parse submission.submissionText
     if (submission.submissionText) {
       try {
         const parsed = typeof submission.submissionText === 'string'
@@ -203,85 +281,124 @@ export class EvaluationWorkerService {
           for (let i = 0; i < parsed.length; i++) {
             const item = parsed[i];
             if (typeof item === 'string') {
-              results.push({ index: i, answer: item.trim() });
+              mergeAnswer(undefined, i, item);
             } else if (item && typeof item === 'object') {
-              results.push({
-                questionId: item.questionId ? String(item.questionId) : undefined,
-                index: i,
-                answer: String(item.answer ?? item.value ?? '').trim(),
-              });
+              const qId = item.questionId ? String(item.questionId) : undefined;
+              const ans = item.answer ?? item.value ?? item.selectedOption;
+              mergeAnswer(qId, i, ans);
             }
           }
         } else if (parsed && typeof parsed === 'object') {
-          // Check textAnswers (from SharedAssignmentModal / ModuleDetailsView)
-          if (parsed.textAnswers && typeof parsed.textAnswers === 'object') {
-            for (const [key, val] of Object.entries(parsed.textAnswers)) {
-              if (val !== undefined && val !== null) {
-                const idx = parseInt(key, 10);
-                results.push({
-                  questionId: isNaN(idx) ? key : undefined,
-                  index: !isNaN(idx) ? idx : undefined,
-                  answer: typeof val === 'string' ? val.trim() : JSON.stringify(val),
-                });
-              }
+          // Check mcqAnswers / mcq
+          const pMcq = parsed.mcqAnswers || parsed.mcq;
+          if (pMcq && typeof pMcq === 'object') {
+            for (const [key, val] of Object.entries(pMcq)) {
+              const idx = parseInt(key, 10);
+              mergeAnswer(isNaN(idx) ? key : undefined, !isNaN(idx) ? idx : undefined, val);
             }
           }
 
-          // Check answers (MCQ or generic key-value)
-          if (parsed.answers && typeof parsed.answers === 'object') {
+          // Check textAnswers / subj
+          const pSubj = parsed.textAnswers || parsed.subj;
+          if (pSubj && typeof pSubj === 'object') {
+            for (const [key, val] of Object.entries(pSubj)) {
+              const idx = parseInt(key, 10);
+              mergeAnswer(isNaN(idx) ? key : undefined, !isNaN(idx) ? idx : undefined, val);
+            }
+          }
+
+          // Check answers array or object
+          if (Array.isArray(parsed.answers)) {
+            parsed.answers.forEach((item: any, i: number) => {
+              if (item && typeof item === 'object') {
+                const qId = item.questionId ? String(item.questionId) : undefined;
+                const ans = item.answer ?? item.value ?? item.selectedOption;
+                mergeAnswer(qId, i, ans);
+              }
+            });
+          } else if (parsed.answers && typeof parsed.answers === 'object') {
             for (const [key, val] of Object.entries(parsed.answers)) {
-              if (val !== undefined && val !== null) {
-                const idx = parseInt(key, 10);
-                const existing = results.find(r => (!isNaN(idx) && r.index === idx) || (isNaN(idx) && r.questionId === key));
-                if (!existing) {
-                  results.push({
-                    questionId: isNaN(idx) ? key : undefined,
-                    index: !isNaN(idx) ? idx : undefined,
-                    answer: typeof val === 'string' ? val.trim() : (typeof val === 'number' ? String(val) : JSON.stringify(val)),
-                  });
-                }
-              }
+              const idx = parseInt(key, 10);
+              mergeAnswer(isNaN(idx) ? key : undefined, !isNaN(idx) ? idx : undefined, val);
             }
           }
 
-          // Check mcqAnswers if present separately
-          if (parsed.mcqAnswers && typeof parsed.mcqAnswers === 'object') {
-            for (const [key, val] of Object.entries(parsed.mcqAnswers)) {
-              if (val !== undefined && val !== null) {
-                const idx = parseInt(key, 10);
-                const existing = results.find(r => (!isNaN(idx) && r.index === idx) || (isNaN(idx) && r.questionId === key));
-                if (!existing) {
-                  results.push({
-                    questionId: isNaN(idx) ? key : undefined,
-                    index: !isNaN(idx) ? idx : undefined,
-                    answer: String(val).trim(),
-                  });
-                }
-              }
-            }
-          }
-
-          // Fallback to raw if no specific answers found
+          // Fallback to raw
           if (results.length === 0 && parsed.raw && typeof parsed.raw === 'string' && parsed.raw.trim().length > 0) {
             results.push({ answer: parsed.raw.trim() });
           }
         }
       } catch {
         // Not JSON — plain text submission
-        results.push({ answer: String(submission.submissionText).trim() });
+        if (results.length === 0) {
+          results.push({ answer: String(submission.submissionText).trim() });
+        }
       }
     }
 
     return results;
   }
 
+  private normalizeQuestions(assignment: AssignmentEntity): any[] {
+    if (!assignment) return [];
+    let rawList: any[] = [];
+
+    if (Array.isArray(assignment.questions) && assignment.questions.length > 0) {
+      rawList = assignment.questions;
+    } else if (Array.isArray((assignment.mcqConfig as any)?.questions) && (assignment.mcqConfig as any).questions.length > 0) {
+      rawList = (assignment.mcqConfig as any).questions;
+    } else if (typeof assignment.questions === 'string') {
+      try {
+        const p = JSON.parse(assignment.questions);
+        if (Array.isArray(p) && p.length > 0) rawList = p;
+        else if (Array.isArray(p?.questions) && p.questions.length > 0) rawList = p.questions;
+      } catch {}
+    } else if (typeof assignment.mcqConfig === 'string') {
+      try {
+        const p = JSON.parse(assignment.mcqConfig);
+        if (Array.isArray(p?.questions) && p.questions.length > 0) rawList = p.questions;
+        else if (Array.isArray(p?.options) && p.options.length > 0) {
+          rawList = [{
+            id: '0',
+            text: assignment.title || assignment.description || 'Question 1',
+            options: p.options,
+            correctIndex: p.correctIndex ?? 0,
+            maxPoints: assignment.maxScore || 10,
+            type: 'MCQ',
+          }];
+        }
+      } catch {}
+    } else if (assignment.mcqConfig && Array.isArray(assignment.mcqConfig.options) && assignment.mcqConfig.options.length > 0) {
+      rawList = [{
+        id: '0',
+        text: assignment.title || assignment.description || 'Question 1',
+        options: assignment.mcqConfig.options,
+        correctIndex: assignment.mcqConfig.correctIndex ?? 0,
+        maxPoints: assignment.maxScore || 10,
+        type: 'MCQ',
+      }];
+    }
+
+    return rawList.map((q, idx) => ({
+      ...q,
+      id: String(q.id ?? idx),
+      text: q.questionText || q.text || q.question || q.title || `Question ${idx + 1}`,
+      maxPoints: Number(q.maxPoints ?? q.points ?? (assignment.maxScore && rawList.length === 1 ? assignment.maxScore : 10)),
+      type: q.type || (Array.isArray(q.options) && q.options.length > 0 ? 'MCQ' : 'Subjective'),
+      options: Array.isArray(q.options) ? q.options : [],
+      correctIndex: q.correctIndex != null ? Number(q.correctIndex) : null,
+      expectedAnswerGuideline: q.expectedAnswerGuideline || q.guidelines || '',
+    }));
+  }
+
   private findAnswerForQuestion(
     submittedAnswers: Array<{ questionId?: string; index?: number; answer: string }>,
     question: any,
     questionIndex: number,
+    totalQuestions: number,
   ): { answer: string } | undefined {
     // 1. Match by questionId
-    if (question.id) {
+    if (question.id !== undefined && question.id !== null) {
       const match = submittedAnswers.find(a => a.questionId && String(a.questionId) === String(question.id));
       if (match) return match;
     }
@@ -290,8 +407,8 @@ export class EvaluationWorkerService {
     const matchByIndex = submittedAnswers.find(a => a.index !== undefined && a.index === questionIndex);
     if (matchByIndex) return matchByIndex;
 
-    // 3. Fallback: single answer submitted for single question assignment
-    if (submittedAnswers.length === 1 && submittedAnswers[0].answer) {
+    // 3. Fallback: ONLY when the entire assignment consists of exactly one question
+    if (totalQuestions === 1 && submittedAnswers.length === 1 && submittedAnswers[0].answer) {
       return submittedAnswers[0];
     }
 
@@ -299,43 +416,67 @@ export class EvaluationWorkerService {
   }
 
   private async evaluateQuestion(question: any, answer: any, assignment: AssignmentEntity, rubricCache: Map<string, any>) {
-    if (String(question.type || '').toLowerCase() === 'mcq') {
-      const expectedOption = question.options?.[question.correctIndex];
+    const isMcq = String(question.type || '').toLowerCase() === 'mcq'
+      || String(question.type || '').toLowerCase() === 'multiple choice'
+      || (Array.isArray(question.options) && question.options.length > 0);
+
+    const maxPoints = Number(question.maxPoints ?? question.points ?? 10);
+
+    if (isMcq) {
+      const correctIndex = question.correctIndex != null && !isNaN(Number(question.correctIndex)) ? Number(question.correctIndex) : null;
+      const expectedOption = (correctIndex !== null && question.options?.[correctIndex])
+        ? String(question.options[correctIndex]).trim()
+        : '';
       const ansVal = String(answer?.answer ?? answer?.selectedOption ?? '').trim();
+      const resolvedChoiceIdx = this.resolveOptionIndex(ansVal, question.options);
+
+      // If trainee did not answer or left empty
+      if (resolvedChoiceIdx === null && !ansVal) {
+        return {
+          questionId: question.id,
+          score: 0,
+          maxScore: maxPoints,
+          remark: 'No option was selected by the trainee.',
+          type: 'mcq',
+          confidence: 1.0,
+          groundingSource: 'deterministic',
+          needsManualReview: false,
+        };
+      }
 
       let isCorrect = false;
-      const parsedIdx = parseInt(ansVal, 10);
-      if (!isNaN(parsedIdx) && parsedIdx === question.correctIndex) {
+      if (resolvedChoiceIdx !== null && correctIndex !== null && resolvedChoiceIdx === correctIndex) {
         isCorrect = true;
-      } else if (expectedOption && ansVal.toLowerCase() === String(expectedOption).toLowerCase().trim()) {
+      } else if (expectedOption && ansVal.toLowerCase() === expectedOption.toLowerCase()) {
         isCorrect = true;
-      } else if (!isNaN(parsedIdx) && question.options?.[parsedIdx]) {
-        isCorrect = String(question.options[parsedIdx]).toLowerCase().trim() === String(expectedOption).toLowerCase().trim();
       }
 
       return {
         questionId: question.id,
-        score: isCorrect ? question.maxPoints : 0,
-        maxScore: question.maxPoints,
-        remark: isCorrect ? 'Correct answer.' : `Incorrect. The correct answer is: ${expectedOption ?? 'Option ' + ((question.correctIndex || 0) + 1)}`,
+        score: isCorrect ? maxPoints : 0,
+        maxScore: maxPoints,
+        remark: isCorrect
+          ? 'Correct option selected by the trainee.'
+          : 'Incorrect option selected by the trainee.',
         type: 'mcq',
         confidence: 1.0,
         groundingSource: 'deterministic',
-        needsManualReview: false
+        needsManualReview: false,
       };
     }
 
+    // ─── SUBJECTIVE EVALUATION ───
     const answerText = String(answer?.answer || '').trim();
     if (!answerText || answerText.length < 5) {
       return {
         questionId: question.id,
         score: 0,
-        maxScore: question.maxPoints,
-        remark: 'No meaningful answer provided. Automatically scored 0.',
+        maxScore: maxPoints,
+        remark: 'No meaningful answer provided by the trainee.',
         type: 'subjective',
         confidence: 1.0,
         groundingSource: 'no_answer',
-        needsManualReview: false
+        needsManualReview: false,
       };
     }
 
@@ -351,40 +492,54 @@ export class EvaluationWorkerService {
     return {
       questionId: question.id,
       score: parsedResult.score,
-      maxScore: question.maxPoints,
+      maxScore: maxPoints,
       remark: parsedResult.feedback,
       type: 'subjective',
       confidence: parsedResult.confidence,
       groundingSource: context.groundingSourcePlan === 'module_fallback' ? 'module_fallback' : (parsedResult.groundingSource === 'rubric' ? 'lesson_context' : parsedResult.groundingSource),
-      needsManualReview: parsedResult.confidence < 0.75, // Simple confidence gating
-      contentVersionsUsed: context.contentVersionsUsed
+      needsManualReview: parsedResult.confidence < 0.75,
+      contentVersionsUsed: context.contentVersionsUsed,
     };
   }
 
   private async callGroqForQuestion(question: any, answerText: string, context: EvaluationContext, assignment: AssignmentEntity) {
     if (!this.MODEL || !this.API_KEY) throw new Error('GROQ config missing');
 
-    const systemPrompt = `You are an expert evaluator grading a trainee's subjective answer. Grade for MEANING, conceptual understanding, and factual accuracy, not exact wording. Semantic correctness matters more than word overlap.
-    
-INSTRUCTIONS:
-1. The question is evaluated directly against the Ground Truth Context of the dependent lessons (concepts, key points, and source material). Do NOT require or expect a separate rubric parameter.
-2. Evaluate whether the trainee demonstrates accurate understanding of the concepts and information covered in the dependent lesson context.
-3. Score out of ${question.maxPoints}. Provide specific, constructive feedback explaining what the trainee answered well and what concepts from the lesson context were missing or inaccurate.
-4. IMPORTANT: DO NOT simply give 0 or full marks. You MUST calculate a partial score proportional to correctness relative to the lesson context.
+    const maxPoints = Number(question.maxPoints ?? question.points ?? 10);
+    const systemPrompt = `You are an experienced, fair senior technical trainer grading a trainee's subjective assignment answer.
+Evaluate the trainee's answer objectively based on meaning, conceptual understanding, relevance, and fulfillment of question requirements.
+
+GRADING CRITERIA & SCORE ALLOCATION:
+1. RELEVANCE & CONCEPTUAL UNDERSTANDING (Scale: 0 to ${maxPoints}):
+   - ZERO MARKS (0/${maxPoints}): Award 0 ONLY if the answer is completely blank, gibberish/nonsense, spam, or 100% off-topic (e.g. discussing cooking recipes, unrelated trivia, or making zero attempt to address the question prompt).
+   - PARTIAL / FEW MARKS (1 to ${Math.max(1, Math.round(maxPoints * 0.45))}/${maxPoints}): If the answer is SOMEHOW RELEVANT to the question requirement (e.g. attempts to address the topic, mentions relevant Kubernetes components, basic concepts, partial steps, or general principles, even if incomplete, brief, or missing specific manifest parameters). Award partial credit proportional to what was correctly identified.
+   - SUBSTANTIAL MARKS (${Math.round(maxPoints * 0.5)} to ${Math.round(maxPoints * 0.85)}/${maxPoints}): If the answer is largely accurate and addresses the core requirements, with only minor gaps, slight inaccuracies, or missing secondary configuration options.
+   - FULL / NEAR-FULL MARKS (${Math.round(maxPoints * 0.9)} to ${maxPoints}/${maxPoints}): If the answer is accurate, well-structured, covers all key steps/concepts, and fully satisfies the question requirements.
+
+2. EFFECTIVE & ACCURATE ONE-SENTENCE FEEDBACK (STRICT CONSTRAINT):
+   - Provide EXACTLY ONE grammatically complete, highly effective sentence evaluating the trainee's answer.
+   - The feedback must accurately reflect the trainee's actual submitted answer: explicitly mention what technical concepts they correctly addressed and what key details or configuration parameters were missing or inaccurate.
+   - Length: Strictly 1 concise sentence (maximum 20 words).
+   - Tone: Direct, professional technical trainer feedback. Never use conversational filler, pleasantries, greetings, or meta-introductions (e.g. do NOT say "The student explains...", "Good answer", "In summary...").
+   - Formatting: Output clean plain text only. Do NOT use markdown asterisks (*, **), quotes, or backticks (\`).
 
 Return ONLY valid JSON matching this exact shape:
 {
-  "score": <number between 0 and maxScore>,
-  "feedback": "<string>",
-  "confidence": <0.0-1.0>,
-  "groundingSource": "lesson_context" | "retrieved_passage" | "unsupported" | "no_lesson_dependency"
+  "score": <number between 0 and ${maxPoints}>,
+  "feedback": "<string: strictly 1 concise, accurate sentence>",
+  "confidence": <number between 0.0 and 1.0>,
+  "groundingSource": "lesson_context" | "rubric" | "retrieved_passage" | "unsupported" | "no_lesson_dependency"
 }`;
+
+    const contextSections: string[] = [];
+    if (question.expectedAnswerGuideline) {
+      contextSections.push(`--- Expected Rubric / Guideline ---\n${question.expectedAnswerGuideline}`);
+    }
 
     const lessonKeyPointsStr = context.rubrics.map(r => `[Lesson: ${r.lessonName}]\n${r.keyPoints.map((kp: any) => `- ${kp.point}`).join('\n')}`).join('\n\n').substring(0, 4000);
     const chunksStr = context.retrievedChunks.map(c => `[From ${c.lessonName}]: "${c.chunkText}"`).join('\n\n').substring(0, 8000);
     const safeAnswerText = answerText.substring(0, 5000);
 
-    const contextSections: string[] = [];
     if (lessonKeyPointsStr) {
       contextSections.push(`--- Dependent Lesson Key Concepts ---\n${lessonKeyPointsStr}`);
     }
@@ -437,8 +592,21 @@ Return ONLY valid JSON matching this exact shape:
       }
     }
     
-    // clamp score
-    parsed.score = Math.min(Math.max(Number(parsed.score) || 0, 0), question.maxPoints);
+    // clamp score strictly between 0 and maxPoints
+    parsed.score = Math.min(Math.max(Number(parsed.score) || 0, 0), maxPoints);
+
+    // Sanitize feedback to guarantee strictly ONE clean sentence
+    if (parsed.feedback && typeof parsed.feedback === 'string') {
+      let clean = parsed.feedback.replace(/[`*"]/g, '').replace(/\s+/g, ' ').trim();
+      const sentenceMatch = clean.match(/^([^.?!]+[.?!])/);
+      if (sentenceMatch && sentenceMatch[1]) {
+        clean = sentenceMatch[1].trim();
+      } else if (!clean.endsWith('.')) {
+        clean = `${clean}.`;
+      }
+      parsed.feedback = clean;
+    }
+
     return parsed;
   }
 
@@ -500,11 +668,38 @@ Return ONLY valid JSON matching this exact shape:
     }
   }
 
-  private generateOverallRemark(questionScores: any[], totalScore: number, totalMaxScore: number) {
+  private generateOverallRemark(questionScores: any[], totalScore: number, totalMaxScore: number): string {
     const percentage = totalMaxScore > 0 ? Math.round((totalScore / totalMaxScore) * 100) : 0;
-    if (percentage >= 80) return `Excellent work! Score: ${totalScore}/${totalMaxScore}`;
-    if (percentage >= 50) return `Good effort. Score: ${totalScore}/${totalMaxScore}`;
-    return `Score: ${totalScore}/${totalMaxScore}. Needs improvement.`;
+    const mcqs = questionScores.filter(q => q.type === 'mcq');
+    const correctMcqs = mcqs.filter(q => Number(q.score) > 0);
+    const subj = questionScores.filter(q => q.type !== 'mcq');
+
+    const firstSubjRemark = subj.find(q => q.remark && !q.remark.toLowerCase().includes('evaluation failed'))?.remark;
+
+    if (firstSubjRemark) {
+      let clean = firstSubjRemark.replace(/[`*"]/g, '').replace(/\s+/g, ' ').trim();
+      const match = clean.match(/^([^.?!]+[.?!])/);
+      if (match && match[1]) {
+        clean = match[1].trim();
+      } else if (!clean.endsWith('.')) {
+        clean = `${clean}.`;
+      }
+      return clean;
+    }
+
+    if (mcqs.length > 0) {
+      return correctMcqs.length === mcqs.length
+        ? `All ${mcqs.length} multiple choice questions were answered correctly.`
+        : `Answered ${correctMcqs.length} of ${mcqs.length} multiple choice questions correctly.`;
+    }
+
+    if (percentage >= 80) {
+      return 'Accurately completes the assignment demonstrating solid technical understanding.';
+    } else if (percentage >= 50) {
+      return 'Shows partial technical understanding but misses several key configuration requirements.';
+    } else {
+      return 'Submission lacks required technical details and misses essential core concepts.';
+    }
   }
 
   private async fallbackToManualReview(submissionId: string, jobId: string, errorMessage: string) {

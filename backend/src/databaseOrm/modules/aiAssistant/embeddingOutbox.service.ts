@@ -375,9 +375,9 @@ export class EmbeddingOutboxService implements OnModuleInit {
 
     const version = opts.contentVersion || 1;
 
-    // Mark previous chunks for this source inactive
+    // Delete older version chunks for this source to prevent ghost/duplicate records
     await this.datasource.query(
-      `UPDATE lp_embedding_chunks SET is_active = false
+      `DELETE FROM lp_embedding_chunks
        WHERE source_key = $1 AND content_version != $2`,
       [opts.sourceKey, version],
     );
@@ -388,17 +388,22 @@ export class EmbeddingOutboxService implements OnModuleInit {
       const chunk = chunks[i];
       const hash = crypto.createHash('sha256').update(chunk).digest('hex');
 
-      // Check if this chunk already exists with same hash
+      // Check if this chunk already exists with same hash AND the target embedding model
+      const targetModel = process.env.NOMIC_API_KEY
+        ? (process.env.NOMIC_EMBEDDING_MODEL || 'nomic-ai/nomic-embed-text-v1.5')
+        : 'skillforge-feature-hash-v1';
+
       const existing = await this.datasource.query(
-        `SELECT id FROM lp_embedding_chunks WHERE source_key = $1 AND chunk_index = $2 AND content_hash = $3 AND is_active = true`,
+        `SELECT id, embedding_model FROM lp_embedding_chunks WHERE source_key = $1 AND chunk_index = $2 AND content_hash = $3 AND is_active = true`,
         [opts.sourceKey, i, hash],
       );
-      if (existing.length > 0) continue;
+      if (existing.length > 0 && existing[0].embedding_model === targetModel) continue;
 
       // Embed the chunk with context prefix prepended
       const textToEmbed = `${opts.contextPrefix}\n\n${chunk}`.substring(0, 8192);
-      const embedding = await this.retrieval.embedText(textToEmbed, opts.openAiKey);
-      const modelName = opts.openAiKey ? 'text-embedding-3-small' : 'skillforge-feature-hash-v1';
+      const meta = await this.retrieval.embedWithMetadata(textToEmbed, 'document');
+      const embedding = meta.embedding;
+      const modelName = meta.model;
 
       // 1. Upsert into lp_embedding_chunks (Vector DB table)
       await this.datasource.query(
@@ -455,12 +460,17 @@ export class EmbeddingOutboxService implements OnModuleInit {
   private async deactivateChunks(entityId: string, eventType: string): Promise<void> {
     if (eventType === 'lesson_deleted') {
       await this.datasource.query(
-        `UPDATE lp_embedding_chunks SET is_active = false WHERE lesson_id = $1`,
+        `DELETE FROM lp_embedding_chunks WHERE lesson_id = $1`,
+        [entityId],
+      );
+    } else if (eventType === 'module_deleted') {
+      await this.datasource.query(
+        `DELETE FROM lp_embedding_chunks WHERE module_id = $1`,
         [entityId],
       );
     } else {
       await this.datasource.query(
-        `UPDATE lp_embedding_chunks SET is_active = false WHERE learning_path_id = $1`,
+        `DELETE FROM lp_embedding_chunks WHERE learning_path_id = $1`,
         [entityId],
       );
     }
@@ -476,7 +486,10 @@ export class EmbeddingOutboxService implements OnModuleInit {
     const words: string[] = [];
 
     for (const para of paragraphs) {
-      words.push(...para.split(/\s+/).filter(Boolean));
+      const tokens = para.split(/\s+/).filter(Boolean);
+      for (let t = 0; t < tokens.length; t++) {
+        words.push(tokens[t]);
+      }
     }
 
     if (words.length <= chunkSize) {

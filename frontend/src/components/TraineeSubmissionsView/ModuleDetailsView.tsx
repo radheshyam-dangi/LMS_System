@@ -945,9 +945,13 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
       {viewDetailsTarget && (() => {
         const { assignment, submission } = viewDetailsTarget;
 
-        const evaluatorName = submission.evaluatedBy?.firstName
+        const evaluatorTrainerName = submission.evaluatedBy?.firstName
           ? `${submission.evaluatedBy.firstName} ${submission.evaluatedBy.lastName || ''}`.trim()
-          : submission.evaluatedBy?.name || 'Trainer';
+          : (submission.evaluatedBy?.name || (assignment.assignedBy?.firstName
+              ? `${assignment.assignedBy.firstName} ${assignment.assignedBy.lastName || ''}`.trim()
+              : (assignment.assignedBy?.name || (assignment.createdBy?.firstName
+                  ? `${assignment.createdBy.firstName} ${assignment.createdBy.lastName || ''}`.trim()
+                  : assignment.createdBy?.name || 'Trainer'))));
 
         const maxPoints = assignment.maxScore || 100;
         const gainedPoints = submission.score || 0;
@@ -989,18 +993,10 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
               </div>
 
               <div style={{ padding: '22px 26px', overflowY: 'auto', flex: 1 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '24px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                  <div>
-                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Assigned By</div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 500, marginTop: '4px' }}>
-                      {assignment.createdBy?.firstName
-                        ? `${assignment.createdBy.firstName} ${assignment.createdBy.lastName || ''}`.trim()
-                        : 'Trainer'}
-                    </div>
-                  </div>
+                <div style={{ marginBottom: '24px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                   <div>
                     <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Evaluated By</div>
-                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 500, marginTop: '4px' }}>{evaluatorName}</div>
+                    <div style={{ fontSize: '14px', color: '#0f172a', fontWeight: 600, marginTop: '4px' }}>{evaluatorTrainerName}</div>
                   </div>
                 </div>
 
@@ -1028,13 +1024,43 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                       const qText = (q.text || q.questionText || q.question || '').replace(/\\n/g, '\n').replace(/\n$/, '').trim();
                       const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ' || (q.options && q.options.length > 0);
 
+                      const qId = String(q.id ?? idx);
+                      let earnedPoints: number | null = null;
+
+                      // 1. Trainer assigned question scores
+                      if (submission.questionScores && typeof submission.questionScores === 'object') {
+                        if (submission.questionScores[qId] !== undefined) earnedPoints = Number(submission.questionScores[qId]);
+                        else if (submission.questionScores[String(idx)] !== undefined) earnedPoints = Number(submission.questionScores[String(idx)]);
+                        else if (submission.questionScores[idx] !== undefined) earnedPoints = Number(submission.questionScores[idx]);
+                      }
+
+                      // 2. AI evaluated question scores
+                      if (earnedPoints === null && Array.isArray(submission.aiQuestionScores)) {
+                        const aiQ = submission.aiQuestionScores.find(
+                          (s: any) => String(s.questionId) === qId || String(s.questionId) === String(idx)
+                        );
+                        if (aiQ && aiQ.score != null) {
+                          earnedPoints = Number(aiQ.score);
+                        }
+                      }
+
+                      // 3. For MCQs, check answer correctness
+                      if (earnedPoints === null && isThisMcq && q.correctIndex !== null && q.correctIndex !== undefined) {
+                        const isCorrect = Array.isArray(q.correctIndex)
+                          ? (Array.isArray(selectedVal) ? selectedVal.some((i: any) => q.correctIndex.includes(Number(i))) : q.correctIndex.includes(Number(selectedVal)))
+                          : (Array.isArray(selectedVal) ? selectedVal.includes(q.correctIndex) : (Number(selectedVal) === Number(q.correctIndex) || selectedVal === q.options?.[q.correctIndex]));
+                        earnedPoints = isCorrect ? qPoints : 0;
+                      }
+
                       return (
                         <div key={idx} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                             <strong style={{ fontSize: '13px', color: '#0f172a', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
                               Q{idx + 1}: {qText}
                             </strong>
-                            <span style={{ fontSize: '12px', color: '#6366f1', fontWeight: 600, background: '#e0e7ff', padding: '2px 8px', borderRadius: '999px', flexShrink: 0 }}>{qPoints} pts</span>
+                            <span style={{ fontSize: '12px', color: '#4f46e5', fontWeight: 700, background: '#eef2ff', border: '1px solid #e0e7ff', padding: '2px 8px', borderRadius: '999px', flexShrink: 0 }}>
+                              {earnedPoints !== null ? `${earnedPoints} / ${qPoints} pts` : `${qPoints} pts`}
+                            </span>
                           </div>
 
                           {isThisMcq && q.options && q.options.length > 0 ? (

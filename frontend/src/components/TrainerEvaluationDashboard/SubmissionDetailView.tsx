@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import {
+  X,
+  Sparkles,
+  Check,
+  FileText,
+  Paperclip,
+} from 'lucide-react';
 import { assignmentService } from '../../services/assignmentService';
 import { useToast } from '../../context/ToastContext';
 
@@ -134,62 +141,211 @@ export function extractAssignmentQuestions(assignment: any): any[] {
 }
 
 /**
- * Parses submission answer payload from JSON strings or objects
+ * Resolves any representation of an MCQ answer (number, string index, option text, letter like "C")
+ * into a 0-based option index matching options[].
  */
-export function parseSubmissionData(submission: any) {
-  let parsed: any = submission.answers || submission.submissionText;
-  let rawText = submission.submissionText || '';
-
-  if (typeof parsed === 'string') {
-    try {
-      const obj = JSON.parse(parsed);
-      if (typeof obj === 'object' && obj !== null) {
-        if (obj.answers !== undefined || obj.textAnswers !== undefined || obj.mcqAnswers !== undefined) {
-          parsed = {
-            ...(typeof obj.answers === 'object' && !Array.isArray(obj.answers) ? obj.answers : {}),
-            ...(typeof obj.textAnswers === 'object' && !Array.isArray(obj.textAnswers) ? obj.textAnswers : {}),
-            ...(typeof obj.mcqAnswers === 'object' && !Array.isArray(obj.mcqAnswers) ? obj.mcqAnswers : {}),
-          };
-          if (Array.isArray(obj.answers)) parsed = obj.answers;
-        } else {
-          parsed = obj;
-        }
-        if (obj.raw) rawText = obj.raw;
-      }
-    } catch {}
+export function resolveTraineeOptionIndex(val: any, options: string[] = []): number | null {
+  if (val === null || val === undefined) return null;
+  if (typeof val === 'number') {
+    if (!isNaN(val) && val >= 0 && (options.length === 0 || val < options.length)) return val;
   }
 
-  return { parsed, rawText };
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // 1. Check numeric string e.g. "0", "1", "2"
+  const num = Number(str);
+  if (!isNaN(num) && num >= 0 && (options.length === 0 || num < options.length)) {
+    return num;
+  }
+
+  // 2. Check direct option text match
+  if (options && options.length > 0) {
+    const cleanStr = str.toLowerCase().replace(/^[a-d][\.\)]\s*/i, '').trim();
+    for (let i = 0; i < options.length; i++) {
+      const opt = String(options[i]).trim();
+      const cleanOpt = opt.toLowerCase().replace(/^[a-d][\.\)]\s*/i, '').trim();
+      if (opt.toLowerCase() === str.toLowerCase() || cleanOpt === cleanStr) {
+        return i;
+      }
+    }
+    for (let i = 0; i < options.length; i++) {
+      const cleanOpt = String(options[i]).toLowerCase().replace(/^[a-d][\.\)]\s*/i, '').trim();
+      if (cleanOpt.length > 2 && (cleanOpt.includes(cleanStr) || cleanStr.includes(cleanOpt))) {
+        return i;
+      }
+    }
+  }
+
+  // 3. Check letter choice e.g. "C", "Option C", "C."
+  const letterMatch = str.match(/^(?:option\s+)?([A-D])(?:\.|\)|:|$|\s)/i);
+  if (letterMatch) {
+    const letterIdx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+    if (letterIdx >= 0 && (options.length === 0 || letterIdx < options.length)) {
+      return letterIdx;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Parses submission answer payload from JSON strings, arrays, or objects
+ */
+export function parseSubmissionData(submission: any) {
+  const answersArray: Array<{ questionId?: string; index?: number; answer: any }> = [];
+  const mcqMap: Record<string, any> = {};
+  const textMap: Record<string, string> = {};
+  let rawText = submission?.submissionText || '';
+
+  // 1. Direct submission.answers array or json
+  let rawAnswers: any = submission?.answers;
+  if (typeof rawAnswers === 'string') {
+    try {
+      rawAnswers = JSON.parse(rawAnswers);
+    } catch {}
+  }
+  if (Array.isArray(rawAnswers)) {
+    rawAnswers.forEach((item, i) => {
+      if (item && typeof item === 'object') {
+        const qId = item.questionId != null ? String(item.questionId) : undefined;
+        const val = item.answer ?? item.selectedOption ?? item.value ?? item.text;
+        answersArray.push({ questionId: qId, index: i, answer: val });
+        if (qId) {
+          textMap[qId] = String(val ?? '');
+          mcqMap[qId] = val;
+        }
+        textMap[String(i)] = String(val ?? '');
+        mcqMap[String(i)] = val;
+      } else if (item != null) {
+        answersArray.push({ index: i, answer: item });
+        textMap[String(i)] = String(item);
+        mcqMap[String(i)] = item;
+      }
+    });
+  } else if (rawAnswers && typeof rawAnswers === 'object') {
+    Object.entries(rawAnswers).forEach(([k, v]) => {
+      textMap[k] = String(v ?? '');
+      mcqMap[k] = v;
+    });
+  }
+
+  // 2. Direct mcqAnswers on submission
+  const directMcq = submission?.mcqAnswers || (submission as any)?.mcq_answers;
+  if (directMcq && typeof directMcq === 'object') {
+    Object.entries(directMcq).forEach(([k, v]) => {
+      mcqMap[k] = v;
+    });
+  }
+
+  // 3. Parse submissionText JSON
+  if (typeof submission?.submissionText === 'string') {
+    const trimmed = submission.submissionText.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item, i) => {
+            if (item && typeof item === 'object') {
+              const qId = item.questionId != null ? String(item.questionId) : undefined;
+              const val = item.answer ?? item.selectedOption ?? item.value;
+              answersArray.push({ questionId: qId, index: i, answer: val });
+              if (qId) {
+                textMap[qId] = String(val ?? '');
+                mcqMap[qId] = val;
+              }
+              textMap[String(i)] = String(val ?? '');
+              mcqMap[String(i)] = val;
+            } else if (item != null) {
+              answersArray.push({ index: i, answer: item });
+              textMap[String(i)] = String(item);
+              mcqMap[String(i)] = item;
+            }
+          });
+        } else if (parsed && typeof parsed === 'object') {
+          if (parsed.raw) rawText = String(parsed.raw);
+
+          const pMcq = parsed.mcqAnswers || parsed.mcq;
+          if (pMcq && typeof pMcq === 'object') {
+            Object.entries(pMcq).forEach(([k, v]) => {
+              mcqMap[k] = v;
+            });
+          }
+
+          const pSubj = parsed.textAnswers || parsed.subj;
+          if (pSubj && typeof pSubj === 'object') {
+            Object.entries(pSubj).forEach(([k, v]) => {
+              textMap[k] = String(v ?? '');
+            });
+          }
+
+          if (Array.isArray(parsed.answers)) {
+            parsed.answers.forEach((item: any, i: number) => {
+              if (item && typeof item === 'object') {
+                const qId = item.questionId != null ? String(item.questionId) : undefined;
+                const val = item.answer ?? item.selectedOption ?? item.value;
+                answersArray.push({ questionId: qId, index: i, answer: val });
+                if (qId) {
+                  if (textMap[qId] === undefined) textMap[qId] = String(val ?? '');
+                  if (mcqMap[qId] === undefined) mcqMap[qId] = val;
+                }
+                if (textMap[String(i)] === undefined) textMap[String(i)] = String(val ?? '');
+                if (mcqMap[String(i)] === undefined) mcqMap[String(i)] = val;
+              }
+            });
+          } else if (parsed.answers && typeof parsed.answers === 'object') {
+            Object.entries(parsed.answers).forEach(([k, v]) => {
+              if (mcqMap[k] === undefined) mcqMap[k] = v;
+              if (textMap[k] === undefined) textMap[k] = String(v ?? '');
+            });
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return { answersArray, mcqMap, textMap, rawText };
 }
 
 /**
  * Matches trainee answer to a specific question by ID or array index
  */
 export function getTraineeAnswerForQuestion(parsed: any, q: any, idx: number): any {
-  if (parsed == null) return null;
+  if (!parsed) return null;
   const qId = String(q.id ?? idx);
+  const idxStr = String(idx);
+  const isMcq = q.type === 'MCQ' || (Array.isArray(q.options) && q.options.length > 0);
 
-  if (Array.isArray(parsed)) {
-    const match = parsed.find(
-      (item: any) =>
-        String(item.questionId) === qId ||
-        String(item.questionId) === String(idx) ||
-        String(item.id) === qId ||
-        String(item.id) === String(idx)
-    );
-    if (match) return match.answer ?? match.selectedOption ?? match.traineeAnswer;
-    if (parsed[idx] !== undefined) {
-      const item = parsed[idx];
-      return typeof item === 'object' && item !== null ? (item.answer ?? item.selectedOption) : item;
-    }
-  } else if (typeof parsed === 'object') {
-    if (parsed[qId] !== undefined) return parsed[qId];
-    if (parsed[String(idx)] !== undefined) return parsed[String(idx)];
-    if (parsed[idx] !== undefined) return parsed[idx];
-    if (q.id && parsed[q.id] !== undefined) return parsed[q.id];
-  } else if (idx === 0) {
-    return parsed;
+  // If MCQ, check mcqMap first
+  if (isMcq && parsed.mcqMap) {
+    if (parsed.mcqMap[qId] !== undefined) return parsed.mcqMap[qId];
+    if (parsed.mcqMap[idxStr] !== undefined) return parsed.mcqMap[idxStr];
+    if (parsed.mcqMap[idx] !== undefined) return parsed.mcqMap[idx];
   }
+
+  // Check structured answersArray
+  if (Array.isArray(parsed.answersArray)) {
+    const match = parsed.answersArray.find(
+      (a: any) =>
+        (a.questionId && (String(a.questionId) === qId || String(a.questionId) === idxStr)) ||
+        (a.index !== undefined && a.index === idx)
+    );
+    if (match && match.answer !== undefined && match.answer !== null && String(match.answer).trim() !== '') {
+      return match.answer;
+    }
+  }
+
+  // Check textMap
+  if (parsed.textMap) {
+    if (parsed.textMap[qId] !== undefined && parsed.textMap[qId].trim() !== '') return parsed.textMap[qId];
+    if (parsed.textMap[idxStr] !== undefined && parsed.textMap[idxStr].trim() !== '') return parsed.textMap[idxStr];
+  }
+
+  // Fallback for single question
+  if (idx === 0 && parsed.rawText && parsed.rawText.trim() !== '') {
+    return parsed.rawText.trim();
+  }
+
   return null;
 }
 
@@ -201,50 +357,60 @@ export function SubmissionDetailView({
   isAdminView,
 }: SubmissionDetailViewProps) {
   const questions = useMemo(() => extractAssignmentQuestions(submission.assignment), [submission.assignment]);
-  const { parsed: parsedSubmission, rawText } = useMemo(() => parseSubmissionData(submission), [submission]);
+  const parsedSubmission = useMemo(() => parseSubmissionData(submission), [submission]);
 
-  const [questionScores, setQuestionScores] = useState<Record<string, number>>(() => {
-    if (submission.questionScores && Object.keys(submission.questionScores).length > 0) {
-      return submission.questionScores;
-    }
-
-    const initialScores: Record<string, number> = {};
+  // Pre-calculate initial scores per question from AI or past trainer grading
+  const initialScores = useMemo(() => {
+    const scores: Record<string, number> = {};
 
     questions.forEach((q, idx) => {
       const traineeAnswer = getTraineeAnswerForQuestion(parsedSubmission, q, idx);
-      if (q.type === 'MCQ' && q.options.length > 0) {
-        const traineeChoiceIdx = traineeAnswer != null && traineeAnswer !== '' ? Number(traineeAnswer) : null;
+      const isMcq = q.type === 'MCQ' || (q.options && q.options.length > 0);
+      if (isMcq) {
+        const traineeChoiceIdx = resolveTraineeOptionIndex(traineeAnswer, q.options);
         if (traineeChoiceIdx !== null && q.correctIndex !== null && traineeChoiceIdx === q.correctIndex) {
-          initialScores[q.id] = q.points;
+          scores[q.id] = q.points;
         } else {
-          initialScores[q.id] = 0;
+          scores[q.id] = 0;
+        }
+      } else {
+        if (submission.questionScores && submission.questionScores[q.id] !== undefined) {
+          scores[q.id] = Math.min(q.points, Math.max(0, Number(submission.questionScores[q.id]) || 0));
+        } else if (Array.isArray(submission.aiQuestionScores)) {
+          const aiQ = submission.aiQuestionScores.find(
+            (s: any) => String(s.questionId) === q.id || String(s.questionId) === String(idx)
+          );
+          if (aiQ && aiQ.score != null) {
+            scores[q.id] = Math.min(q.points, Math.max(0, Number(aiQ.score) || 0));
+          } else {
+            scores[q.id] = 0;
+          }
+        } else {
+          scores[q.id] = 0;
         }
       }
     });
 
-    return initialScores;
-  });
+    return scores;
+  }, [questions, parsedSubmission, submission.questionScores, submission.aiQuestionScores]);
+
+  const [questionScores, setQuestionScores] = useState<Record<string, number>>(initialScores);
 
   const [evalScore, setEvalScore] = useState<number | ''>(() => {
+    if (questions.length > 0) {
+      return Object.values(initialScores).reduce((sum, s) => sum + (Number(s) || 0), 0);
+    }
     if (submission.score != null) return submission.score;
     if (submission.totalScore != null) return submission.totalScore;
     if (submission.aiTotalScore != null) return submission.aiTotalScore;
-    // Auto-calculate sum from MCQ initial scores if available
-    const scoreSum = Object.values(questionScores).reduce((sum, s) => sum + (Number(s) || 0), 0);
-    return Object.keys(questionScores).length > 0 ? scoreSum : '';
+    return '';
   });
 
-  const [evalFeedback, setEvalFeedback] = useState<string>(submission.feedback || '');
+  const [evalFeedback, setEvalFeedback] = useState<string>(
+    submission.feedback || submission.aiOverallRemark || ''
+  );
   const [isEvaluating, setIsEvaluating] = useState(false);
   const toast = useToast();
-
-  // Sync overall score when question scores are graded
-  useEffect(() => {
-    if (Object.keys(questionScores).length > 0) {
-      const total = Object.values(questionScores).reduce((sum, s) => sum + (Number(s) || 0), 0);
-      setEvalScore(total);
-    }
-  }, [questionScores]);
 
   // Performance stats for summary pill
   const stats = useMemo(() => {
@@ -259,7 +425,7 @@ export function SubmissionDetailView({
       if (q.type === 'MCQ' && q.options.length > 0) {
         mcqCount++;
         const traineeAnswer = getTraineeAnswerForQuestion(parsedSubmission, q, idx);
-        const traineeChoiceIdx = traineeAnswer != null && traineeAnswer !== '' ? Number(traineeAnswer) : null;
+        const traineeChoiceIdx = resolveTraineeOptionIndex(traineeAnswer, q.options);
         if (traineeChoiceIdx !== null && q.correctIndex !== null && traineeChoiceIdx === q.correctIndex) {
           correctCount++;
           autoCalculatedScore += q.points;
@@ -303,8 +469,14 @@ export function SubmissionDetailView({
     }
   };
 
-  const handleSetScore = (qId: string, val: number) => {
-    setQuestionScores(prev => ({ ...prev, [qId]: val }));
+  const handleSetScore = (qId: string, val: number, maxPoints: number) => {
+    const clamped = Math.min(maxPoints, Math.max(0, isNaN(val) ? 0 : val));
+    setQuestionScores(prev => {
+      const nextScores = { ...prev, [qId]: clamped };
+      const total = Object.values(nextScores).reduce((sum, s) => sum + (Number(s) || 0), 0);
+      setEvalScore(total);
+      return nextScores;
+    });
   };
 
   const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -486,7 +658,6 @@ export function SubmissionDetailView({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '18px',
               cursor: 'pointer',
               color: '#64748b',
               transition: 'background 0.15s',
@@ -495,7 +666,7 @@ export function SubmissionDetailView({
             onMouseEnter={e => (e.currentTarget.style.background = '#e2e8f0')}
             onMouseLeave={e => (e.currentTarget.style.background = '#f1f5f9')}
           >
-            ✕
+            <X size={18} />
           </button>
         </div>
 
@@ -512,114 +683,86 @@ export function SubmissionDetailView({
             gap: '20px',
           }}
         >
-          
-          {/* Quick Metrics Bar (for MCQs) */}
-          {stats.mcqCount > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 18px',
-                background: stats.correctCount === stats.mcqCount ? '#ecfdf5' : '#fffbeb',
-                borderRadius: '12px',
-                border: `1px solid ${stats.correctCount === stats.mcqCount ? '#a7f3d0' : '#fde68a'}`,
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <span style={{ fontSize: '24px' }}>{stats.correctCount === stats.mcqCount ? '🎯' : '📊'}</span>
-                <div>
-                  <div
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      color: stats.correctCount === stats.mcqCount ? '#065f46' : '#92400e',
-                    }}
-                  >
-                    MCQ Performance Breakdown
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#475569' }}>
-                    Trainee answered{' '}
-                    <strong style={{ color: stats.correctCount === stats.mcqCount ? '#047857' : '#b45309' }}>
-                      {stats.correctCount} of {stats.mcqCount}
-                    </strong>{' '}
-                    questions correctly ({stats.mcqCount > 0 ? Math.round((stats.correctCount / stats.mcqCount) * 100) : 0}% accuracy)
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 800, color: '#64748b' }}>
-                  Auto-Graded Score
-                </div>
-                <div style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>
-                  {stats.autoCalculatedScore} / {stats.totalMaxScore} pts
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* AI Suggested Evaluation (if available) */}
+          {/* ═══ AI EVALUATION OVERVIEW ═══ */}
           {submission.aiTotalScore != null && (
             <div
               style={{
-                background: '#eef2ff',
-                padding: '16px',
+                background: '#ffffff',
+                border: '1px solid #e2e8f0',
                 borderRadius: '12px',
-                border: '1px solid #c7d2fe',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
+                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+                overflow: 'hidden',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#3730a3', fontWeight: 800, fontSize: '14px' }}>
-                  <span>🤖</span> AI Evaluation Suggestion
+              {/* Header Bar */}
+              <div
+                style={{
+                  padding: '12px 18px',
+                  background: '#f8fafc',
+                  borderBottom: '1px solid #e2e8f0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '10px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Sparkles size={16} style={{ color: '#4f46e5' }} />
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
+                    AI Evaluation Overview
+                  </span>
+                  {submission.status && (
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        background: submission.status === 'Approved' ? '#ecfdf5' : submission.status === 'Rejected' ? '#fff1f2' : '#f1f5f9',
+                        color: submission.status === 'Approved' ? '#047857' : submission.status === 'Rejected' ? '#be123c' : '#475569',
+                        border: `1px solid ${submission.status === 'Approved' ? '#a7f3d0' : submission.status === 'Rejected' ? '#fecdd3' : '#cbd5e1'}`,
+                      }}
+                    >
+                      {submission.status === 'Submitted' ? 'Review Required' : submission.status}
+                    </span>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEvalScore(submission.aiTotalScore);
-                    if (submission.aiOverallRemark) {
-                      setEvalFeedback(prev => (prev ? `${prev}\n\nAI Note: ${submission.aiOverallRemark}` : submission.aiOverallRemark));
-                    }
-                  }}
-                  style={{
-                    background: '#4f46e5',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '4px 10px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Apply Suggested Score ({submission.aiTotalScore})
-                </button>
               </div>
 
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <div style={{ background: '#fff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e0e7ff' }}>
-                  <div style={{ fontSize: '11px', color: '#6366f1', fontWeight: 700, textTransform: 'uppercase' }}>AI Score</div>
-                  <div style={{ fontSize: '18px', fontWeight: 800, color: '#312e81' }}>
-                    {submission.aiTotalScore} / {submission.aiTotalMaxScore || submission.assignment?.maxScore || 100}
-                  </div>
-                </div>
+              {/* Body Content */}
+              <div style={{ padding: '16px 18px' }}>
                 <div
                   style={{
-                    flex: 1,
-                    background: '#fff',
-                    padding: '10px 14px',
+                    background: '#f8fafc',
                     borderRadius: '8px',
-                    border: '1px solid #e0e7ff',
-                    fontSize: '13px',
-                    color: '#312e81',
-                    lineHeight: '1.4',
+                    padding: '12px 14px',
+                    border: '1px solid #e2e8f0',
+                    display: 'flex',
+                    gap: '14px',
+                    alignItems: 'flex-start',
                   }}
                 >
-                  <strong style={{ color: '#4338ca' }}>AI Reasoning: </strong>
-                  {submission.aiOverallRemark || 'Completed rubric checks.'}
+                  <div style={{ textAlign: 'center', minWidth: '70px', paddingRight: '12px', borderRight: '1px solid #e2e8f0' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      AI Score
+                    </div>
+                    <div style={{ fontSize: '20px', fontWeight: 800, color: '#1e1b4b', marginTop: '2px' }}>
+                      {submission.aiTotalScore}
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748b' }}>
+                        /{submission.aiTotalMaxScore || submission.assignment?.maxScore || stats.totalMaxScore || 100}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#334155', marginBottom: '2px' }}>
+                      AI Feedback Summary
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#475569', lineHeight: '1.45' }}>
+                      {submission.aiOverallRemark || 'Completed rubric checks.'}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -628,8 +771,9 @@ export function SubmissionDetailView({
           {/* ═══ QUESTIONS & SOLUTIONS LIST ═══ */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>📝</span> Trainee Solution Breakdown ({questions.length > 0 ? `${questions.length} Question${questions.length > 1 ? 's' : ''}` : 'Submission Content'})
+              <div style={{ fontSize: '14px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FileText size={16} style={{ color: '#4f46e5' }} />
+                Trainee Solution Breakdown ({questions.length > 0 ? `${questions.length} Question${questions.length > 1 ? 's' : ''}` : 'Submission Content'})
               </div>
               <span style={{ fontSize: '12px', color: '#64748b' }}>
                 Review trainee selections and verify scores below
@@ -641,16 +785,18 @@ export function SubmissionDetailView({
                 {questions.map((q, idx) => {
                   const traineeAnswer = getTraineeAnswerForQuestion(parsedSubmission, q, idx);
                   const isMcq = q.type === 'MCQ' || (q.options && q.options.length > 0);
-                  const traineeChoiceIdx = traineeAnswer != null && traineeAnswer !== '' ? Number(traineeAnswer) : null;
+                  const traineeChoiceIdx = isMcq ? resolveTraineeOptionIndex(traineeAnswer, q.options) : null;
                   const correctChoiceIdx = q.correctIndex;
-                  const isAnswered = traineeChoiceIdx !== null && !isNaN(traineeChoiceIdx);
-                  const isCorrect = isAnswered && correctChoiceIdx !== null && traineeChoiceIdx === correctChoiceIdx;
+                  const isAnswered = isMcq ? traineeChoiceIdx !== null : (traineeAnswer != null && String(traineeAnswer).trim() !== '');
+                  const isCorrect = isMcq && isAnswered && correctChoiceIdx !== null && traineeChoiceIdx === correctChoiceIdx;
 
                   const aiScore = submission.aiQuestionScores?.find(
                     (s: any) => String(s.questionId) === q.id || String(s.questionId) === String(idx)
                   );
 
-                  const assignedScore = questionScores[q.id] ?? (isCorrect ? q.points : 0);
+                  const assignedScore = questionScores[q.id] !== undefined
+                    ? questionScores[q.id]
+                    : (isMcq ? (isCorrect ? q.points : 0) : (aiScore?.score != null ? aiScore.score : 0));
 
                   return (
                     <div
@@ -697,61 +843,7 @@ export function SubmissionDetailView({
                           </div>
                         </div>
 
-                        {/* Result Badge */}
-                        {isMcq ? (
-                          <div style={{ flexShrink: 0 }}>
-                            {isCorrect ? (
-                              <span
-                                style={{
-                                  background: '#dcfce7',
-                                  color: '#15803d',
-                                  fontSize: '12px',
-                                  fontWeight: 800,
-                                  padding: '5px 12px',
-                                  borderRadius: '20px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  border: '1px solid #86efac',
-                                }}
-                              >
-                                <span>✓</span> Correct (+{q.points} pts)
-                              </span>
-                            ) : isAnswered ? (
-                              <span
-                                style={{
-                                  background: '#fee2e2',
-                                  color: '#b91c1c',
-                                  fontSize: '12px',
-                                  fontWeight: 800,
-                                  padding: '5px 12px',
-                                  borderRadius: '20px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  border: '1px solid #fca5a5',
-                                }}
-                              >
-                                <span>✗</span> Incorrect (0 pts)
-                              </span>
-                            ) : (
-                              <span
-                                style={{
-                                  background: '#fef3c7',
-                                  color: '#b45309',
-                                  fontSize: '12px',
-                                  fontWeight: 700,
-                                  padding: '5px 12px',
-                                  borderRadius: '20px',
-                                  border: '1px solid #fde68a',
-                                }}
-                              >
-                                ⚪ Unanswered
-                              </span>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
+                        </div>
 
                       {/* ─── MCQ OPTIONS LIST ─── */}
                       {isMcq && q.options.length > 0 ? (
@@ -771,7 +863,7 @@ export function SubmissionDetailView({
                             if (isTraineePick && isThisCorrect) {
                               // Trainee was right!
                               cardBg = '#ecfdf5';
-                              cardBorder = '2px solid #10b981';
+                              cardBorder = '1.5px solid #10b981';
                               letterBg = '#10b981';
                               letterColor = '#ffffff';
                               textColor = '#065f46';
@@ -781,21 +873,21 @@ export function SubmissionDetailView({
                                     background: '#10b981',
                                     color: '#ffffff',
                                     fontSize: '11px',
-                                    fontWeight: 800,
-                                    padding: '3px 10px',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
                                     borderRadius: '6px',
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '4px',
                                   }}
                                 >
-                                  <span>✓</span> Trainee Answer (Correct)
+                                  <Check size={12} strokeWidth={2.5} /> Trainee Selection
                                 </span>
                               );
                             } else if (isTraineePick && !isThisCorrect) {
                               // Trainee was wrong!
                               cardBg = '#fff1f2';
-                              cardBorder = '2px solid #f43f5e';
+                              cardBorder = '1.5px solid #f43f5e';
                               letterBg = '#f43f5e';
                               letterColor = '#ffffff';
                               textColor = '#9f1239';
@@ -805,15 +897,15 @@ export function SubmissionDetailView({
                                     background: '#f43f5e',
                                     color: '#ffffff',
                                     fontSize: '11px',
-                                    fontWeight: 800,
-                                    padding: '3px 10px',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
                                     borderRadius: '6px',
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '4px',
                                   }}
                                 >
-                                  <span>✗</span> Trainee Selected (Incorrect)
+                                  <X size={12} strokeWidth={2.5} /> Trainee Selection
                                 </span>
                               );
                             } else if (isThisCorrect) {
@@ -829,16 +921,16 @@ export function SubmissionDetailView({
                                     background: '#dcfce7',
                                     color: '#15803d',
                                     fontSize: '11px',
-                                    fontWeight: 800,
-                                    padding: '3px 10px',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
                                     borderRadius: '6px',
                                     border: '1px solid #86efac',
-                                    display: 'flex',
+                                    display: 'inline-flex',
                                     alignItems: 'center',
                                     gap: '4px',
                                   }}
                                 >
-                                  <span>✓</span> Correct Answer
+                                  <Check size={12} strokeWidth={2.5} /> Correct Answer
                                 </span>
                               );
                             }
@@ -884,50 +976,12 @@ export function SubmissionDetailView({
                               </div>
                             );
                           })}
-
-                          {/* Quick Solution Summary Banner */}
-                          <div
-                            style={{
-                              marginTop: '6px',
-                              padding: '10px 14px',
-                              background: isCorrect ? '#f0fdf4' : '#f8fafc',
-                              border: `1px solid ${isCorrect ? '#bbf7d0' : '#e2e8f0'}`,
-                              borderRadius: '8px',
-                              fontSize: '12px',
-                              color: '#334155',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                            }}
-                          >
-                            <div>
-                              <strong>Summary: </strong>
-                              {isAnswered ? (
-                                <span>
-                                  Trainee selected <strong>Option {optionLetters[traineeChoiceIdx] || traineeChoiceIdx + 1} ("{q.options[traineeChoiceIdx]}")</strong>.
-                                  {isCorrect
-                                    ? ' This matches the correct answer!'
-                                    : correctChoiceIdx !== null
-                                    ? ` The correct answer is Option ${optionLetters[correctChoiceIdx] || correctChoiceIdx + 1} ("${q.options[correctChoiceIdx]}").`
-                                    : ''}
-                                </span>
-                              ) : (
-                                <span style={{ color: '#b45309' }}>No option selected by trainee.</span>
-                              )}
-                            </div>
-                          </div>
                         </div>
                       ) : (
                         /* ─── SUBJECTIVE QUESTION VIEW ─── */
                         <div className="h-auto min-h-0" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.3px' }}>
-                              Question Prompt:
-                            </div>
-                            <div style={{ fontSize: '14px', fontWeight: 700, color: '#0f172a', marginBottom: '14px', lineHeight: '1.5' }}>
-                              {q.text || q.questionText || q.question}
-                            </div>
-                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.3px' }}>
+                            <div style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.3px' }}>
                               Trainee Submitted Answer:
                             </div>
                             <div
@@ -949,33 +1003,6 @@ export function SubmissionDetailView({
                               {traineeAnswer ? String(traineeAnswer) : <em style={{ color: '#94a3b8' }}>No answer written.</em>}
                             </div>
                           </div>
-
-                          {q.expectedAnswerGuideline && (
-                            <div style={{ background: '#f0fdf4', padding: '12px 14px', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '13px', color: '#166534' }}>
-                              <strong style={{ display: 'block', marginBottom: '4px' }}>📋 Grading Guideline / Expected Rubric:</strong>
-                              {q.expectedAnswerGuideline}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* AI Question Score (if available) */}
-                      {aiScore && (
-                        <div style={{ background: '#eef2ff', padding: '12px', borderRadius: '8px', borderLeft: '4px solid #6366f1', fontSize: '13px' }}>
-                          <div style={{ fontWeight: 800, color: '#4338ca', marginBottom: '4px' }}>
-                            🤖 AI Question Assessment: {aiScore.score} / {aiScore.maxScore || q.points} pts
-                          </div>
-                          <div style={{ color: '#312e81' }}>{aiScore.remark}</div>
-                          {aiScore.matchedKeyPoints?.length > 0 && (
-                            <div style={{ color: '#15803d', marginTop: '6px', fontSize: '12px' }}>
-                              <strong>Key Points Hit:</strong> {aiScore.matchedKeyPoints.join(', ')}
-                            </div>
-                          )}
-                          {aiScore.missedKeyPoints?.length > 0 && (
-                            <div style={{ color: '#b91c1c', marginTop: '4px', fontSize: '12px' }}>
-                              <strong>Key Points Missed:</strong> {aiScore.missedKeyPoints.join(', ')}
-                            </div>
-                          )}
                         </div>
                       )}
 
@@ -987,46 +1014,10 @@ export function SubmissionDetailView({
                           borderTop: '1px dashed #cbd5e1',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'space-between',
+                          justifyContent: 'flex-end',
                           gap: '12px',
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontSize: '12px', fontWeight: 600, color: '#64748b' }}>Quick Grade:</span>
-                          <button
-                            type="button"
-                            onClick={() => handleSetScore(q.id, q.points)}
-                            style={{
-                              background: assignedScore === q.points ? '#dcfce7' : '#f1f5f9',
-                              color: assignedScore === q.points ? '#166534' : '#475569',
-                              border: `1px solid ${assignedScore === q.points ? '#86efac' : '#cbd5e1'}`,
-                              borderRadius: '6px',
-                              padding: '3px 8px',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Full ({q.points})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSetScore(q.id, 0)}
-                            style={{
-                              background: assignedScore === 0 ? '#fee2e2' : '#f1f5f9',
-                              color: assignedScore === 0 ? '#991b1b' : '#475569',
-                              border: `1px solid ${assignedScore === 0 ? '#fca5a5' : '#cbd5e1'}`,
-                              borderRadius: '6px',
-                              padding: '3px 8px',
-                              fontSize: '11px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Zero (0)
-                          </button>
-                        </div>
-
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
                             Score for Q{idx + 1}:
@@ -1036,7 +1027,7 @@ export function SubmissionDetailView({
                             min={0}
                             max={q.points}
                             value={assignedScore}
-                            onChange={e => handleSetScore(q.id, e.target.value === '' ? 0 : Number(e.target.value))}
+                            onChange={e => handleSetScore(q.id, e.target.value === '' ? 0 : Number(e.target.value), q.points)}
                             style={{
                               width: '65px',
                               padding: '5px 8px',
@@ -1077,7 +1068,7 @@ export function SubmissionDetailView({
                     borderLeft: '4px solid #3b82f6',
                   }}
                 >
-                  {rawText || submission.submissionText || 'No textual content submitted.'}
+                  {parsedSubmission.rawText || submission.submissionText || 'No textual content submitted.'}
                 </div>
               </div>
             )}
@@ -1097,9 +1088,9 @@ export function SubmissionDetailView({
                 fontSize: '13px',
               }}
             >
-              <span style={{ fontSize: '18px' }}>📎</span>
+              <Paperclip size={16} style={{ color: '#4f46e5', flexShrink: 0 }} />
               <div>
-                <strong>Trainee Attached File: </strong>
+                <strong style={{ color: '#0f172a' }}>Trainee Attached File: </strong>
                 <a
                   href={submission.attachmentUrl}
                   target="_blank"
@@ -1124,8 +1115,16 @@ export function SubmissionDetailView({
               gap: '16px',
             }}
           >
-            <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
-              Final Evaluation & Feedback
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: '#0f172a' }}>
+                  Final Evaluation & Feedback
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748b' }}>
+                  Review, upgrade, or finalize the score and feedback for this trainee
+                </div>
+              </div>
+
             </div>
 
             {/* Overall Score Input */}
@@ -1133,9 +1132,6 @@ export function SubmissionDetailView({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
                   Overall Score (Max: {submission.assignment?.maxScore || stats.totalMaxScore || 100} pts)
-                  <span style={{ color: '#64748b', fontWeight: 'normal', marginLeft: '6px' }}>
-                    (Auto-synced with question grades)
-                  </span>
                 </label>
                 {evalScore !== '' && (
                   <span style={{ fontSize: '12px', fontWeight: 700, color: '#4f46e5' }}>
@@ -1145,91 +1141,40 @@ export function SubmissionDetailView({
               </div>
               <input
                 type="number"
-                min={0}
-                max={submission.assignment?.maxScore || stats.totalMaxScore || 100}
+                readOnly
                 value={evalScore}
-                onChange={e => setEvalScore(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder="Enter final score..."
+                placeholder="Auto-calculated from question scores..."
                 style={{
                   width: '100%',
                   padding: '10px 14px',
                   borderRadius: '8px',
-                  border: '1.5px solid #cbd5e1',
+                  border: '1.5px solid #e2e8f0',
                   fontSize: '15px',
                   fontWeight: 700,
                   color: '#0f172a',
                   outline: 'none',
-                  background: '#ffffff',
+                  background: '#f8fafc',
+                  cursor: 'not-allowed',
                 }}
               />
+              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                Overall score is automatically calculated from the individual question scores above.
+              </div>
             </div>
 
             {/* Trainer Feedback Textarea */}
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <div style={{ marginBottom: '6px' }}>
                 <label style={{ fontSize: '13px', fontWeight: 700, color: '#334155' }}>
-                  Trainer Feedback / Remarks
-                  <span style={{ color: '#dc2626', marginLeft: '4px' }}>* (Mandatory if Rejecting)</span>
+                  Trainer Feedback
                 </label>
-              </div>
-
-              {/* Feedback Quick Presets */}
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
-                <button
-                  type="button"
-                  onClick={() => setEvalFeedback('Excellent work! All questions answered accurately.')}
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    background: '#ecfdf5',
-                    color: '#065f46',
-                    border: '1px solid #a7f3d0',
-                    cursor: 'pointer',
-                  }}
-                >
-                  + "Excellent work!"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEvalFeedback('Good effort! Please review the incorrect answers above.')}
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    background: '#eff6ff',
-                    color: '#1e40af',
-                    border: '1px solid #bfdbfe',
-                    cursor: 'pointer',
-                  }}
-                >
-                  + "Good effort, review incorrect"
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEvalFeedback('Submission does not meet passing criteria. Please review learning material and resubmit.')}
-                  style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    background: '#fff1f2',
-                    color: '#9f1239',
-                    border: '1px solid #fecdd3',
-                    cursor: 'pointer',
-                  }}
-                >
-                  + "Does not meet criteria"
-                </button>
               </div>
 
               <textarea
                 rows={3}
                 value={evalFeedback}
                 onChange={e => setEvalFeedback(e.target.value)}
-                placeholder="Write constructive, encouraging feedback or specific corrections..."
+                placeholder="Write constructive feedback or adjust the AI evaluation..."
                 style={{
                   width: '100%',
                   padding: '12px 14px',
@@ -1300,6 +1245,9 @@ export function SubmissionDetailView({
               disabled={isEvaluating}
               onClick={() => handleEvaluate('Approved')}
               style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
                 padding: '10px 24px',
                 background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
                 color: '#ffffff',
@@ -1312,7 +1260,8 @@ export function SubmissionDetailView({
                 opacity: isEvaluating ? 0.6 : 1,
               }}
             >
-              {isEvaluating ? 'Submitting Evaluation...' : '✓ Approve & Submit Evaluation'}
+              <Check size={16} />
+              {isEvaluating ? 'Submitting Evaluation...' : 'Approve & Submit Evaluation'}
             </button>
           </div>
         </div>

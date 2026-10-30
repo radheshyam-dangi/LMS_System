@@ -418,18 +418,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           displayStatus = 'Approved';
           priority = 4;
         }
-        if (deadlineDate && now > deadlineDate) {
-          displayStatus = 'Missed/Overdue';
-          isOverdue = true;
-          priority = 5;
-        }
       } else {
         displayStatus = 'Pending';
         priority = 2;
         if (deadlineDate && now > deadlineDate) {
-          displayStatus = 'Missed/Overdue';
           isOverdue = true;
-          priority = 5;
         }
       }
 
@@ -462,16 +455,23 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
     let overdue = 0;
 
     enrichedAllCards.forEach(c => {
-      if (c.isOverdue) {
-        overdue++;
-      } else if (c.displayStatus === 'Pending' && !c.a.isLocked) {
-        pending++;
+      const isSubmittedOrEvaluated =
+        c.displayStatus === 'Submitted' ||
+        c.displayStatus === 'Approved' ||
+        c.displayStatus === 'Need Improvement';
+
+      if (c.displayStatus === 'Need Improvement') {
+        revision++;
       } else if (c.displayStatus === 'Submitted') {
         submitted++;
       } else if (c.displayStatus === 'Approved') {
         approved++;
-      } else if (c.displayStatus === 'Need Improvement') {
-        revision++;
+      } else {
+        // Any task that is not submitted/evaluated belongs to the pending state (locked or unlocked)
+        pending++;
+        if (c.isOverdue) {
+          overdue++;
+        }
       }
     });
 
@@ -504,7 +504,13 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
 
     // 1. Quick tab filter
     if (activeQuickTab === 'pending') {
-      result = result.filter(c => c.displayStatus === 'Pending' && !c.isOverdue && !c.a.isLocked);
+      result = result.filter(c => {
+        const isSubmittedOrEvaluated =
+          c.displayStatus === 'Submitted' ||
+          c.displayStatus === 'Approved' ||
+          c.displayStatus === 'Need Improvement';
+        return !isSubmittedOrEvaluated;
+      });
     } else if (activeQuickTab === 'submitted') {
       result = result.filter(c => c.displayStatus === 'Submitted');
     } else if (activeQuickTab === 'approved') {
@@ -550,7 +556,7 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
           if (category === 'status') {
             const currentDisplay = normalize(cardItem.displayStatus);
             if (selectedValues.includes('all')) return true;
-            if (selectedValues.includes('pending') && currentDisplay === 'pending') return true;
+            if (selectedValues.includes('pending') && (currentDisplay === 'pending' || currentDisplay === 'locked')) return true;
             if (selectedValues.includes('submitted') && currentDisplay === 'submitted') return true;
             if (selectedValues.includes('approved') && currentDisplay === 'approved') return true;
             if ((selectedValues.includes('need improvement') || selectedValues.includes('needs improvement')) && currentDisplay === 'need improvement') return true;
@@ -1153,13 +1159,13 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
       {/* View Details & Evaluation Modal */}
       {viewDetailsTarget && (() => {
         const { assignment, submission } = viewDetailsTarget;
-        const assignerName = assignment.createdBy?.firstName
-          ? `${assignment.createdBy.firstName} ${assignment.createdBy.lastName || ''}`.trim()
-          : assignment.createdBy?.name || 'Trainer';
-
-        const evaluatorName = submission.evaluatedBy?.firstName
+        const evaluatorTrainerName = submission.evaluatedBy?.firstName
           ? `${submission.evaluatedBy.firstName} ${submission.evaluatedBy.lastName || ''}`.trim()
-          : submission.evaluatedBy?.name || 'Trainer';
+          : (submission.evaluatedBy?.name || (assignment.assignedBy?.firstName
+              ? `${assignment.assignedBy.firstName} ${assignment.assignedBy.lastName || ''}`.trim()
+              : (assignment.assignedBy?.name || (assignment.createdBy?.firstName
+                  ? `${assignment.createdBy.firstName} ${assignment.createdBy.lastName || ''}`.trim()
+                  : assignment.createdBy?.name || 'Trainer'))));
 
         const maxPoints = assignment.maxScore || 100;
         const gainedPoints = submission.score || 0;
@@ -1220,15 +1226,11 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
 
               {/* Body */}
               <div className="eval-modal-body">
-                {/* Evaluator & Assigner Meta */}
-                <div className="eval-meta-grid">
-                  <div>
-                    <div className="eval-meta-item-label">Assigned By</div>
-                    <div className="eval-meta-item-val">{assignerName}</div>
-                  </div>
+                {/* Evaluator Meta */}
+                <div className="eval-meta-grid" style={{ gridTemplateColumns: '1fr' }}>
                   <div>
                     <div className="eval-meta-item-label">Evaluated By</div>
-                    <div className="eval-meta-item-val">{evaluatorName}</div>
+                    <div className="eval-meta-item-val">{evaluatorTrainerName}</div>
                   </div>
                 </div>
 
@@ -1263,13 +1265,43 @@ export function TraineeAssignmentsView({ accessToken, currentUser, activeRole }:
                       const qText = (q.questionText || q.text || q.question || '').replace(/\\n/g, '\n').replace(/\n$/, '').trim();
                       const isThisMcq = isMcq || (q.type || q.questionType || '').toUpperCase() === 'MCQ' || (q.options && q.options.length > 0);
 
+                      const qId = String(q.id ?? idx);
+                      let earnedPoints: number | null = null;
+
+                      // 1. Trainer assigned question scores
+                      if (submission.questionScores && typeof submission.questionScores === 'object') {
+                        if (submission.questionScores[qId] !== undefined) earnedPoints = Number(submission.questionScores[qId]);
+                        else if (submission.questionScores[String(idx)] !== undefined) earnedPoints = Number(submission.questionScores[String(idx)]);
+                        else if (submission.questionScores[idx] !== undefined) earnedPoints = Number(submission.questionScores[idx]);
+                      }
+
+                      // 2. AI evaluated question scores
+                      if (earnedPoints === null && Array.isArray(submission.aiQuestionScores)) {
+                        const aiQ = submission.aiQuestionScores.find(
+                          (s: any) => String(s.questionId) === qId || String(s.questionId) === String(idx)
+                        );
+                        if (aiQ && aiQ.score != null) {
+                          earnedPoints = Number(aiQ.score);
+                        }
+                      }
+
+                      // 3. For MCQs, check answer correctness
+                      if (earnedPoints === null && isThisMcq && q.correctIndex !== null && q.correctIndex !== undefined) {
+                        const isCorrect = Array.isArray(q.correctIndex)
+                          ? (Array.isArray(selectedVal) ? selectedVal.some((i: any) => q.correctIndex.includes(Number(i))) : q.correctIndex.includes(Number(selectedVal)))
+                          : (Array.isArray(selectedVal) ? selectedVal.includes(q.correctIndex) : (Number(selectedVal) === Number(q.correctIndex) || selectedVal === q.options?.[q.correctIndex]));
+                        earnedPoints = isCorrect ? qPoints : 0;
+                      }
+
                       return (
                         <div key={idx} className="eval-question-card">
                           <div className="eval-question-header">
                             <h5 className="eval-question-title">
                               Q{idx + 1}: {qText}
                             </h5>
-                            <span className="eval-question-points">{qPoints} pts</span>
+                            <span className="eval-question-points">
+                              {earnedPoints !== null ? `${earnedPoints} / ${qPoints} pts` : `${qPoints} pts`}
+                            </span>
                           </div>
 
                           {isThisMcq && q.options && q.options.length > 0 ? (

@@ -12,7 +12,7 @@
  * - Reciprocal Rank Fusion (RRF) merges lexical + vector results.
  * - Relevance gate: strong → LP answer, weak → web fallback, none → decline.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { ConsoleLogger, Injectable, Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 export interface RetrievedChunk {
@@ -229,8 +229,7 @@ export class AiAssistantRetrievalService {
     if (!lpIds.length || !query.trim()) return [];
 
     try {
-      const openAiKey = process.env.OPENAI_API_KEY;
-      const queryEmbedding = await this.embedText(query, openAiKey);
+      const queryEmbedding = await this.embedText(query, 'query');
       if (!queryEmbedding) return [];
 
       const rows = await this.datasource.query(
@@ -473,45 +472,120 @@ export class AiAssistantRetrievalService {
   }
 
   /**
-   * Embed text into a dense vector:
-   * 1. Uses OpenAI text-embedding-3-small if API key is provided and succeeds.
-   * 2. Falls back to a high-speed deterministic 256-dimensional semantic feature vector.
+   * Batch embed texts using Nomic Atlas API
    */
-  async embedText(text: string, apiKey?: string): Promise<number[] | null> {
-    if (apiKey) {
+  async embedTexts(texts: string[], kind: 'document' | 'query' = 'query'): Promise<number[][]> {
+    if (!texts.length) return [];
+    const nomicKey = process.env.NOMIC_API_KEY;
+    const taskType = kind === 'document' ? 'search_document' : 'search_query';
+    const prefix = kind === 'document' ? 'search_document: ' : 'search_query: ';
+
+    // 1. Try native Nomic Atlas API (Official & Fast)
+    if (nomicKey) {
       try {
-        const response = await fetch('https://api.openai.com/v1/embeddings', {
+        const response = await fetch('https://api-atlas.nomic.ai/v1/embedding/text', {
           method: 'POST',
           headers: {
+            Authorization: `Bearer ${nomicKey}`,
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
-            model: 'text-embedding-3-small',
-            input: text.substring(0, 8192),
+            model: 'nomic-embed-text-v1.5',
+            texts: texts.map(t => prefix + t.substring(0, 8192)),
+            task_type: taskType,
           }),
           signal: AbortSignal.timeout(15000),
         });
 
         if (response.ok) {
           const data = (await response.json()) as any;
-          if (data.data?.[0]?.embedding) {
-            return data.data[0].embedding;
+          if (data && Array.isArray(data.embeddings) && data.embeddings.length > 0) {
+            return data.embeddings as number[][];
           }
+        } else {
+          const errText = await response.text();
+          this.logger.warn(`Nomic Atlas API failed (${response.status}): ${errText}`);
         }
       } catch (e) {
-        this.logger.warn(`OpenAI embedding failed, falling back to local semantic feature vector: ${(e as Error).message}`);
+        this.logger.warn(`Nomic Atlas API network error: ${(e as Error).message}`);
       }
     }
 
-    // Deterministic 256-dimension normalized semantic feature vector
-    return this.generateLocalEmbedding(text, 256);
+    return texts.map(t => this.generateLocalEmbedding(t, 256));
   }
 
   /**
-   * High-speed deterministic semantic feature hashing into an L2-normalized float array.
-   * Encodes unigrams, bigrams, and character subwords so semantic overlap is accurately measured by cosine similarity.
+   * Embed text and return metadata verifying which model actually generated the vector.
+   * If Nomic Atlas succeeds, model is 'nomic-ai/nomic-embed-text-v1.5'.
+   * If Nomic fails, model is accurately identified as 'skillforge-feature-hash-v1'.
    */
+  async embedWithMetadata(text: string, kind: 'document' | 'query' = 'query'): Promise<{
+    embedding: number[];
+    model: string;
+    dimensions: number;
+    isFallback: boolean;
+  }> {
+    const nomicKey = process.env.NOMIC_API_KEY;
+    const taskType = kind === 'document' ? 'search_document' : 'search_query';
+    const prefix = kind === 'document' ? 'search_document: ' : 'search_query: ';
+
+    // 1. Try native Nomic Atlas API
+    if (nomicKey) {
+      try {
+        const response = await fetch('https://api-atlas.nomic.ai/v1/embedding/text', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${nomicKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'nomic-embed-text-v1.5',
+            texts: [prefix + text.substring(0, 8192)],
+            task_type: taskType,
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (response.ok) {
+          const data = (await response.json()) as any;
+          if (data && Array.isArray(data.embeddings) && data.embeddings[0]?.length > 0) {
+            const vector = data.embeddings[0] as number[];
+            return {
+              embedding: vector,
+              model: 'nomic-ai/nomic-embed-text-v1.5',
+              dimensions: vector.length,
+              isFallback: false,
+            };
+          }
+        } else {
+          const errText = await response.text();
+          this.logger.warn(`Nomic Atlas API failed (${response.status}): ${errText}`);
+        }
+      } catch (e) {
+        this.logger.warn(`Nomic Atlas API network error: ${(e as Error).message}`);
+      }
+    }
+
+    const localVec = this.generateLocalEmbedding(text, 256);
+    return {
+      embedding: localVec,
+      model: 'skillforge-feature-hash-v1',
+      dimensions: 256,
+      isFallback: true,
+    };
+  }
+
+  /**
+   * Embed text into a dense vector:
+   * Uses Nomic Atlas API nomic-ai/nomic-embed-text-v1.5 with fallback
+   */
+  async embedText(text: string, kindOrApiKey?: 'document' | 'query' | string): Promise<number[] | null> {
+    const kind: 'document' | 'query' = kindOrApiKey === 'document' ? 'document' : 'query';
+    const res = await this.embedWithMetadata(text, kind);
+    console.log("embed result: ", res);
+    return res.embedding;
+  }
+
   generateLocalEmbedding(text: string, dimensions = 256): number[] {
     const vector = new Array(dimensions).fill(0);
     const clean = text.toLowerCase().replace(/[^\w\s]/g, ' ');

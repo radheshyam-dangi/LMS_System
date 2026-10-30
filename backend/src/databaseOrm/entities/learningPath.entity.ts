@@ -22,9 +22,17 @@ export class LearningPathEntity extends BaseEntity {
   @Column({ type: 'jsonb', nullable: true, default: [] })
   skillsTags: string[];
 
-  // 🌟 Release status badge (Active vs. Upcoming)
+  // 🌟 Release status badge (Active vs. Upcoming vs. ai_draft)
   @Column({ type: 'varchar', default: 'Active' })
   status: string;
+
+  // 🌟 Origin of creation ('manual' | 'ai')
+  @Column({ type: 'varchar', default: 'manual' })
+  origin: string;
+
+  // 🌟 Cached 2-line summary for AI Assistant Q&A
+  @Column({ type: 'text', nullable: true })
+  summary: string | null;
 
   // 🌟 Optional Cover Image / Icon URL
   @Column({ type: 'varchar', nullable: true })

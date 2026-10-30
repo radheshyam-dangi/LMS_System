@@ -104,21 +104,23 @@
    ASSIGNMENT TASK ROW & DUE DATE ALIGNMENT
    ========================================== */
 .tasks-header-row {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) 220px 240px;
-  gap: 20px;
-  padding: 0 20px 8px 20px;
+  display: grid !important;
+  grid-template-columns: minmax(280px, 1.4fr) minmax(200px, 0.9fr) minmax(220px, 1fr) !important;
+  gap: 20px !important;
+  padding: 0 24px 10px 24px !important;
   font-size: 12px;
   font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   align-items: center;
+  box-sizing: border-box !important;
+  width: 100% !important;
 }
 
 .assignment-card-grid {
   display: grid !important;
-  grid-template-columns: minmax(240px, 1fr) 220px 240px !important;
+  grid-template-columns: minmax(280px, 1.4fr) minmax(200px, 0.9fr) minmax(220px, 1fr) !important;
   align-items: center !important;
   gap: 20px !important;
   width: 100% !important;

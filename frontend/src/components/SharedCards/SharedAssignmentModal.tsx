@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Bot, X, ChevronRight, Save, CheckCircle2, HelpCircle } from 'lucide-react';
+import { X, ChevronRight, Save, CheckCircle2, HelpCircle } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { resolveAssignmentInstructions } from '../../utils/assignmentInstructions';
 import { AssignmentChatDrawer } from '../TraineeSubmissionsView/AssignmentChatDrawer';
 import { renderMultilineText } from '../../utils/textUtils';
+import { extractAnswersFromSubmission } from '../../utils/assignmentAnswers';
 import { assignmentService } from '../../services/assignmentService';
 import { useToast } from '../../context/ToastContext';
 import '../TraineeSubmissionsView/TraineeAssignments.css';
@@ -142,6 +143,18 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
   const [attachmentUrl, setAttachmentUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isChatDrawerOpen, setIsChatDrawerOpen] = useState(false);
+  const [chatDrawerWidth, setChatDrawerWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('skillforge_assignment_chat_width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 360 && parsed <= 850) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return 440;
+  });
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   
   // Track original draft state to detect unsaved changes
@@ -152,7 +165,32 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Normalize questions once for consistent state & rendering
-  const questionsArray = extractModalQuestions(task);
+  const questionsArray = useMemo(() => extractModalQuestions(task), [task]);
+
+  const deadlineValue =
+    task.deadline ||
+    task.dueDate ||
+    task.computedDeadline ||
+    task.deadlineAt ||
+    submission?.deadline ||
+    submission?.deadlineAt;
+  const status = task.status || submission?.status || 'not_started';
+
+  let timeLeftStr = '';
+  let isOverdue = false;
+  if (deadlineValue) {
+    const diff = new Date(deadlineValue).getTime() - currentTime.getTime();
+    if (diff <= 0) {
+      isOverdue = true;
+      timeLeftStr = 'Deadline Expired';
+    } else if (status === 'started' || task.anchorType === 'TASK_START') {
+      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const h = Math.floor((diff / (1000 * 60 * 60)) % 24).toString().padStart(2, '0');
+      const m = Math.floor((diff / 1000 / 60) % 60).toString().padStart(2, '0');
+      const s = Math.floor((diff / 1000) % 60).toString().padStart(2, '0');
+      timeLeftStr = `${d > 0 ? d + 'd ' : ''}${h}:${m}:${s}`;
+    }
+  }
 
   // Focus trap and esc listener
   useEffect(() => {
@@ -171,43 +209,26 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
 
   useEffect(() => {
     const draftKey = `draft_assignment_${task.id}`;
-    // Clear any cached local draft on open so modal starts with clean state & NO option selected
+    // Clear any cached local draft on open so modal starts with clean state
     localStorage.removeItem(draftKey);
 
-    let prefilledSubj: Record<number, any> = {};
-    let prefilledText = '';
-    let prefilledAtt = '';
-
-    if (submission?.submissionText) {
-      try {
-        prefilledText = submission.submissionText;
-        if (submission.submissionText.startsWith('{')) {
-          const parsed = JSON.parse(submission.submissionText);
-          prefilledSubj = parsed.textAnswers || parsed.answers || {};
-        }
-      } catch (e) {}
-    } else if (submission?.answers && Array.isArray(submission.answers)) {
-      try {
-        submission.answers.forEach((ansItem: any, idx: number) => {
-          const num = Number(ansItem.answer);
-          if (isNaN(num)) {
-            prefilledSubj[idx] = ansItem.answer;
-          }
-        });
-      } catch (e) {}
-    }
+    const fromSub = extractAnswersFromSubmission(submission, questionsArray);
+    const prefilledSubj = fromSub.subj;
+    const prefilledText = fromSub.text;
+    const prefilledAtt = fromSub.att;
+    // When expired or already submitted, display the submitted MCQ options as well
+    const prefilledMcq = isOverdue || submission?.submittedAt ? fromSub.mcq : {};
 
     setSubmissionText(prefilledText);
     setSubjectiveAnswers(prefilledSubj);
-    // 🌟 On initial open, no option is selected so trainee can freshly choose any option
-    setMcqAnswers({});
+    setMcqAnswers(prefilledMcq);
     setAttachmentUrl(prefilledAtt);
     
-    setInitialStateStr(JSON.stringify({ text: prefilledText, subj: prefilledSubj, mcq: {}, att: prefilledAtt }));
+    setInitialStateStr(JSON.stringify({ text: prefilledText, subj: prefilledSubj, mcq: prefilledMcq, att: prefilledAtt }));
     
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
-  }, [task.id, submission]);
+  }, [task.id, submission, isOverdue]);
 
   // Check for unsaved changes
   useEffect(() => {
@@ -233,7 +254,11 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
   };
 
   const handleStartTask = async () => {
-    if (task.anchorType === 'TASK_START' && (!submission || submission.status === 'AVAILABLE' || submission.rawStatus === 'AVAILABLE')) {
+    if (isOverdue && (!submission || submission.status === 'AVAILABLE' || submission.rawStatus === 'AVAILABLE')) {
+      toast.error('Assignment deadline has passed. Submissions are closed.');
+      return;
+    }
+    if (!isOverdue && task.anchorType === 'TASK_START' && (!submission || submission.status === 'AVAILABLE' || submission.rawStatus === 'AVAILABLE')) {
       try {
         await assignmentService.startAssignment(task.id, accessToken);
       } catch (err: any) {
@@ -249,6 +274,11 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isOverdue) {
+      toast.error('Assignment deadline has passed. Submissions are closed.');
+      return;
+    }
 
     // Validate that each MCQ question has an option selected before submitting
     for (let i = 0; i < questionsArray.length; i++) {
@@ -327,25 +357,6 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
     }
   };
 
-  const deadlineAt = task.deadlineAt || submission?.deadlineAt;
-  const status = task.status || submission?.status || 'not_started';
-
-  let timeLeftStr = '';
-  let isOverdue = false;
-  if (status === 'started' && deadlineAt) {
-    const diff = new Date(deadlineAt).getTime() - currentTime.getTime();
-    if (diff <= 0) {
-      isOverdue = true;
-      timeLeftStr = 'Time is up!';
-    } else {
-      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const h = Math.floor((diff / (1000 * 60 * 60)) % 24).toString().padStart(2, '0');
-      const m = Math.floor((diff / 1000 / 60) % 60).toString().padStart(2, '0');
-      const s = Math.floor((diff / 1000) % 60).toString().padStart(2, '0');
-      timeLeftStr = `${d > 0 ? d + 'd ' : ''}${h}:${m}:${s}`;
-    }
-  }
-
   const { content: instructionContent } = resolveAssignmentInstructions(task);
   const safeInstructionHTML = DOMPurify.sanitize(instructionContent);
 
@@ -396,15 +407,29 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
   };
 
   return createPortal(
-    <div className="assignment-submit-modal-overlay" onClick={handleCloseRequest}>
+    <div 
+      className={`assignment-submit-modal-overlay ${isChatDrawerOpen ? 'has-chat-open' : ''}`} 
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isChatDrawerOpen) {
+          handleCloseRequest();
+        }
+      }}
+      style={{
+        justifyContent: isChatDrawerOpen ? 'flex-start' : 'center',
+        padding: isChatDrawerOpen ? '16px 0 16px 16px' : '24px',
+        alignItems: 'center',
+      }}
+    >
       <div 
         ref={containerRef}
-        className="assignment-submit-modal-container"
+        className={`assignment-submit-modal-container ${isChatDrawerOpen ? 'has-chat-open' : ''}`}
         style={{ 
-          '--chat-panel-width': '420px',
-          maxWidth: isChatDrawerOpen ? 'calc(100vw - var(--chat-panel-width) - 48px)' : 820, 
-          marginRight: isChatDrawerOpen ? 'calc(var(--chat-panel-width) + 24px)' : 'auto',
-        } as React.CSSProperties} 
+          width: isChatDrawerOpen ? `calc(100vw - ${chatDrawerWidth}px - 32px)` : '100%',
+          maxWidth: isChatDrawerOpen ? `calc(100vw - ${chatDrawerWidth}px - 32px)` : 820, 
+          margin: isChatDrawerOpen ? '0' : 'auto',
+          height: isChatDrawerOpen ? 'calc(100vh - 32px)' : '92vh',
+          maxHeight: '940px',
+        }} 
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header (Sticky) */}
@@ -425,14 +450,28 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                 </div>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {/* 🌟 AI Ask button: Removed on instruction modal, only accessible when questions are active */}
+                {/* 🌟 AI Ask button: Accessible when questions are active */}
                 {step === 'questions' && (
                   <button
                     type="button"
-                    onClick={() => setIsChatDrawerOpen(true)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#e0e7ff', color: '#4338ca', border: '1px solid #c7d2fe', padding: '8px 14px', borderRadius: '10px', fontWeight: 700, fontSize: '13px', cursor: 'pointer', transition: 'all 0.2s' }}
+                    onClick={() => setIsChatDrawerOpen(!isChatDrawerOpen)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: isChatDrawerOpen ? '#6366f1' : '#e0e7ff',
+                      color: isChatDrawerOpen ? '#ffffff' : '#4338ca',
+                      border: '1px solid #c7d2fe',
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      fontWeight: 700,
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      boxShadow: isChatDrawerOpen ? '0 2px 8px rgba(99, 102, 241, 0.35)' : 'none'
+                    }}
                   >
-                    <Bot size={16} /> Ask AI
+                    <span>{isChatDrawerOpen ? 'Close AI Chat' : 'Ask AI'}</span>
                   </button>
                 )}
                 <button type="button" onClick={handleCloseRequest} style={{ border: 'none', background: '#f1f5f9', borderRadius: '10px', width: 36, height: 36, cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.2s' }}>
@@ -466,14 +505,20 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                 
                 {/* Step 1 Footer */}
                 <div style={{ position: 'sticky', bottom: 0, padding: '18px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', background: 'rgba(255,255,255,0.96)', backdropFilter: 'blur(8px)', zIndex: 10 }}>
-                    <button 
-                        type="button" 
-                        onClick={handleStartTask} 
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 28px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,23,42,0.2)', transition: 'all 0.15s' }}
-                    >
-                        {task.anchorType === 'TASK_START' && (!submission || submission.status === 'AVAILABLE' || submission.rawStatus === 'AVAILABLE') ? 'Now I will do task' : 'Continue to Questions'} 
-                        <ChevronRight size={18} />
-                    </button>
+                    {isOverdue && (!submission || submission.status === 'AVAILABLE' || submission.rawStatus === 'AVAILABLE') ? (
+                      <div style={{ padding: '12px 20px', background: '#fee2e2', color: '#b91c1c', borderRadius: 10, fontSize: 13, fontWeight: 700 }}>
+                        ⛔ Deadline Expired (Submissions Closed)
+                      </div>
+                    ) : (
+                      <button 
+                          type="button" 
+                          onClick={handleStartTask} 
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 28px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 12px rgba(15,23,42,0.2)', transition: 'all 0.15s' }}
+                      >
+                          {task.anchorType === 'TASK_START' && (!submission || submission.status === 'AVAILABLE' || submission.rawStatus === 'AVAILABLE') ? 'Now I will do task' : isOverdue ? 'View Questions (Read-only)' : 'Continue to Questions'} 
+                          <ChevronRight size={18} />
+                      </button>
+                    )}
                 </div>
             </div>
 
@@ -510,20 +555,7 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                           const hasOptions = options.length > 0;
                           const qId = q.id || String(idx);
                           const previousEvaluation = qScores[qId] || qScores[idx];
-                          const prevAnsVal = prevAnswersParsed[idx] ?? prevAnswersParsed[String(idx)];
                           const isMcq = q.type === 'MCQ' || hasOptions;
-
-                          let formattedPrevAns = '';
-                          if (isMcq) {
-                            if (Array.isArray(prevAnsVal)) {
-                              formattedPrevAns = prevAnsVal.map((v: any) => options[Number(v)] || v).filter(Boolean).join(', ');
-                            } else if (prevAnsVal !== undefined && prevAnsVal !== null && prevAnsVal !== '') {
-                              formattedPrevAns = String(options[Number(prevAnsVal)] ?? prevAnsVal ?? '').trim();
-                            }
-                          } else if (prevAnsVal !== undefined && prevAnsVal !== null) {
-                            formattedPrevAns = String(prevAnsVal).trim();
-                          }
-                          const hasPrevAnswer = Boolean(isResubmit && formattedPrevAns.length > 0);
 
                           return (
                             <div 
@@ -579,15 +611,7 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                                 </div>
                               </div>
 
-                              {/* Previous Answer (if resubmission and non-empty) */}
-                              {hasPrevAnswer && (
-                                <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '10px', border: '1px dashed #cbd5e1' }}>
-                                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px', letterSpacing: '0.05em' }}>Your Previous Answer</span>
-                                  <div style={{ fontSize: '14px', color: '#1e293b', fontWeight: 500 }}>
-                                    {formattedPrevAns}
-                                  </div>
-                                </div>
-                              )}
+
 
                               {/* Trainer Feedback (if available) */}
                               {isResubmit && previousEvaluation && previousEvaluation.feedback && (
@@ -768,26 +792,42 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
                     >
                         Cancel
                     </button>
-                    <button 
-                      form="assignment-form" 
-                      type="submit" 
-                      disabled={isSubmitting || isOverdue} 
-                      style={{ 
-                        padding: '12px 28px', 
-                        background: isOverdue ? '#94a3b8' : 'linear-gradient(135deg, #4f46e5, #4338ca)', 
-                        color: '#fff', 
-                        border: 'none', 
-                        borderRadius: 10, 
-                        fontSize: 14, 
-                        fontWeight: 700, 
-                        cursor: isOverdue || isSubmitting ? 'not-allowed' : 'pointer', 
-                        boxShadow: isOverdue ? 'none' : '0 4px 12px rgba(79,70,229,0.3)', 
-                        opacity: isSubmitting ? 0.7 : 1,
-                        transition: 'all 0.15s'
-                      }}
-                    >
-                        {isSubmitting ? 'Submitting...' : isOverdue ? 'Deadline Passed' : 'Submit for Evaluation'}
-                    </button>
+                    {isOverdue ? (
+                      <div 
+                        style={{ 
+                          padding: '12px 24px', 
+                          background: '#fee2e2', 
+                          color: '#b91c1c', 
+                          border: '1px solid #fecaca', 
+                          borderRadius: 10, 
+                          fontSize: 13, 
+                          fontWeight: 700 
+                        }}
+                      >
+                        ⛔ Deadline Expired (Submissions Closed)
+                      </div>
+                    ) : (
+                      <button 
+                        form="assignment-form" 
+                        type="submit" 
+                        disabled={isSubmitting} 
+                        style={{ 
+                          padding: '12px 28px', 
+                          background: 'linear-gradient(135deg, #4f46e5, #4338ca)', 
+                          color: '#fff', 
+                          border: 'none', 
+                          borderRadius: 10, 
+                          fontSize: 14, 
+                          fontWeight: 700, 
+                          cursor: isSubmitting ? 'not-allowed' : 'pointer', 
+                          boxShadow: '0 4px 12px rgba(79,70,229,0.3)', 
+                          opacity: isSubmitting ? 0.7 : 1,
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                          {isSubmitting ? 'Submitting...' : 'Submit for Evaluation'}
+                      </button>
+                    )}
                 </div>
 
             </div>
@@ -827,6 +867,8 @@ export const SharedAssignmentModal: React.FC<SharedAssignmentModalProps> = ({
         accessToken={accessToken}
         onClose={() => setIsChatDrawerOpen(false)}
         isOpen={isChatDrawerOpen}
+        onWidthChange={setChatDrawerWidth}
+        initialWidth={chatDrawerWidth}
       />
     </div>,
     document.body

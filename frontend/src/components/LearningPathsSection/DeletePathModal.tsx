@@ -85,11 +85,11 @@ export const DeletePathModal: React.FC<DeletePathModalProps> = ({
               </div>
               <div className="delete-path-impact-item">
                 <FileText size={15} className="delete-path-impact-icon" />
-                <span><strong>{metrics.tasksCount}</strong> Tasks / Assignments</span>
+                <span><strong>{metrics.tasksCount}</strong>   Assignments</span>
               </div>
               <div className="delete-path-impact-item">
                 <Users size={15} className="delete-path-impact-icon" />
-                <span>Roster progress for <strong>{metrics.enrolledCount}</strong> enrolled trainee{metrics.enrolledCount === 1 ? '' : 's'}</span>
+                <span> progress for <strong>{metrics.enrolledCount}</strong> enrolled trainee{metrics.enrolledCount === 1 ? '' : 's'}</span>
               </div>
             </div>
           </div>

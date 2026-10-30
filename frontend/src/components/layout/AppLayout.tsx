@@ -33,12 +33,23 @@ import type { RoleName, SessionUser } from '../../types/auth';
 import { useNotifications } from '../../context/NotificationContext';
 import { getNotificationRoute } from '../../utils/notificationUtils';
 
-// AI Assistant — lazy-loaded so non-trainee users never load the bundle
+// AI Assistant — lazy-loaded so non-active users never load the bundle
 const GlobalAiAssistantDrawer = lazy(() => import('../../features/ai-assistant/GlobalAiAssistant'));
+const TrainerAiAssistantDrawer = lazy(() => import('../../features/trainer-ai-assistant/TrainerAiAssistantDrawer'));
 
 const AI_ASSISTANT_ITEM = 'AI Assistant';
 
-const CustomRoleSwitcher = ({ effectiveRole, availableRoles, onRoleChange }: any) => {
+const CustomRoleSwitcher = ({
+  effectiveRole,
+  availableRoles,
+  onRoleChange,
+  onCloseDrawer,
+}: {
+  effectiveRole: RoleName;
+  availableRoles: RoleName[];
+  onRoleChange: (role: RoleName) => void;
+  onCloseDrawer?: () => void;
+}) => {
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -65,11 +76,14 @@ const CustomRoleSwitcher = ({ effectiveRole, availableRoles, onRoleChange }: any
       {isOpen && (
         <div className="role-dropdown-menu">
      
-          {availableRoles.map((role: string) => (
+          {availableRoles.map((role: RoleName) => (
             <button
               key={role}
               className={`role-dropdown-item ${role === effectiveRole ? 'active' : ''}`}
               onClick={() => {
+                if (onCloseDrawer) {
+                  onCloseDrawer();
+                }
                 onRoleChange(role);
                 setIsOpen(false);
               }}
@@ -120,6 +134,7 @@ const navigationByRole: Record<RoleName, { main: NavItem[]; tools: NavItem[] }> 
       { name: 'Evaluation', path: '/assignments', icon: ClipboardList },
     ],
     tools: [
+      { name: AI_ASSISTANT_ITEM, path: '#ai-assistant', icon: Sparkles },
       { name: 'Settings', path: '/settings', icon: Settings },
     ],
   },
@@ -175,7 +190,7 @@ export function AppLayout({
   const hoverTimerRef = useRef<any>(null);
   const count = Math.max(notificationCount, unreadCount);
 
-  // ── AI Assistant state (Trainee only, feature-flagged) ────────────────
+  // ── AI Assistant state (feature-flagged) ──────────────────────────────
   const [isAiDrawerOpen, setIsAiDrawerOpen] = useState(false);
   const aiAssistantEnabled = import.meta.env.VITE_AI_ASSISTANT_ENABLED !== 'false';
   const aiTriggerRef = useRef<HTMLButtonElement>(null);
@@ -246,6 +261,11 @@ export function AppLayout({
     ? activeRole
     : availableRoles[0] || user.primaryRole || 'Trainee';
 
+  // Close AI Assistant drawer whenever the active role or effective role changes
+  useEffect(() => {
+    setIsAiDrawerOpen(false);
+  }, [activeRole, effectiveRole]);
+
   const navigation = navigationByRole[effectiveRole] || navigationByRole.Trainee;
   const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
 
@@ -288,7 +308,13 @@ export function AppLayout({
   // ── Ctrl+Shift+K shortcut for AI Assistant ────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.shiftKey && e.key === 'K' && effectiveRole === 'Trainee' && aiAssistantEnabled) {
+      if (
+        e.ctrlKey &&
+        e.shiftKey &&
+        e.key === 'K' &&
+        (effectiveRole === 'Trainee' || effectiveRole === 'Trainer') &&
+        aiAssistantEnabled
+      ) {
         e.preventDefault();
         setIsAiDrawerOpen((prev) => !prev);
       }
@@ -416,8 +442,8 @@ export function AppLayout({
             const IconComponent = item.icon;
             const isAiItem = item.name === AI_ASSISTANT_ITEM;
 
-            // AI Assistant: skip rendering if feature is off or role is not Trainee
-            if (isAiItem && (!aiAssistantEnabled || effectiveRole !== 'Trainee')) return null;
+            // AI Assistant: skip rendering if feature is off or role is neither Trainee nor Trainer
+            if (isAiItem && (!aiAssistantEnabled || (effectiveRole !== 'Trainee' && effectiveRole !== 'Trainer'))) return null;
 
             const active = isAiItem ? isAiDrawerOpen : isCurrentPath(item.path);
             return (
@@ -475,7 +501,7 @@ export function AppLayout({
         </div>
       </aside>
 
-      <section className={`workspace ${effectiveRole === 'Trainee' && isAiDrawerOpen ? 'ai-panel-open' : ''}`}>
+      <section className={`workspace ${(effectiveRole === 'Trainee' || effectiveRole === 'Trainer') && isAiDrawerOpen ? 'ai-panel-open' : ''}`}>
         <header className="workspace-topbar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <button
@@ -494,7 +520,11 @@ export function AppLayout({
               <CustomRoleSwitcher
                 effectiveRole={effectiveRole}
                 availableRoles={availableRoles}
-                onRoleChange={onRoleChange}
+                onRoleChange={(role: RoleName) => {
+                  setIsAiDrawerOpen(false);
+                  onRoleChange(role);
+                }}
+                onCloseDrawer={() => setIsAiDrawerOpen(false)}
               />
             )}
 
@@ -726,7 +756,21 @@ export function AppLayout({
               // Return focus to the trigger button on close
               setTimeout(() => aiTriggerRef.current?.focus(), 50);
             }}
-            accessToken={user ? (localStorage.getItem('skillforge_access_token') || '') : ''}
+            accessToken={user ? (localStorage.getItem('skillforge_token') || '') : ''}
+          />
+        </Suspense>
+      )}
+
+      {/* ── Trainer AI Assistant Drawer (Trainer only, lazy-loaded) ──────── */}
+      {effectiveRole === 'Trainer' && aiAssistantEnabled && isAiDrawerOpen && (
+        <Suspense fallback={null}>
+          <TrainerAiAssistantDrawer
+            isOpen={isAiDrawerOpen}
+            onClose={() => {
+              setIsAiDrawerOpen(false);
+              setTimeout(() => aiTriggerRef.current?.focus(), 50);
+            }}
+            accessToken={user ? (localStorage.getItem('skillforge_token') || '') : ''}
           />
         </Suspense>
       )}

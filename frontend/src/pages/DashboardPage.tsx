@@ -1064,8 +1064,10 @@ export function DashboardPage({
         {selectedPathId ? (
           isTrainee ? (
             <ModulesManagementSection
+              key={urlModuleId ? `module-${urlModuleId}` : `path-${selectedPathId}`}
               currentPathId={selectedPathId}
               currentPathTitle={selectedPathTitle || 'Curriculum Modules'}
+              currentModuleId={urlModuleId}
               userRole="Trainee"
               accessToken={accessToken}
               onBack={handleBackToAllPaths}
@@ -1139,8 +1141,10 @@ export function DashboardPage({
     return (
       <div className="dashboard-content">
         <ModulesManagementSection
+          key={urlModuleId ? `module-${urlModuleId}` : `path-${pathId}`}
           currentPathId={pathId}
           currentPathTitle={pathTitle}
+          currentModuleId={urlModuleId}
           userRole={activeRole as 'Admin' | 'Trainer' | 'Trainee'}
           accessToken={accessToken}
           onBack={handleBackToAllPaths}

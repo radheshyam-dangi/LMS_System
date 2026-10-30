@@ -227,7 +227,9 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {submissions.map((sub) => {
             const metrics = getSubmissionMetrics(sub);
-            const canResubmit = (metrics.percentage !== null && metrics.percentage < 35) || (sub.status === 'Rejected' && (metrics.percentage === null || metrics.percentage < 35));
+            const deadlineVal = sub.deadline || (sub.assignment as any)?.dueDate || (sub.assignment as any)?.deadline;
+            const isExpired = Boolean(deadlineVal && new Date(deadlineVal).getTime() < Date.now());
+            const canResubmit = !isExpired && ((metrics.percentage !== null && metrics.percentage < 35) || (sub.status === 'Rejected' && (metrics.percentage === null || metrics.percentage < 35)));
 
             return (
               <div
@@ -252,12 +254,12 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
                           borderRadius: '12px',
                           fontSize: '11px',
                           fontWeight: 700,
-                          background: sub.status === 'Approved' ? '#dcfce7' : sub.status === 'Rejected' ? '#fee2e2' : '#e0f2fe',
-                          color: sub.status === 'Approved' ? '#15803d' : sub.status === 'Rejected' ? '#b91c1c' : '#0369a1',
-                          border: '1px solid #cbd5e1',
+                          background: isExpired ? '#fef2f2' : sub.status === 'Approved' ? '#dcfce7' : sub.status === 'Rejected' ? '#fee2e2' : '#e0f2fe',
+                          color: isExpired ? '#b91c1c' : sub.status === 'Approved' ? '#15803d' : sub.status === 'Rejected' ? '#b91c1c' : '#0369a1',
+                          border: `1px solid ${isExpired ? '#fca5a5' : '#cbd5e1'}`,
                         }}
                       >
-                        STATUS: {sub.status?.toUpperCase() || 'SUBMITTED'}
+                        STATUS: {isExpired ? 'EXPIRED' : (sub.status?.toUpperCase() || 'SUBMITTED')}
                       </span>
                     </div>
 
@@ -314,6 +316,13 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
                     >
                       🔄 Resubmit Task
                     </button>
+                  </div>
+                )}
+
+                {/* Expired Banner */}
+                {isExpired && (
+                  <div style={{ marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px', background: '#fef2f2', padding: '10px 14px', borderRadius: '6px', border: '1px solid #fecaca', color: '#991b1b', fontSize: '12px', fontWeight: 600 }}>
+                    <span>⛔ Task deadline has passed. Resubmissions are closed.</span>
                   </div>
                 )}
               </div>
@@ -413,14 +422,7 @@ export function TraineeSubmissionsView({ accessToken, activeRole }: TraineeSubmi
                           </div>
                         </div>
 
-                        {hasPrevAnswer && (
-                          <div style={{ background: '#fff', padding: '12px 16px', borderRadius: '8px', border: '1px dashed #94a3b8', marginBottom: '16px' }}>
-                             <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: '6px', letterSpacing: '0.05em' }}>Your Previous Answer</span>
-                             <div style={{ fontSize: '14px', color: '#334155', whiteSpace: 'pre-wrap' }}>
-                               {isMcq ? (q.options?.[Number(prevAnswerVal)] || 'None') : prevAnswerVal}
-                             </div>
-                          </div>
-                        )}
+
 
                         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
                           <span style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: '12px' }}>Your Updated Answer</span>

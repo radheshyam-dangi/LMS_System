@@ -7,7 +7,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { DataSource, Repository, Brackets } from 'typeorm';
+import { DataSource, Repository, Brackets, Not, In } from 'typeorm';
 import { BaseService } from '../../../common/services/base.service';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { UserEntity } from '../../entities/user.entity';
@@ -53,7 +53,7 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
         .leftJoinAndSelect('lp.modules', 'modules')
         .leftJoinAndSelect('modules.lessons', 'lessons')
         .leftJoinAndSelect('modules.assignments', 'assignments')
-        .where('lp.deletedAt IS NULL')
+        .where('LOWER(lp.status) != :draftStatus', { draftStatus: 'ai_draft' })
         .andWhere(
            new Brackets(qb => {
              qb.where('lp.title ILIKE :q', { q })
@@ -77,6 +77,9 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       }
     } else {
       paths = await this.repository.find({
+        where: {
+          status: Not(In(['ai_draft', 'Ai_draft'])),
+        },
         relations: [
           'createdBy',
           'createdBy.roles',
@@ -287,7 +290,21 @@ export class LearningPathEntityService extends BaseService<LearningPathEntity> {
       throw new NotFoundException(`Learning Path with ID "${id}" not found.`);
     }
 
-    // Safely delete nested modules if database cascade isn't active
+    // 1. Purge all embedding chunks and outbox events for this learning path
+    try {
+      await this.datasource.query(
+        `DELETE FROM lp_embedding_chunks WHERE learning_path_id = $1`,
+        [id],
+      );
+      await this.datasource.query(
+        `DELETE FROM embedding_outbox WHERE entity_id = $1`,
+        [id],
+      );
+    } catch {
+      // non-fatal if table doesn't exist
+    }
+
+    // 2. Safely delete nested modules if database cascade isn't active
     if (path.modules && path.modules.length > 0) {
       await this.moduleRepository.remove(path.modules);
     }

@@ -57,29 +57,39 @@ export interface CitationDto {
   title?: string;
 }
 
+import { sanitizeAiResponse } from '../trainerAiAssistant/trainerAiSanitizer';
+
 const MAX_HISTORY_TURNS = 6;
-const LP_ANSWER_PROMPT = `You are an educational AI assistant for SkillForge LMS trainees.
-You answer questions using the trainee's assigned Learning Path course materials.
+const LP_ANSWER_PROMPT = `You are a Senior Academic AI Assistant for SkillForge LMS trainees.
+Your goal is to provide trainees with effective, clear, and concise answers based on their assigned course material.
 
-CRITICAL FORMATTING RULES:
-1. Answer in 1 to 3 concise, cohesive paragraphs. Focus directly on the semantic meaning of the trainee's question.
-2. DO NOT use markdown tables or pipe (|) characters under any circumstances.
-3. DO NOT use emojis or decorative icons in your response (no 📚, 💡, 🌐, 📌, ⚠️, etc.).
-4. DO NOT write "Source:", citations, or URLs anywhere in your response. The platform will automatically display references below the answer.
-5. Do not create verbose bullet lists or outline dumps. Explain the concepts smoothly in paragraph prose.
-6. Keep your tone professional, clear, accurate, and pedagogical.
-7. Never reveal assignment rubrics, test solutions, or grading criteria.`;
+CORE OPERATIONAL RULES:
+1. Effective & Concise Structure: Deliver clear, high-impact answers without verbose academic lecturing or bloated preambles. Structure your response as follows:
+   - Direct Answer: 1-2 direct sentences answering the question immediately.
+   - Key Points: 2-4 concise bullet points explaining the core concepts, mechanisms, or steps.
+   - Practical Takeaway: 1 short sentence or brief practical code snippet if applicable.
+   Keep the total response under 150-220 words.
+2. Strict Grounding: Base your answer exclusively on the verified course passages provided.
+3. Capability Boundary: If the question cannot be answered using the provided course passages, state clearly and concisely that this topic is not covered in the current curriculum. Never invent facts.
+4. Zero Emojis and Zero Decorative Icons: Absolutely NO emojis (no emojis of any kind) and no ASCII/unicode art.
+5. Clean Typography: Do not generate markdown tables, pipe (|) characters, backslashes, decorative divider lines, or hashtags (#, ##) for headers. Use bold text for headers.
+6. Zero Inline Citations: Do not write "Source:", URLs, or bracketed numbers. Institutional references are attached automatically by the platform UI.
+7. Pedagogical Integrity: Never disclose assignment answer keys, exam rubrics, or quiz solutions. Guide comprehension rather than solving tests for them.
+8. Ambiguous Course Edits: When asked to add or create a module, lesson, or assignment without context (e.g. "add one module", "create a lesson", "add an assignment"), ask: "In which Learning Path would you like to create or add the lesson, assignment, or module?" and guide them to specify the course.`;
 
-const WEB_ANSWER_PROMPT = `You are an educational AI assistant for SkillForge LMS trainees.
-The trainee's question is not covered in their assigned Learning Path materials, so you are answering from web search findings.
+const WEB_ANSWER_PROMPT = `You are a Senior Academic AI Assistant for SkillForge LMS trainees.
+The trainee's question extends beyond their local Learning Path catalog. Provide a clear, effective, and concise synthesis from verified educational web context.
 
-CRITICAL FORMATTING RULES:
-1. Answer in 1 to 2 concise, clear paragraphs that directly address the semantic meaning of the question.
-2. DO NOT use markdown tables or pipe (|) characters under any circumstances.
-3. DO NOT use emojis or decorative icons in your response (no 📚, 💡, 🌐, 📌, ⚠️, etc.).
-4. DO NOT write "Source:", citations, or URLs anywhere in your response. The platform will automatically display references below the answer.
-5. Synthesize the core facts smoothly in cohesive prose without copying raw search dumps.
-6. Keep your tone professional, objective, and clear.`;
+CORE OPERATIONAL RULES:
+1. Effective & Concise Synthesis: Provide a direct, well-structured explanation synthesized from verified web excerpts:
+   - Direct Answer: 1-2 concise sentences answering the core inquiry.
+   - Key Points: 2-4 brief bullet points explaining the key principles or technical details.
+   - Keep the total response under 150-200 words. Avoid filler phrases and conversational fluff.
+2. Capability Boundary: If the retrieved excerpts do not contain sufficient verified data to answer accurately, concisely state your inability to provide a confirmed answer.
+3. Zero Emojis and Zero Decorative Icons: Absolutely NO emojis and no decorative borders or symbols.
+4. Clean Typography: Do not generate markdown tables, pipe (|) characters, or hashtags for headers.
+5. Zero Inline Citations: Do not write "Source:" or raw URLs in the text body. References are rendered independently in the user interface.
+6. Ambiguous Course Edits: When asked to add or create a module, lesson, or assignment without context (e.g. "add one module", "create a lesson", "add an assignment"), ask: "In which Learning Path would you like to create or add the lesson, assignment, or module?" and guide them to specify the course.`;
 
 @Injectable()
 export class AiAssistantService {
@@ -120,6 +130,52 @@ export class AiAssistantService {
 
     // Save user message
     await this.saveMessage(conv.id, 'user', dto.question);
+
+    // Ambiguous module/lesson/assignment creation inquiry without context
+    const isAmbiguousCurriculumCommand =
+      /^(?:please\s+)?(?:add|create|insert|append|make)\s+(?:a\s+|an\s+|the\s+|one\s+|\d+\s+)?(?:new\s+|more\s+)?(?:module|lesson|assignment|task|quiz)s?\b/i.test(
+        dto.question.trim(),
+      );
+
+    if (isAmbiguousCurriculumCommand) {
+      const assignedIds = await this.retrieval.getAssignedLpIds(traineeId);
+      let lps: Array<{ id: string; title: string }> = [];
+
+      if (assignedIds.length > 0) {
+        lps = await this.datasource.query(
+          `SELECT id, title FROM "LearningPath" WHERE id = ANY($1) ORDER BY "updated_at" DESC LIMIT 8`,
+          [assignedIds],
+        );
+      }
+      if (lps.length === 0) {
+        lps = await this.datasource.query(
+          `SELECT id, title FROM "LearningPath" WHERE (status = 'Active' OR status = 'Published') ORDER BY "updated_at" DESC LIMIT 8`,
+        );
+      }
+
+      const qLower = dto.question.toLowerCase();
+      const mentionsLp = lps.some(lp => qLower.includes(lp.title.toLowerCase()));
+
+      if (!mentionsLp) {
+        const lpList = lps.length > 0
+          ? lps.map((lp, idx) => `${idx + 1}. **${lp.title}**`).join('\n')
+          : 'No learning paths currently available in your catalog.';
+
+        const answer =
+          `In which Learning Path would you like to create or add the lesson, assignment, or module?\n\n` +
+          `Please specify one of the Learning Paths:\n\n${lpList}\n\n` +
+          `*For example: "Add a module on Microservices to ${lps[0]?.title || 'your course'}"*`;
+
+        const msg = await this.saveMessage(conv.id, 'assistant', answer, { sourceLabel: 'none', citations: [] });
+        return {
+          conversationId: conv.id,
+          messageId: msg.id,
+          answer,
+          sourceLabel: 'none',
+          citations: [],
+        };
+      }
+    }
 
     // Retrieve relevant chunks with Senior AIML Cosine & multi-signal reranking
     const retrieval = await this.retrieval.retrieve(traineeId, dto.question, 6);
@@ -259,10 +315,12 @@ export class AiAssistantService {
       }
     }
 
-    const cleanAnswer = answer
-      .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
-      .replace(/\n*Source:\s*.*$/gim, '')
-      .trim();
+    const cleanAnswer = sanitizeAiResponse(
+      answer
+        .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
+        .replace(/\n*Source:\s*.*$/gim, '')
+        .trim(),
+    );
 
     const citations: CitationDto[] = topChunks.map((c) => ({
       type: 'lp',
@@ -321,10 +379,12 @@ export class AiAssistantService {
     const response = await this.callGroq(messages, model, groqKey);
     const answer = response.content.trim();
 
-    const cleanAnswer = answer
-      .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
-      .replace(/\n*Source:\s*.*$/gim, '')
-      .trim();
+    const cleanAnswer = sanitizeAiResponse(
+      answer
+        .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
+        .replace(/\n*Source:\s*.*$/gim, '')
+        .trim(),
+    );
 
     const citations: CitationDto[] = topWeb.map((r) => ({
       type: 'web',
@@ -356,21 +416,23 @@ export class AiAssistantService {
     groqKey: string,
     startMs: number,
   ): Promise<AiAssistantResponseDto> {
-    const GENERAL_PROMPT = `You are an educational AI assistant for SkillForge LMS trainees.
-Answer the trainee's question directly, clearly, and concisely in 1 to 2 cohesive paragraphs.
-DO NOT use markdown tables or pipe (|) characters.
-DO NOT use emojis or decorative icons.
-Focus directly on the semantic meaning of the question and explain the core concept effectively.`;
+    const GENERAL_PROMPT = `You are a Senior Academic AI Assistant for SkillForge LMS trainees.
+Provide an effective, concise, and clear educational answer to the trainee's inquiry.
+CORE RULES:
+1. Effective & Concise: Deliver a direct 1-2 sentence core answer followed by 2-4 brief bullet points explaining the essential principles. Keep response under 150-180 words.
+2. Inability Handling: If the topic is outside educational scope, clearly and directly state your inability to answer.
+3. Zero Emojis or decorative icons under any circumstances.
+4. Clean Typography: No tables, pipe (|) characters, backslashes, or divider lines.`;
 
     const messages = this.buildMessages(GENERAL_PROMPT, history, question);
     const model = process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b';
 
     const response = await this.callGroq(messages, model, groqKey);
-    const answer = response.content.trim();
+    const cleanAnswer = sanitizeAiResponse(response.content.trim());
 
     const tokenCount = response.usage?.total_tokens;
 
-    const msg = await this.saveMessage(conv.id, 'assistant', answer, {
+    const msg = await this.saveMessage(conv.id, 'assistant', cleanAnswer, {
       sourceLabel: 'none',
       citations: [],
       tokenCount,
@@ -380,7 +442,7 @@ Focus directly on the semantic meaning of the question and explain the core conc
     return {
       conversationId: conv.id,
       messageId: msg.id,
-      answer,
+      answer: cleanAnswer,
       sourceLabel: 'none',
       citations: [],
     };
@@ -544,10 +606,10 @@ Focus directly on the semantic meaning of the question and explain the core conc
       body: JSON.stringify({
         model,
         messages,
-        temperature: 0.4,
-        max_tokens: 1024,
+        temperature: 0.35,
+        max_tokens: 750,
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!response.ok) {

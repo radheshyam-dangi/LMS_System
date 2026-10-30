@@ -4,7 +4,7 @@
 
 .assignment-card-executive {
   display: grid !important;
-  grid-template-columns: minmax(280px, 1.4fr) minmax(180px, 0.8fr) minmax(220px, 1fr) !important;
+  grid-template-columns: minmax(280px, 1.4fr) minmax(200px, 0.9fr) minmax(220px, 1fr) !important;
   align-items: center !important;
   gap: 20px !important;
   width: 100% !important;

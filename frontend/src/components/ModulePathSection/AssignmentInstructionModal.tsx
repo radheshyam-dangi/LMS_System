@@ -55,6 +55,14 @@ export const AssignmentInstructionModal: React.FC<AssignmentInstructionModalProp
   const maxScore = task.maxScore || 100;
   const assignmentType = task.assignmentType || 'Subjective';
 
+  const deadlineValue =
+    submission?.deadline ||
+    task?.deadline ||
+    task?.dueDate ||
+    task?.computedDeadline;
+  const isExpired = Boolean(deadlineValue && new Date(deadlineValue).getTime() < Date.now());
+  const hasSubmission = Boolean(submission?.submittedAt || typeof submission?.score === 'number');
+
   // Questions count
   let questionsCount = 1;
   if (Array.isArray(task.questions)) {
@@ -204,6 +212,29 @@ export const AssignmentInstructionModal: React.FC<AssignmentInstructionModalProp
             gap: '20px',
           }}
         >
+          {/* Expired Deadline Warning Notice */}
+          {isExpired && (
+            <div
+              style={{
+                padding: '12px 16px',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '10px',
+                color: '#991b1b',
+                fontSize: '13px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+              }}
+            >
+              <AlertCircle size={18} color="#dc2626" style={{ flexShrink: 0 }} />
+              <div>
+                <strong style={{ display: 'block', color: '#b91c1c', marginBottom: 2 }}>Assignment Deadline Expired</strong>
+                <span>The deadline for this assignment has expired. Submissions and resubmissions are closed.</span>
+              </div>
+            </div>
+          )}
           {/* Metadata Grid */}
           <div
             style={{
@@ -367,28 +398,67 @@ export const AssignmentInstructionModal: React.FC<AssignmentInstructionModalProp
             Back to Module
           </button>
 
-          <button
-            type="button"
-            onClick={onContinue}
-            style={{
-              padding: '9px 22px',
-              background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 700,
-              color: '#ffffff',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <span>Continue to Questions</span>
-            <ArrowRight size={14} />
-          </button>
+          {isExpired ? (
+            hasSubmission ? (
+              <button
+                type="button"
+                onClick={onContinue}
+                style={{
+                  padding: '9px 20px',
+                  background: '#f8fafc',
+                  border: '1.5px solid #cbd5e1',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#1e293b',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <span>View Submitted Answers (Read-only)</span>
+                <ArrowRight size={14} />
+              </button>
+            ) : (
+              <div
+                style={{
+                  padding: '8px 16px',
+                  background: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '8px',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: '#64748b',
+                }}
+              >
+                Submissions Closed (Deadline Expired)
+              </div>
+            )
+          ) : (
+            <button
+              type="button"
+              onClick={onContinue}
+              style={{
+                padding: '9px 22px',
+                background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 700,
+                color: '#ffffff',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span>{hasSubmission ? 'Continue to Resubmit' : 'Continue to Questions'}</span>
+              <ArrowRight size={14} />
+            </button>
+          )}
         </div>
       </div>
     </div>

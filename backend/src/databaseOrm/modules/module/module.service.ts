@@ -256,6 +256,20 @@ export class ModuleEntityService extends BaseService<ModuleEntity> {
       throw new NotFoundException(`Module with ID "${id}" not found.`);
     }
 
+    // 1. Purge all embedding chunks and outbox events for this module
+    try {
+      await this.datasource.query(
+        `DELETE FROM lp_embedding_chunks WHERE module_id = $1`,
+        [id],
+      );
+      await this.datasource.query(
+        `DELETE FROM embedding_outbox WHERE entity_id = $1`,
+        [id],
+      );
+    } catch {
+      // non-fatal
+    }
+
     if (module.lessons && module.lessons.length > 0) {
       await this.lessonRepository.remove(module.lessons);
     }

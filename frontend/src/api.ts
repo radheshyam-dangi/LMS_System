@@ -27,7 +27,6 @@ axios.interceptors.response.use(
         );
         
         if (data.accessToken) {
-          console.log('New Access Token:', data.accessToken);
           localStorage.setItem('skillforge_token', data.accessToken);
           window.dispatchEvent(new CustomEvent('token_refreshed', { detail: data.accessToken }));
           // If the failed request used an Authorization header, update it

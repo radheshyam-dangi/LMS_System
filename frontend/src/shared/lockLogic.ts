@@ -131,6 +131,13 @@ export function isModuleUnlocked(
 
   const completedSet = new Set(completedModuleIds.map(String));
 
+  // If the module itself is already completed, it is ALWAYS unlocked
+  const currentMod = modules[moduleIndex];
+  const currentModId = String(currentMod?.id || '');
+  if (currentModId && (completedSet.has(currentModId) || (moduleProgressMap[currentModId] ?? 0) >= 100)) {
+    return { isUnlocked: true };
+  }
+
   // Check ALL prior modules in order from 0 to moduleIndex - 1
   for (let i = 0; i < moduleIndex; i++) {
     const priorMod = modules[i];

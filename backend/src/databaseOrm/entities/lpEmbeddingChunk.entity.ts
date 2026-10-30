@@ -1,4 +1,7 @@
-import { Entity, Column, Index } from 'typeorm';
+import { Entity, Column, Index, ManyToOne, JoinColumn } from 'typeorm';
+import { LearningPathEntity } from './learningPath.entity';
+import { ModuleEntity } from './module.entity';
+import { LessonEntity } from './lesson.entity';
 
 /**
  * Dense-vector embedding chunks for LP content.
@@ -19,11 +22,23 @@ export class LpEmbeddingChunkEntity {
   @Column({ type: 'uuid', name: 'learning_path_id' })
   learningPathId: string;
 
+  @ManyToOne(() => LearningPathEntity, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'learning_path_id' })
+  learningPath?: LearningPathEntity;
+
   @Column({ type: 'uuid', name: 'module_id', nullable: true })
   moduleId?: string | null;
 
+  @ManyToOne(() => ModuleEntity, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'module_id' })
+  module?: ModuleEntity | null;
+
   @Column({ type: 'uuid', name: 'lesson_id', nullable: true })
   lessonId?: string | null;
+
+  @ManyToOne(() => LessonEntity, { onDelete: 'CASCADE', nullable: true })
+  @JoinColumn({ name: 'lesson_id' })
+  lesson?: LessonEntity | null;
 
   /**
    * lp_description | module_description | lesson_description |

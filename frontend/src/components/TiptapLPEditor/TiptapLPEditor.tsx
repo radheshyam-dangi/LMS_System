@@ -355,6 +355,11 @@ interface TiptapLPEditorProps {
   focusAction?: string;
   targetId?: string;
   onClose?: () => void;
+  lpStatus?: string;
+  onToggleAiAssistant?: () => void;
+  isAiAssistantOpen?: boolean;
+  onPublishSuccess?: () => void;
+  isOwner?: boolean;
 }
 
 export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({ 
@@ -363,9 +368,14 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
   pathId,
   focusAction,
   targetId,
-  onClose 
+  onClose,
+  lpStatus,
+  onToggleAiAssistant,
+  isAiAssistantOpen,
+  onPublishSuccess,
+  isOwner = true,
 }) => {
-  const token = localStorage.getItem('skillforge_access_token');
+  const token = localStorage.getItem('skillforge_token');
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -606,6 +616,19 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
     };
   }, [editor, syncCurriculumTree]);
 
+  // Synchronize editor content when initialDraftData changes (e.g. from AI assistant preview/upgrade)
+  useEffect(() => {
+    if (!editor || !initialDraftData) return;
+    try {
+      editor.commands.setContent(initialDraftData);
+      syncCurriculumTree();
+      setIsDirty(false);
+      setSaveStatus('idle');
+    } catch (e) {
+      console.warn('Failed to update editor content with initialDraftData:', e);
+    }
+  }, [editor, initialDraftData, syncCurriculumTree]);
+
   // Autosave Draft every 15s when dirty
   useEffect(() => {
     if (!editor || !token) return;
@@ -835,9 +858,16 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
 
     setIsSubmitting(true);
     try {
+      if (lpStatus === 'ai_draft') {
+        parsed.status = 'Active';
+      }
       const result = await lpAuthoringService.submitLPDocument(parsed, token);
-      toast.success(`Success! Saved Learning Path: ${result.title}`);
+      toast.success(`Success! Published Learning Path: ${result.title}`);
       
+      if (onPublishSuccess) {
+        onPublishSuccess();
+      }
+
       if (onClose) {
         onClose();
       } else {
@@ -901,35 +931,64 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
         </div>
 
         {/* Top Actions & Save Status */}
-        <div className="studio-topbar-right">
+        <div className="studio-topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div className="studio-save-status">
             {saveStatus === 'saving' && (
               <span className="save-status-text saving">
-                <Clock size={12} className="spin" /> Saving...
+                 Saving...
               </span>
             )}
-            {/* {saveStatus === 'saved' && (
-              <span className="save-status-text saved">
-                <CheckCircle2 size={12} /> Saved
-              </span>
-            )}
-            {isDirty && saveStatus === 'idle' && (
-              <span className="save-status-text dirty">
-                Unsaved changes
-              </span>
-            )} */}
           </div>
 
-          {/* <button
-            type="button"
-            className="studio-btn-draft"
-            onClick={handleSaveDraft}
-            disabled={isSubmitting || saveStatus === 'saving'}
-            title="Save changes as draft"
-          >
-            <Save size={14} /> Save Draft
-          </button> */}
+          {lpStatus === 'ai_draft' && (
+            <span
+              style={{
+                padding: '4px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+                background: '#fef3c7',
+                color: '#92400e',
+                border: '1px solid #fde68a',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
+            >
+               AI Draft
+            </span>
+          )}
 
+          {onToggleAiAssistant && (
+            <button
+              type="button"
+              onClick={onToggleAiAssistant}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                border: isAiAssistantOpen ? '1px solid #6366f1' : (isOwner === false ? '1px solid #e2e8f0' : '1px solid #cbd5e1'),
+                background: isAiAssistantOpen ? '#e0e7ff' : (isOwner === false ? '#f8fafc' : '#ffffff'),
+                color: isAiAssistantOpen ? '#3730a3' : (isOwner === false ? '#94a3b8' : '#4f46e5'),
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: isAiAssistantOpen ? 'inset 0 1px 2px rgba(0,0,0,0.06)' : '0 1px 2px rgba(0,0,0,0.04)',
+                transition: 'all 0.15s ease',
+              }}
+              title={isOwner === false ? "Only the owner can open AI Assistant to perform CRUD operations" : "Toggle Curriculum AI Assistant"}
+            >
+              
+              <span>AI Assistant</span>
+              {isOwner === false && (
+                <Lock size={11} style={{ marginLeft: '2px', color: '#94a3b8' }} />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -1003,10 +1062,17 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
             className="btn-primary" 
             onClick={handleSubmit}
             disabled={isSubmitting}
+            title="Confirm and publish this Learning Path"
+            style={{
+              background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.25)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
           >
-            {isSubmitting 
-              ? (pathId ? 'Updating...' : 'Publishing...') 
-              : (pathId ? 'Update Learning Path' : 'Publish Learning Path')}
+            
+            <span>{isSubmitting ? 'Publishing...' : 'Confirm & Publish'}</span>
           </button>
         </div>
       </div>

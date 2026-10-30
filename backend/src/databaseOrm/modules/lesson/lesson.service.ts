@@ -151,6 +151,24 @@ export class LessonEntityService extends BaseService<LessonEntity> {
       throw new NotFoundException(`Lesson with ID "${id}" not found.`);
     }
 
+    // 1. Purge all embedding chunks and caches for this lesson
+    try {
+      await this.datasource.query(
+        `DELETE FROM lp_embedding_chunks WHERE lesson_id = $1`,
+        [id],
+      );
+      await this.datasource.query(
+        `DELETE FROM lesson_content_cache WHERE lesson_id = $1`,
+        [id],
+      );
+      await this.datasource.query(
+        `DELETE FROM embedding_outbox WHERE entity_id = $1`,
+        [id],
+      );
+    } catch {
+      // non-fatal
+    }
+
     if (lesson.assignments && lesson.assignments.length > 0) {
       await this.assignmentRepository.remove(lesson.assignments);
     }

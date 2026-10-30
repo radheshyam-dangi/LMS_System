@@ -305,26 +305,46 @@ export function TrainerEvaluationDashboard({
     );
   }, [checkIsApproved, checkIsRejected]);
 
-  const checkIsAiEvaluated = useCallback((s: any) => {
-    const isAuto = s.evaluationMethod === 'ai_auto';
-    const isAssisted = s.evaluationMethod === 'ai_assisted' || s.status === 'ai_evaluated_pending_review';
-    const hasAiScore = s.aiTotalScore != null || (s.aiEvaluationResult && s.aiEvaluationResult.totalScore != null);
-    return isAuto || isAssisted || hasAiScore;
-  }, []);
+  const checkNeedsHumanIntervention = useCallback((s: any) => {
+    // If already finalized (approved or rejected) by trainer, human intervention is complete
+    if (checkIsApproved(s) || checkIsRejected(s)) return false;
 
-  const checkIsManualReview = useCallback((s: any) => {
-    // 1) AI evaluated but trainer intervention is needed
-    if (s.status === 'ai_evaluated_pending_review') return true;
-    // 2) Assignment submitted awaiting trainer grading
-    if (s.status === 'pending_manual_review' || s.status === 'SUBMITTED' || s.status === 'submitted' || s.status === 'pending') {
+    const st = String(s.status || '').toLowerCase();
+    // 1) AI evaluated but human intervention/review is needed
+    if (st === 'ai_evaluated_pending_review' || Boolean(s.requiresManualReview)) {
       return true;
     }
-    // 3) Pure manual review assignments awaiting grading
-    if (s.evaluationMethod !== 'ai_auto' && !checkIsApproved(s) && !checkIsRejected(s)) {
+    // 2) AI assisted or mixed submissions awaiting trainer confirmation
+    if (s.evaluationMethod === 'ai_assisted' || s.evaluationMethod === 'mixed') {
+      return true;
+    }
+    // 3) Manual grading queue
+    if (st === 'pending_manual_review' || st === 'submitted' || st === 'pending' || st === 'in_review') {
+      return true;
+    }
+    // 4) Any non-auto submission awaiting evaluation
+    if (s.evaluationMethod !== 'ai_auto') {
       return true;
     }
     return false;
   }, [checkIsApproved, checkIsRejected]);
+
+  const checkIsAiEvaluated = useCallback((s: any) => {
+    // 1) Cannot be in AI Evaluated if already approved or rejected by trainer
+    if (checkIsApproved(s) || checkIsRejected(s)) return false;
+
+    // 2) Cannot be in AI Evaluated if human intervention is required (belongs in Manual Review)
+    if (checkNeedsHumanIntervention(s)) return false;
+
+    // 3) Pure AI evaluated submissions (e.g. ai_auto) with no manual review pending
+    const isAuto = s.evaluationMethod === 'ai_auto';
+    const hasAiScore = s.aiTotalScore != null || (s.aiEvaluationResult && s.aiEvaluationResult.totalScore != null);
+    return isAuto || (hasAiScore && (s.status === 'evaluated' || s.status === 'ai_evaluated'));
+  }, [checkIsApproved, checkIsRejected, checkNeedsHumanIntervention]);
+
+  const checkIsManualReview = useCallback((s: any) => {
+    return checkNeedsHumanIntervention(s);
+  }, [checkNeedsHumanIntervention]);
 
   // ─── Filtered Sets ───────────────────────────────────────────────────
   const allPending = useMemo(() => {

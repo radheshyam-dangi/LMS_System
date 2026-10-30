@@ -34,25 +34,155 @@ const SUGGESTED_PROMPTS = [
   
 ];
 
-// ─── Simple markdown renderer (avoids a library dependency) ─────────────────
-function renderMarkdown(text: string): React.ReactNode {
-  // Bold, italic, blockquote, inline code — no external deps needed
-  const lines = text.split('\n');
-  return lines.map((line, i) => {
-    let node: React.ReactNode = line;
+// ─── Text & Markdown Sanitizer and Renderer ────────────────────────────────
+function cleanText(text: string): string {
+  if (!text) return '';
+  return text
+    // Strip database IDs, UUIDs, and internal identifiers (e.g. "- ID: 0ba216e6-...", "ID: ...", "(ID: ...)")
+    .replace(/\s*[-–—]?\s*\(?\b(?:ID|id|UUID|uuid)\s*[:=]\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b\)?/gi, '')
+    // Strip standalone UUIDs
+    .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, '')
+    // Clean up trailing "- ID:" or "- ID" leftovers
+    .replace(/\s*[-–—]\s*(?:ID|id)\s*[:=]?\s*$/gm, '')
+    // Strip emojis & unicode decorative symbols
+    .replace(
+      /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{2B55}\u{2934}\u{2935}\u{25AA}\u{25AB}\u{25B6}\u{25C0}\u{3030}\u{303D}\u{3297}\u{3299}\u{FE0F}]/gu,
+      ''
+    )
+    // Strip decorative ASCII divider lines
+    .replace(/^[=\-─*_#]{3,}\s*$/gm, '')
+    // Convert markdown header hashtags (#, ##, ###) into clean bold text (**Header**)
+    .replace(/^#{1,6}\s*(.+)$/gm, '**$1**')
+    // Replace pipe delimiters (| or ||) with commas
+    .replace(/\s*\|{1,2}\s*/g, ', ')
+    // Remove backslashes
+    .replace(/\\([_*\-#`~[\]()\\/])/g, '$1')
+    .replace(/\\+/g, '')
+    // Clean up slash delimiters (e.g. " / ")
+    .replace(/\s+\/\s+/g, ', ')
+    // Clean up consecutive commas
+    .replace(/,\s*,+/g, ',')
+    .replace(/^,\s+/gm, '')
+    .replace(/,\s*$/gm, '')
+    .trim();
+}
 
-    // Blockquote
-    if (line.startsWith('> ')) {
-      return <blockquote key={i}>{formatInline(line.slice(2))}</blockquote>;
+function renderMarkdown(rawText: string): React.ReactNode {
+  const text = cleanText(rawText);
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let currentList: { type: 'ul' | 'ol'; items: React.ReactNode[] } | null = null;
+
+  const flushList = () => {
+    if (currentList) {
+      if (currentList.type === 'ul') {
+        elements.push(
+          <ul key={`list-${elements.length}`} style={{ margin: '6px 0', paddingLeft: '20px' }}>
+            {currentList.items.map((it, idx) => (
+              <li key={idx} style={{ marginBottom: '4px' }}>{it}</li>
+            ))}
+          </ul>
+        );
+      } else {
+        elements.push(
+          <ol key={`list-${elements.length}`} style={{ margin: '6px 0', paddingLeft: '20px' }}>
+            {currentList.items.map((it, idx) => (
+              <li key={idx} style={{ marginBottom: '4px' }}>{it}</li>
+            ))}
+          </ol>
+        );
+      }
+      currentList = null;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const line = rawLine.trim();
+
+    if (!line) {
+      flushList();
+      continue;
     }
 
-    return (
-      <React.Fragment key={i}>
+    // Headings: ###, ##, #
+    const h3Match = line.match(/^###\s+(.*)$/);
+    if (h3Match) {
+      flushList();
+      elements.push(
+        <h4 key={`h3-${i}`} style={{ fontSize: '13px', fontWeight: 700, margin: '10px 0 4px', color: 'inherit' }}>
+          {formatInline(h3Match[1])}
+        </h4>
+      );
+      continue;
+    }
+
+    const h2Match = line.match(/^##\s+(.*)$/);
+    if (h2Match) {
+      flushList();
+      elements.push(
+        <h3 key={`h2-${i}`} style={{ fontSize: '14px', fontWeight: 700, margin: '12px 0 5px', color: 'inherit' }}>
+          {formatInline(h2Match[1])}
+        </h3>
+      );
+      continue;
+    }
+
+    const h1Match = line.match(/^#\s+(.*)$/);
+    if (h1Match) {
+      flushList();
+      elements.push(
+        <h2 key={`h1-${i}`} style={{ fontSize: '15px', fontWeight: 800, margin: '14px 0 6px', color: 'inherit' }}>
+          {formatInline(h1Match[1])}
+        </h2>
+      );
+      continue;
+    }
+
+    // Unordered List: * or -
+    const ulMatch = line.match(/^[-*]\s+(.*)$/);
+    if (ulMatch) {
+      if (!currentList || currentList.type !== 'ul') {
+        flushList();
+        currentList = { type: 'ul', items: [] };
+      }
+      currentList.items.push(formatInline(ulMatch[1]));
+      continue;
+    }
+
+    // Ordered List: 1. 2. etc
+    const olMatch = line.match(/^\d+\.\s+(.*)$/);
+    if (olMatch) {
+      if (!currentList || currentList.type !== 'ol') {
+        flushList();
+        currentList = { type: 'ol', items: [] };
+      }
+      currentList.items.push(formatInline(olMatch[1]));
+      continue;
+    }
+
+    // Blockquote: >
+    if (line.startsWith('>')) {
+      flushList();
+      elements.push(
+        <blockquote key={`quote-${i}`} style={{ borderLeft: '3px solid #2563eb', paddingLeft: '8px', margin: '6px 0', opacity: 0.9, fontStyle: 'italic' }}>
+          {formatInline(line.replace(/^>\s*/, ''))}
+        </blockquote>
+      );
+      continue;
+    }
+
+    // Normal paragraph line
+    flushList();
+    elements.push(
+      <p key={`p-${i}`} style={{ margin: '4px 0', lineHeight: 1.55 }}>
         {formatInline(line)}
-        {i < lines.length - 1 && <br />}
-      </React.Fragment>
+      </p>
     );
-  });
+  }
+
+  flushList();
+  return elements;
 }
 
 function formatInline(text: string): React.ReactNode {
@@ -256,6 +386,8 @@ function GlobalAiAssistantDrawer({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
+  const switcherRef = useRef<HTMLDivElement>(null);
+  const prevIsOpenRef = useRef(false);
 
   // Responsive: detect mobile (< 768px)
   const [isMobile, setIsMobile] = useState(() => {
@@ -409,12 +541,27 @@ function GlobalAiAssistantDrawer({
     }
   }, [isOpen]);
 
-  // Load conversation list when history panel opens
+  // On drawer open: Always default to a clean, fresh new chat session without showing past history
   useEffect(() => {
-    if (showHistory && isOpen) {
-      loadConversations();
+    if (isOpen && !prevIsOpenRef.current) {
+      startNewConversation();
+      void loadConversations();
+      setShowHistory(false);
     }
-  }, [showHistory, isOpen, loadConversations]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, startNewConversation, loadConversations]);
+
+  // Click outside listener for the top conversation switcher dropdown
+  useEffect(() => {
+    if (!showHistory) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (switcherRef.current && !switcherRef.current.contains(e.target as Node)) {
+        setShowHistory(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showHistory]);
 
   // Keyboard shortcut: Escape to close
   useEffect(() => {
@@ -455,10 +602,8 @@ function GlobalAiAssistantDrawer({
     <>
       {/* Header */}
       <div className="gai-header">
-      
         <div className="gai-header-text">
           <h3>AI Assistant</h3>
-          
         </div>
         <div className="gai-header-actions">
           <button
@@ -472,8 +617,11 @@ function GlobalAiAssistantDrawer({
           </button>
           <button
             className="gai-icon-btn"
-            onClick={startNewConversation}
-            title="New conversation"
+            onClick={() => {
+              startNewConversation();
+              setShowHistory(false);
+            }}
+            title="Start new conversation"
             aria-label="Start new conversation"
           >
             <Plus size={16} />
@@ -490,41 +638,102 @@ function GlobalAiAssistantDrawer({
         </div>
       </div>
 
-      {/* Conversation history dropdown */}
+      {/* Previous Conversation Dropdown Menu (only visible when user clicks MessageSquare in header) */}
       {showHistory && (
-        <div className="gai-conv-list" role="list" aria-label="Recent conversations">
-          {conversations.length === 0 ? (
-            <div style={{ padding: '12px 16px', fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
-              No conversations yet
+        <div className="gai-conv-dropdown-menu" ref={switcherRef} role="dialog" aria-label="Previous Conversations">
+          <div className="gai-conv-dropdown-header">
+            <span>Conversation History ({conversations.length})</span>
+            <button
+              type="button"
+              className="gai-dropdown-close-btn"
+              onClick={() => setShowHistory(false)}
+              aria-label="Close conversation menu"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          {/* Start Clean Chat Option */}
+          <button
+            type="button"
+            className={`gai-dropdown-new-chat-btn ${!conversationId && messages.length === 0 ? 'is-active' : ''}`}
+            onClick={() => {
+              startNewConversation();
+              setShowHistory(false);
+            }}
+          >
+            <div className="gai-new-chat-icon-box">
+              <Plus size={14} />
             </div>
-          ) : (
-            conversations.map((conv) => (
-              <div
-                key={conv.id}
-                className={`gai-conv-item ${conversationId === conv.id ? 'active' : ''}`}
-                role="listitem"
-                onClick={() => {
-                  loadConversation(conv.id);
-                  setShowHistory(false);
-                }}
-              >
-                <span className="gai-conv-title" title={conv.title}>
-                  {conv.title || 'Conversation'}
-                </span>
-                <button
-                  className="gai-conv-delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteConversation(conv.id);
-                  }}
-                  aria-label={`Delete conversation: ${conv.title}`}
-                  title="Delete conversation"
-                >
-                  <Trash2 size={12} />
-                </button>
+            <div className="gai-new-chat-label-box">
+              <span className="gai-new-chat-title">Start Clean Chat</span>
+              <span className="gai-new-chat-sub">Zero history, fresh model prompt</span>
+            </div>
+            {!conversationId && messages.length === 0 && (
+              <span className="gai-active-indicator">CURRENT</span>
+            )}
+          </button>
+
+          <div className="gai-conv-divider" />
+
+          {/* Scrollable list of past conversations */}
+          <div className="gai-conv-scroll-list" role="list">
+            {conversations.length === 0 ? (
+              <div className="gai-no-convs">
+                No saved conversations yet. Your study sessions will be listed here.
               </div>
-            ))
-          )}
+            ) : (
+              conversations.map((conv) => {
+                const isActive = conversationId === conv.id;
+                const formattedDate = conv.updatedAt
+                  ? new Date(conv.updatedAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  : '';
+                return (
+                  <div
+                    key={conv.id}
+                    className={`gai-conv-card ${isActive ? 'is-active' : ''}`}
+                    role="listitem"
+                    onClick={() => {
+                      loadConversation(conv.id);
+                      setShowHistory(false);
+                    }}
+                  >
+                    <div className="gai-conv-card-content">
+                      <div className="gai-conv-card-title-row">
+                        <MessageSquare size={13} className="gai-card-icon" />
+                        <span className="gai-conv-card-title" title={conv.title}>
+                          {conv.title || 'Conversation'}
+                        </span>
+                        {isActive && <span className="gai-active-indicator">ACTIVE</span>}
+                      </div>
+                      <div className="gai-conv-card-meta">
+                        {conv.messageCount ? (
+                          <span>{conv.messageCount} messages</span>
+                        ) : null}
+                        {conv.messageCount && formattedDate ? <span>•</span> : null}
+                        {formattedDate && <span>{formattedDate}</span>}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="gai-conv-delete-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteConversation(conv.id);
+                      }}
+                      aria-label={`Delete conversation: ${conv.title}`}
+                      title="Delete conversation"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
 

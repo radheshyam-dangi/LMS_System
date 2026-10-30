@@ -12,7 +12,7 @@ import type { LoginResponse, RoleName, SessionUser } from './types/auth';
 import { normalizeUser, userFromToken } from './utils/auth';
 import './App.css';
 
-const TOKEN_KEY = 'skillforge_access_token';
+const TOKEN_KEY = 'skillforge_token';
 
 const ROLE_DASHBOARDS: Record<string, string> = {
   Admin: '/users',
@@ -169,6 +169,7 @@ function App() {
     const handleTokenRefreshed = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
       setAccessToken(customEvent.detail);
+      localStorage.setItem(TOKEN_KEY, customEvent.detail);
     };
     const handleUserUpdated = (e: Event) => {
       const customEvent = e as CustomEvent<SessionUser>;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { learningPathService } from "../../services/learningPathService";
@@ -46,6 +46,7 @@ import "./ModulesManagement.css";
 interface ModulesProps {
   currentPathId: string;
   currentPathTitle: string;
+  currentModuleId?: string;
   userRole: 'Admin' | 'Trainer' | 'Trainee';
   accessToken: string;
   onBack: () => void;
@@ -56,6 +57,7 @@ import { ModuleDescriptionPreview, ModuleShowMoreModal } from '../common/ModuleS
 export function ModulesManagementSection({
   currentPathId,
   currentPathTitle,
+  currentModuleId,
   userRole,
   accessToken,
   onBack,
@@ -68,6 +70,8 @@ export function ModulesManagementSection({
   const { refresh: refreshNotifications } = useNotifications();
   const toast = useToast();
 
+  const effectiveModuleId = currentModuleId || urlModuleId || (location.state as any)?.moduleId || null;
+
   // ── List-level state ──────────────────────────────────────────────────────
   const [allPaths, setAllPaths] = useState<any[]>([]);
   const [selectedPathId, setSelectedPathId] = useState<string>(currentPathId);
@@ -76,10 +80,10 @@ export function ModulesManagementSection({
   const [isLoading, setIsLoading] = useState(false);
 
   // ── Drill-in: which module is open in detail view ─────────────────────────
-  const [openModuleId, setOpenModuleId] = useState<string | null>(null);
+  const [openModuleId, setOpenModuleId] = useState<string | null>(effectiveModuleId);
   const [openModuleData, setOpenModuleData] = useState<any | null>(null);
   const [moduleStats, setModuleStats] = useState<any | null>(null);
-  const [moduleLoading, setModuleLoading] = useState(false);
+  const [moduleLoading, setModuleLoading] = useState<boolean>(Boolean(effectiveModuleId));
   const [isModuleDropdownOpen, setIsModuleDropdownOpen] = useState(false);
   const [activeFullscreenLessonIndex, setActiveFullscreenLessonIndex] = useState<number | null>(null);
 
@@ -110,12 +114,7 @@ export function ModulesManagementSection({
   const [isCreating, setIsCreating] = useState(false);
   const [subjectiveAnswers, setSubjectiveAnswers] = useState<{ [key: number]: string }>({});
   const [mcqAnswers, setMcqAnswers] = useState<{ [key: number]: number | number[] }>({});
-  const [currentTime, setCurrentTime] = useState<Date>(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const [currentTime] = useState<Date>(() => new Date());
 
   // ── Task submission modal (Trainee only) ──────────────────────────────────
   const [submitTask, setSubmitTask] = useState<any | null>(null);
@@ -151,53 +150,109 @@ export function ModulesManagementSection({
     }
   }, [currentPathId, selectedPathId]);
 
-  // ── Load selected path details & summary progress ─────────────────────────
+  // ── Unified parallel loader for path details, curriculum & trainee progress ──
   useEffect(() => {
     if (!selectedPathId) return;
-    learningPathService.fetchPathById(selectedPathId, accessToken)
-      .then((data: any) => setCurrentPathDetails(data))
-      .catch(() => { });
+    let isCancelled = false;
+    setIsLoading(true);
 
-    if (isTrainee) {
-      progressService.fetchPathProgressSummary(accessToken)
-        .then((summary: any) => setPathProgressSummary(summary || {}))
-        .catch(() => { });
-    }
+    const loadAllPathData = async () => {
+      try {
+        const promises: Promise<any>[] = [
+          curriculumService.fetchModulesByPath(selectedPathId, accessToken),
+          learningPathService.fetchPathById(selectedPathId, accessToken).catch(() => null),
+        ];
+
+        if (isTrainee) {
+          promises.push(
+            progressService.fetchPathProgressSummary(accessToken).catch(() => ({})),
+            progressService.fetchMyStats(accessToken).catch(() => null),
+            assignmentService.fetchMySubmissions(accessToken).catch(() => [])
+          );
+        }
+
+        const [modulesData, pathData, pathSummaryData, myStatsData, submissionsData] = await Promise.all(promises);
+        if (isCancelled) return;
+
+        if (pathData) {
+          setCurrentPathDetails(pathData);
+        }
+        if (isTrainee) {
+          if (pathSummaryData) setPathProgressSummary(pathSummaryData);
+          if (myStatsData) setProgressStats(myStatsData);
+          if (submissionsData) setMySubs(Array.isArray(submissionsData) ? submissionsData : []);
+        }
+
+        const mods = sortCurriculumModules(Array.isArray(modulesData) ? modulesData : []);
+        setModules(mods);
+      } catch {
+        if (!isCancelled) setModules([]);
+      } finally {
+        if (!isCancelled) setIsLoading(false);
+      }
+    };
+
+    void loadAllPathData();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [selectedPathId, accessToken, isTrainee]);
 
-  // ── Load modules when path changes ────────────────────────────────────────
-  useEffect(() => {
-    if (!selectedPathId) return;
-    setIsLoading(true);
-    // Don't clear modules here if we're just switching URL module IDs for the same path
-    curriculumService.fetchModulesByPath(selectedPathId, accessToken)
-      .then((data: any) => {
-        const mods = sortCurriculumModules(Array.isArray(data) ? data : []);
-        setModules(mods);
-
-        // Open module ONLY if explicitly requested by URL or navigation state
-        const targetModuleId = urlModuleId || (location.state as any)?.moduleId;
-        if (targetModuleId && mods.some((m: any) => m.id === targetModuleId)) {
-          void openModule(targetModuleId, true);
-        } else if (openModuleId && mods.some((m: any) => m.id === openModuleId)) {
-          void openModule(openModuleId, true);
+  // ── Module detail fetcher ──────────────────────────────────────────────────
+  const loadModuleDetail = async (moduleId: string) => {
+    setModuleLoading(true);
+    try {
+      const [mod, subs, modStats] = await Promise.all([
+        curriculumService.fetchModuleById(moduleId, accessToken),
+        isTrainee
+          ? assignmentService.fetchMySubmissions(accessToken).catch(() => [])
+          : Promise.resolve([]),
+        isTrainee
+          ? progressService.fetchModuleStats(moduleId, accessToken).catch(() => null)
+          : Promise.resolve(null),
+      ]);
+      if (mod) {
+        setOpenModuleData(mod);
+        const modPathId = mod?.learningPathId || mod?.learningPath?.id;
+        if (modPathId && modPathId !== selectedPathId) {
+          setSelectedPathId(modPathId);
         }
-      })
-      .catch(() => setModules([]))
-      .finally(() => setIsLoading(false));
-  }, [selectedPathId, accessToken, isTrainee, urlModuleId]);
+        setMySubs(Array.isArray(subs) ? subs : []);
+        setModuleStats(modStats);
+      } else {
+        setOpenModuleData(null);
+      }
+    } catch {
+      setOpenModuleData(null);
+    } finally {
+      setModuleLoading(false);
+    }
+  };
 
-  // ── Load progress stats & submissions upfront (for Trainee) ───────────────
+  // ── Synchronize URL/route changes with module detail view ───────────────────
   useEffect(() => {
-    if (!isTrainee) return;
-    progressService.fetchMyStats(accessToken).then(setProgressStats).catch(() => { });
-    assignmentService.fetchMySubmissions(accessToken).then((subs) => setMySubs(Array.isArray(subs) ? subs : [])).catch(() => { });
-  }, [accessToken, isTrainee]);
+    const targetId = effectiveModuleId;
+    if (targetId) {
+      setOpenModuleId(targetId);
+      void loadModuleDetail(targetId);
+    } else {
+      setOpenModuleId(null);
+      setOpenModuleData(null);
+      setModuleStats(null);
+      setModuleLoading(false);
+    }
+  }, [effectiveModuleId, accessToken, isTrainee]);
 
   // ── Drill into a module ───────────────────────────────────────────────────
   const openModule = async (moduleId: string, preserveTab: boolean = false) => {
+    // If the module is already completed, allow review immediately without sequential lock check
+    const isCompletedOrReviewing =
+      (progressStats?.completedModuleIds || []).map(String).includes(String(moduleId)) ||
+      getModuleProgress(modules.find((m: any) => String(m.id) === String(moduleId)) || {}) >= 100;
+
     // Sequential module locking check for Trainees
-    if (isTrainee && modules.length > 0) {
+    if (isTrainee && modules.length > 0 && !isCompletedOrReviewing) {
       const targetIdx = modules.findIndex((m: any) => String(m.id) === String(moduleId));
       if (targetIdx > 0) {
         const activeModuleProgressMap = modules.reduce((acc: any, m: any) => {
@@ -223,37 +278,17 @@ export function ModulesManagementSection({
     }
 
     setOpenModuleId(moduleId);
-    if (isTrainee && selectedPathId) {
-      navigate(`/learning-path/${selectedPathId}/module/${moduleId}`, {
-        state: { pathId: selectedPathId, pathName: selectedPathTitle, moduleId },
-      });
-    }
     setModuleLoading(true);
     if (!preserveTab) {
       setActiveTab((location.state as any)?.activeTab || 'Lessons');
     }
-    try {
-      const [mod, subs, modStats] = await Promise.all([
-        curriculumService.fetchModuleById(moduleId, accessToken),
-        isTrainee
-          ? assignmentService.fetchMySubmissions(accessToken).catch(() => [])
-          : Promise.resolve([]),
-        isTrainee
-          ? progressService.fetchModuleStats(moduleId, accessToken).catch(() => null)
-          : Promise.resolve(null),
-      ]);
-      setOpenModuleData(mod);
-      const modPathId = mod?.learningPathId || mod?.learningPath?.id;
-      if (modPathId && modPathId !== selectedPathId) {
-        setSelectedPathId(modPathId);
-      }
-      setMySubs(Array.isArray(subs) ? subs : []);
-      setModuleStats(modStats);
-    } catch {
-      setOpenModuleData(null);
-    } finally {
-      setModuleLoading(false);
+    const path = selectedPathId || currentPathId;
+    if (path && (currentModuleId !== moduleId && urlModuleId !== moduleId)) {
+      navigate(`/learning-path/${path}/module/${moduleId}`, {
+        state: { pathId: path, pathName: selectedPathTitle, moduleId },
+      });
     }
+    await loadModuleDetail(moduleId);
   };
 
   const refreshModuleData = async (moduleId: string) => {
@@ -280,42 +315,35 @@ export function ModulesManagementSection({
     setOpenModuleData(null);
     setModuleStats(null);
     setActiveFullscreenLessonIndex(null);
-    if (isTrainee && selectedPathId) {
-      navigate(`/learning-path/${selectedPathId}/modules`, {
-        state: { pathId: selectedPathId, pathName: selectedPathTitle },
+    const path = selectedPathId || currentPathId;
+    if (path) {
+      navigate(`/learning-path/${path}/modules`, {
+        state: { pathId: path, pathName: selectedPathTitle },
       });
     }
   };
 
-  // Refetch on window focus & periodic polling to ensure updated DB data is always visible (§6.2)
+  // Refetch on window focus to ensure fresh data when returning to tab without continuous interval polling
   useEffect(() => {
-    const refreshAll = () => {
+    const refreshOnFocus = () => {
       if (selectedPathId) {
         curriculumService.fetchModulesByPath(selectedPathId, accessToken)
           .then((data: any) => {
             const mods = Array.isArray(data) ? data : [];
             setModules(mods);
-            if (openModuleId) {
-              if (mods.some((m: any) => m.id === openModuleId)) {
-                void refreshModuleData(openModuleId);
-              } else if (mods.length > 0 && isTrainee) {
-                setOpenModuleId(null);
-                setOpenModuleData(null);
-                setModuleStats(null);
-              }
+            if (openModuleId && mods.some((m: any) => m.id === openModuleId)) {
+              void refreshModuleData(openModuleId);
             }
           })
           .catch(() => { });
       }
     };
 
-    window.addEventListener('focus', refreshAll);
-    const interval = setInterval(refreshAll, 6000);
+    window.addEventListener('focus', refreshOnFocus);
     return () => {
-      window.removeEventListener('focus', refreshAll);
-      clearInterval(interval);
+      window.removeEventListener('focus', refreshOnFocus);
     };
-  }, [openModuleId, selectedPathId, accessToken, isTrainee]);
+  }, [openModuleId, selectedPathId, accessToken]);
 
   // ── Mark lesson watched (Trainee) ─────────────────────────────────────────
   const markLessonWatched = async (lessonId: string) => {
@@ -476,7 +504,13 @@ export function ModulesManagementSection({
 
   const subByAssignment = React.useMemo(() => {
     const map = new Map<string, any>();
-    mySubs.forEach((s) => map.set(s.assignment?.id || s.assignmentId, s));
+    mySubs.forEach((s) => {
+      const aId = s.assignment?.id || s.assignmentId || s.assignment_id;
+      if (aId) {
+        map.set(String(aId), s);
+        map.set(aId, s);
+      }
+    });
     return map;
   }, [mySubs]);
 
@@ -742,7 +776,7 @@ export function ModulesManagementSection({
               style={{ border: 'none', background: 'none', color: '#4f46e5', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 13 }}
               title="View all modules in this Learning Path"
             >
-              {selectedPathTitle}
+              {selectedPathTitle && selectedPathTitle !== 'All Modules' ? selectedPathTitle : (currentPathDetails?.title || openModuleData?.learningPath?.title || 'Learning Path')}
             </button>
             <span>›</span>
             {modules.length > 1 ? (
@@ -775,7 +809,7 @@ export function ModulesManagementSection({
                     boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                   }}
                 >
-                  {modules.find((m: any) => m.id === openModuleId)?.title || 'Select Module'}
+                  {modules.find((m: any) => m.id === openModuleId)?.title || openModuleData?.title || 'Select Module'}
                   <svg style={{ position: 'absolute', right: 8, transition: 'transform 0.2s', transform: isModuleDropdownOpen ? 'rotate(180deg)' : 'rotate(0)' }} xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
                 {isModuleDropdownOpen && (
@@ -952,7 +986,7 @@ export function ModulesManagementSection({
                 </svg>
                 <div className="lp-progress-circle-text">
                   <span className="lp-progress-circle-pct">{progressPercent}%</span>
-                  <span className="lp-progress-circle-label">PROGRESS</span>
+                  
                 </div>
               </div>
               <div className="lp-progress-widget-text">
@@ -1565,7 +1599,7 @@ export function ModulesManagementSection({
         {instructionTask && (
           <AssignmentInstructionModal
             task={instructionTask}
-            submission={subByAssignment.get(instructionTask.id)}
+            submission={subByAssignment.get(instructionTask.id) || subByAssignment.get(String(instructionTask.id)) || (instructionTask as any).submission}
             isOpen={Boolean(instructionTask)}
             onClose={() => setInstructionTask(null)}
             onContinue={() => {
@@ -1579,7 +1613,7 @@ export function ModulesManagementSection({
         {workspaceTask && (
           <AssignmentWorkspaceModal
             task={workspaceTask}
-            submission={subByAssignment.get(workspaceTask.id)}
+            submission={subByAssignment.get(workspaceTask.id) || subByAssignment.get(String(workspaceTask.id)) || (workspaceTask as any).submission}
             accessToken={accessToken}
             isOpen={Boolean(workspaceTask)}
             onClose={() => setWorkspaceTask(null)}
@@ -1700,6 +1734,29 @@ export function ModulesManagementSection({
   const stageLabels = ['GETTING STARTED', 'CORE SKILLS', 'PRACTICAL APPLICATION', 'RESPONSIBLE PRACTICE', 'ADVANCED MASTERY'];
   const firstActiveIndex = modules.findIndex((m: any) => getModuleProgress(m) < 100);
 
+  // Trainee display ordering: Completed modules appear first on top, followed by in-progress and remaining, preserving trainer order within each category
+  const displayModules = useMemo(() => {
+    if (!isTrainee || modules.length === 0) {
+      return modules;
+    }
+    const completed: any[] = [];
+    const inProgress: any[] = [];
+    const remaining: any[] = [];
+
+    modules.forEach((m: any) => {
+      const p = getModuleProgress(m);
+      if (p >= 100) {
+        completed.push(m);
+      } else if (p > 0) {
+        inProgress.push(m);
+      } else {
+        remaining.push(m);
+      }
+    });
+
+    return [...completed, ...inProgress, ...remaining];
+  }, [modules, isTrainee, progressStats, moduleStats, mySubs, pathProgressSummary, selectedPathId, openModuleId, openModuleData]);
+
   // Sanitize raw HTML tags from Learning Path description
   const cleanLpDescription = (activeLP?.description || '')
     .replace(/<[^>]*>/g, '')
@@ -1807,7 +1864,7 @@ export function ModulesManagementSection({
               </svg>
               <div className="lp-progress-circle-text">
                 <span className="lp-progress-circle-pct">{overallProgressPercent}%</span>
-                <span className="lp-progress-circle-label">OVERALL</span>
+              
               </div>
             </div>
 
@@ -1890,9 +1947,11 @@ export function ModulesManagementSection({
         </div>
       ) : (
         <div className="module-cards-timeline">
-          {modules.map((module: any, idx: number) => {
-            const padNum = String(idx + 1).padStart(2, '0');
-            const stage = stageLabels[idx] || (module.level ? String(module.level).toUpperCase() : 'SPECIALIZATION');
+          {displayModules.map((module: any, displayIdx: number) => {
+            const canonicalIdx = modules.findIndex((m: any) => String(m.id) === String(module.id));
+            const effectiveIdx = canonicalIdx >= 0 ? canonicalIdx : displayIdx;
+            const padNum = String(effectiveIdx + 1).padStart(2, '0');
+            const stage = stageLabels[effectiveIdx] || (module.level ? String(module.level).toUpperCase() : 'SPECIALIZATION');
             const modProgress = getModuleProgress(module);
 
             const activeModuleProgressMap = modules.reduce((acc: any, m: any) => {
@@ -1904,10 +1963,10 @@ export function ModulesManagementSection({
               ...modules.filter((m: any) => getModuleProgress(m) >= 100).map((m: any) => String(m.id)),
             ]));
 
-            // Sequential module locking evaluation for trainees
+            // Sequential module locking evaluation for trainees based on canonical curriculum order
             const moduleLock = isTrainee
               ? isModuleUnlocked(
-                  idx,
+                  effectiveIdx,
                   modules,
                   activeCompletedModuleIds,
                   activeModuleProgressMap,
@@ -1916,7 +1975,7 @@ export function ModulesManagementSection({
               : { isUnlocked: true };
             const isModLocked = !moduleLock.isUnlocked;
 
-            const isActive = !isModLocked && idx === (firstActiveIndex === -1 ? 0 : firstActiveIndex);
+            const isActive = !isModLocked && effectiveIdx === (firstActiveIndex === -1 ? 0 : firstActiveIndex);
 
             // Status badge details
             let statusBadge = { label: 'Not started', bg: '#f8fafc', color: '#94a3b8', border: '#e2e8f0' };

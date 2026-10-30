@@ -28,6 +28,8 @@ export interface SubmissionContext {
   status?: string;
   score?: number | null;
   deadline?: string | Date;
+  submittedAt?: string | Date;
+  [key: string]: any;
 }
 
 interface Props {
@@ -50,7 +52,12 @@ export const AssignmentCard: React.FC<Props> = ({
   onAttempt,
 }) => {
   const status = submission?.status || 'Pending';
-  const isExpired = submission?.deadline && new Date(submission.deadline).getTime() < Date.now();
+  const deadlineValue =
+    submission?.deadline ||
+    (task as any)?.deadline ||
+    (task as any)?.dueDate ||
+    (task as any)?.computedDeadline;
+  const isExpired = Boolean(deadlineValue && new Date(deadlineValue).getTime() < Date.now());
 
   const maxScore = task.maxScore || (task as any).points || 100;
   const scorePct = typeof submission?.score === 'number' ? (submission.score / maxScore) * 100 : null;
@@ -94,12 +101,25 @@ export const AssignmentCard: React.FC<Props> = ({
     }
   }
 
+  // 🌟 If assignment deadline has expired and task was not approved/submitted, mark status as Expired
+  if (
+    isExpired &&
+    displayStatus !== 'Approved' &&
+    displayStatus !== 'Submitted' &&
+    displayStatus !== 'Under Review' &&
+    displayStatus !== 'Evaluating'
+  ) {
+    displayStatus = 'Expired';
+  }
+
   const isApproved = displayStatus === 'Approved';
 
   const getBadgeStyle = (st: string) => {
     switch (st) {
       case 'Approved':
         return { bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' };
+      case 'Expired':
+        return { bg: '#fef2f2', color: '#b91c1c', border: '#fca5a5' };
       case 'Need Improvement':
       case 'Needs Improvement':
         return { bg: '#fff1f2', color: '#e11d48', border: '#fecdd3' };
@@ -130,10 +150,15 @@ export const AssignmentCard: React.FC<Props> = ({
   const handleCardClick = () => {
     if (isEffectiveLocked) {
       onClickLocked?.(lockReason);
+    } else if (displayStatus === 'Expired' && !submission?.submittedAt && typeof submission?.score !== 'number') {
+      // Cannot start an assessment once deadline has expired
+      return;
     } else if (onAttempt) {
       onAttempt(task);
     }
   };
+
+  const isCardInteractive = !(isEffectiveLocked || (displayStatus === 'Expired' && !submission?.submittedAt && typeof submission?.score !== 'number'));
 
   return (
     <div
@@ -144,12 +169,13 @@ export const AssignmentCard: React.FC<Props> = ({
           ? 'assignment-card-executive--approved'
           : ''
       }`}
-      title={isEffectiveLocked ? lockReason || 'Locked assessment' : `Open ${task.title}`}
+      title={isEffectiveLocked ? lockReason || 'Locked assessment' : displayStatus === 'Expired' && !submission?.submittedAt ? 'Deadline has expired. Submissions are closed.' : `Open ${task.title}`}
       onClick={handleCardClick}
       role="button"
-      tabIndex={isEffectiveLocked ? -1 : 0}
+      tabIndex={isCardInteractive ? 0 : -1}
+      style={!isCardInteractive ? { cursor: 'default' } : undefined}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if ((e.key === 'Enter' || e.key === ' ') && isCardInteractive) {
           handleCardClick();
         }
       }}
@@ -236,18 +262,22 @@ export const AssignmentCard: React.FC<Props> = ({
           </button>
         ) : (
           <>
-            <span
-              className="assignment-status-pill"
-              style={{
-                background: badgeTheme.bg,
-                color: badgeTheme.color,
-                border: `1.5px solid ${badgeTheme.border}`,
-              }}
-            >
-              {isApproved ? <CheckCircle2 size={13} /> : null}
-              <span>{displayStatus}</span>
-              {typeof submission?.score === 'number' ? <strong>({submission.score}/{maxScore} pts)</strong> : null}
-            </span>
+            {displayStatus !== 'Expired' && (
+              <span
+                className="assignment-status-pill"
+                style={{
+                  background: badgeTheme.bg,
+                  color: badgeTheme.color,
+                  border: `1.5px solid ${badgeTheme.border}`,
+                }}
+              >
+                {isApproved ? (
+                  <CheckCircle2 size={13} />
+                ) : null}
+                <span>{displayStatus}</span>
+                {typeof submission?.score === 'number' ? <strong>({submission.score}/{maxScore} pts)</strong> : null}
+              </span>
+            )}
 
             {isTrainee && (
               isApproved || displayStatus === 'Submitted' || displayStatus === 'Under Review' ? (
@@ -260,6 +290,21 @@ export const AssignmentCard: React.FC<Props> = ({
                   <FileCheck size={14} />
                   <span>Review Details</span>
                 </button>
+              ) : displayStatus === 'Expired' ? (
+                // 🌟 When deadline has expired: Resubmit and Submit buttons are NOT visible over here!
+                // Trainee is not able to submit or resubmit it.
+                // If trainee already submitted previously, allow read-only review of evaluated results.
+                submission?.submittedAt || typeof submission?.score === 'number' ? (
+                  <button
+                    type="button"
+                    className="assignment-action-btn assignment-action-btn--review"
+                    onClick={() => onAttempt?.(task)}
+                    title="Review past evaluation (Read-only, deadline has expired)"
+                  >
+                    <FileCheck size={14} />
+                    <span>Review Details</span>
+                  </button>
+                ) : null
               ) : displayStatus === 'Need Improvement' ? (
                 <button
                   type="button"
