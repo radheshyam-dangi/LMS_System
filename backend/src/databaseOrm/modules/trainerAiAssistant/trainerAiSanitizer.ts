@@ -46,19 +46,19 @@ export function sanitizeTrainerQuery(rawQuery: string): {
 
   // 4. Detect direct mutation command intent (e.g. "Add lesson Kafka in Module 1", "Delete Module 2", "Can you add one more module inside...")
   const hasDirectMutationIntent =
-    /(?:^|\b)(?:can\s+you\s+|could\s+you\s+|please\s+|i\s+want\s+to\s+|i\s+would\s+like\s+to\s+|we\s+need\s+to\s+)?(?:add|insert|append|attach|embed|put|delete|remove|drop|rename|replace|create|make|update|modify|edit)\s+(?:a\s+|an\s+|the\s+|one\s+|\d+\s+)?(?:new\s+|more\s+)?(?:lesson|module|assignment|task|question|quiz|video|resource|doc)s?\b/i.test(
+    /(?:^|\b)(?:can\s+you\s+|could\s+you\s+|please\s+|i\s+want\s+to\s+|i\s+would\s+like\s+to\s+|we\s+need\s+to\s+)?(?:add[s]?|adding|insert(?:ed|ing|s)?|append(?:ed|ing|s)?|attach(?:ed|ing|s)?|embed(?:ded|ing|s)?|put|delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|rename[ds]?|replace[ds]?|creat(?:e|ed|ing|es)|make|update[ds]?|updating|modify|modified|modifying|edit(?:ed|ing|s)?)\s+(?:a\s+|an\s+|the\s+|one\s+|\d+\s+)?(?:new\s+|more\s+)?(?:lesson|module|assignment|task|question|quiz|assessment|video|resource|doc)s?\b/i.test(
       lower,
     ) ||
     /(?:^|\b)(?:please\s+)?(?:upgrade|restructure|rebuild|revise|modify|refactor)\s+(?:the\s+)?(?:curriculum|learning\s+path|course|syllabus)\b/i.test(
       lower,
     ) ||
-    /\b(?:delete|remove|drop|discard|omit|trash|erase)\s+(?:the\s+|a\s+|an\s+|this\s+|that\s+)?(?:lesson|module|assignment|task|question|quiz|video|resource)s?\b/i.test(
+    /\b(?:delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|discard(?:ed|s)?|omit(?:ted|s)?|trash(?:ed|es)?|eras(?:e|ed|es|ing))\s+(?:only\s+)?(?:the\s+|a\s+|an\s+|this\s+|that\s+)?(?:lesson|module|assignment|task|question|quiz|assessment|video|resource)s?\b/i.test(
       lower,
     ) ||
-    /\b(?:lesson|module|assignment|task|question|quiz|video|resource)s?\s*(?:[0-9]+)?\s*.*?\b(?:delete|remove|drop|discard|erase|trash)\b/i.test(
+    /\b(?:lesson|module|assignment|task|question|quiz|assessment|video|resource)s?\s*(?:[0-9]+)?\s*.*?\b(?:delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|discard(?:ed|s)?|erase|trash(?:ed)?)\b/i.test(
       lower,
     ) ||
-    /\b(?:still\s+visible\s+)?(?:remove|delete|drop)\s+(?:it|this|that|them)\b/i.test(
+    /\b(?:still\s+visible\s+)?(?:remove|removed|delete|deleted|drop)\s+(?:it|this|that|them)\b/i.test(
       lower,
     );
 

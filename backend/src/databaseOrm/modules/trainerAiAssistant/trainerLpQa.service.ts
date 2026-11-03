@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, Repository, Not, In } from 'typeorm';
 import { LearningPathEntity } from '../../entities/learningPath.entity';
 import { sanitizeAiResponse, sanitizeTrainerQuery, findReferencedLp } from './trainerAiSanitizer';
+import { McpBridgeService } from '../../../mcp/mcp-bridge.service';
 
 export interface LpQaResponse {
   answer: string;
@@ -13,7 +14,10 @@ export class TrainerLpQaService {
   private readonly logger = new Logger(TrainerLpQaService.name);
   private lpRepo: Repository<LearningPathEntity>;
 
-  constructor(private readonly datasource: DataSource) {
+  constructor(
+    private readonly datasource: DataSource,
+    private readonly mcpBridgeService: McpBridgeService,
+  ) {
     this.lpRepo = this.datasource.getRepository(LearningPathEntity);
   }
 
@@ -28,6 +32,11 @@ export class TrainerLpQaService {
     activePathId?: string | null,
     history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   ): Promise<LpQaResponse> {
+    // Intercept trainee inquiries directly to the FastMCP Postgres tool
+    if (this.mcpBridgeService.isTraineeInquiry(question)) {
+      const answer = await this.mcpBridgeService.handleTraineeInquiry(question, history);
+      return { answer, count: 0 };
+    }
     const groqKey = process.env.GROQ_API_KEY;
 
     // 1. Fetch all Learning Paths in system with deep relations

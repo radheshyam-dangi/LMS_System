@@ -186,12 +186,14 @@ function TrainerMessageBubble({
   onConfirmAction,
   onCancelAction,
   onCloseDrawer,
+  conversationId,
 }: {
   msg: TrainerMessage;
   onFeedback: (messageId: string, v: 'thumbs_up' | 'thumbs_down') => void;
   onConfirmAction: (actionId: string) => Promise<any>;
   onCancelAction: (actionId: string) => Promise<any>;
   onCloseDrawer?: () => void;
+  conversationId?: string | null;
 }) {
   const [localFeedback, setLocalFeedback] = useState<'thumbs_up' | 'thumbs_down' | null>(
     msg.feedback || null,
@@ -235,6 +237,7 @@ function TrainerMessageBubble({
               onConfirm={onConfirmAction}
               onCancel={onCancelAction}
               onCloseDrawer={onCloseDrawer}
+              conversationId={conversationId}
             />
           )}
 
@@ -272,6 +275,7 @@ export interface TrainerAiAssistantDrawerProps {
   accessToken: string;
   activeLpId?: string | null;
   onLpUpgraded?: () => void;
+  initialConversationId?: string | null;
 }
 
 export const TrainerAiAssistantDrawer: React.FC<TrainerAiAssistantDrawerProps> = ({
@@ -280,6 +284,7 @@ export const TrainerAiAssistantDrawer: React.FC<TrainerAiAssistantDrawerProps> =
   accessToken,
   activeLpId,
   onLpUpgraded,
+  initialConversationId,
 }) => {
   const {
     isEnabled,
@@ -447,15 +452,39 @@ export const TrainerAiAssistantDrawer: React.FC<TrainerAiAssistantDrawerProps> =
     }
   }, [isOpen]);
 
-  // On drawer open: Always default to a clean, fresh new chat session without showing past history
+  // On drawer open: restore active ongoing conversation if navigating or available, or load initialConversationId
   useEffect(() => {
     if (isOpen && !prevIsOpenRef.current) {
-      startNewConversation();
+      const targetConvId =
+        initialConversationId ||
+        conversationId ||
+        sessionStorage.getItem('skillforge_trainer_ai_conv_id');
+
+      if (targetConvId) {
+        void loadConversation(targetConvId);
+      } else if (!conversationId && messages.length === 0) {
+        startNewConversation();
+      }
       void loadConversations();
       setShowHistory(false);
     }
     prevIsOpenRef.current = isOpen;
-  }, [isOpen, startNewConversation, loadConversations]);
+  }, [
+    isOpen,
+    initialConversationId,
+    conversationId,
+    messages.length,
+    loadConversation,
+    startNewConversation,
+    loadConversations,
+  ]);
+
+  // If initialConversationId changes while drawer is open, switch to that conversation
+  useEffect(() => {
+    if (isOpen && initialConversationId && initialConversationId !== conversationId) {
+      void loadConversation(initialConversationId);
+    }
+  }, [isOpen, initialConversationId, conversationId, loadConversation]);
 
   // Click outside listener for the top conversation switcher dropdown
   useEffect(() => {
@@ -722,6 +751,7 @@ export const TrainerAiAssistantDrawer: React.FC<TrainerAiAssistantDrawerProps> =
               onConfirmAction={handleConfirmAction}
               onCancelAction={cancelAction}
               onCloseDrawer={onClose}
+              conversationId={conversationId}
             />
           ))
         )}

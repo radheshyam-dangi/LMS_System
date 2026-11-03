@@ -25,6 +25,10 @@ import { ResourceEntity } from '../../entities/resource.entity';
 import { UserEntity } from '../../entities/user.entity';
 import { LpDraftEntity } from '../../entities/lpDraft.entity';
 import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.entity';
+import { TraineeAssignmentEntity } from '../../entities/traineeAssignment.entity';
+import { EvaluationJobEntity } from '../../entities/evaluationJob.entity';
+import { AssignmentChatThreadEntity } from '../../entities/assignmentChatThread.entity';
+import { UserLessonProgressEntity } from '../../entities/userLessonProgress.entity';
 import { ContentExtractionService } from '../aiEvaluation/contentExtraction.service';
 import { LearningPathEntityService } from '../learningPath/learningPath.service';
 import { EmbeddingOutboxService } from '../aiAssistant/embeddingOutbox.service';
@@ -114,18 +118,21 @@ export class LpAuthoringService {
         const incomingLessonIds = new Set(payload.modules?.flatMap((m: any) => m.lessons?.map((l: any) => l.id)).filter(Boolean));
         const incomingAssignmentIds = new Set(payload.modules?.flatMap((m: any) => m.assignments?.map((a: any) => a.id)).filter(Boolean));
 
-        // Collect all assignments that are going to be deleted
+        // Collect all assignments and lessons that are going to be deleted
         const assignmentsToDelete: string[] = [];
+        const lessonsToDelete: string[] = [];
 
         for (const mod of existingLP.modules || []) {
           if (!incomingModuleIds.has(mod.id)) {
             assignmentsToDelete.push(...(mod.assignments?.map((a: any) => a.id) || []));
             for (const lesson of mod.lessons || []) {
+              lessonsToDelete.push(lesson.id);
               assignmentsToDelete.push(...(lesson.assignments?.map((a: any) => a.id) || []));
             }
           } else {
             for (const lesson of mod.lessons || []) {
               if (!incomingLessonIds.has(lesson.id)) {
+                lessonsToDelete.push(lesson.id);
                 assignmentsToDelete.push(...(lesson.assignments?.map((a: any) => a.id) || []));
               }
             }
@@ -137,36 +144,51 @@ export class LpAuthoringService {
           }
         }
 
-        // Block if any submissions exist for these assignments
-        if (assignmentsToDelete.length > 0) {
-          const { In } = await import('typeorm');
-          const submissionCount = await manager.count(AssignmentSubmissionEntity, {
-            where: { assignment: { id: In(assignmentsToDelete) } }
-          });
+        // Clean up child dependencies & tracking records for deleted items
+        const { In } = await import('typeorm');
 
-          if (submissionCount > 0) {
-            throw new BadRequestException(
-              'Cannot delete items that have existing trainee submissions. Please remove the trainee assignments or mark the items as deprecated instead.'
-            );
-          }
+        if (assignmentsToDelete.length > 0) {
+          const uniqueAssignmentIds = Array.from(new Set(assignmentsToDelete));
+          await manager.delete(AssignmentSubmissionEntity, {
+            assignment: { id: In(uniqueAssignmentIds) },
+          });
+          await manager.delete(TraineeAssignmentEntity, {
+            assignment: { id: In(uniqueAssignmentIds) },
+          });
+          await manager.delete(EvaluationJobEntity, {
+            assignment: { id: In(uniqueAssignmentIds) },
+          });
+          await manager.delete(AssignmentChatThreadEntity, {
+            assignment: { id: In(uniqueAssignmentIds) },
+          });
         }
 
-        // Delete removed modules/lessons/assignments
+        if (lessonsToDelete.length > 0) {
+          const uniqueLessonIds = Array.from(new Set(lessonsToDelete));
+          await manager.delete(QuestionLessonDependencyEntity, {
+            lesson: { id: In(uniqueLessonIds) },
+          });
+          await manager.delete(UserLessonProgressEntity, {
+            lesson: { id: In(uniqueLessonIds) },
+          });
+        }
+
+        // Delete removed modules/lessons/assignments cleanly
         for (const mod of existingLP.modules || []) {
-           if (!incomingModuleIds.has(mod.id)) {
-              await manager.remove(mod);
-           } else {
-             for (const lesson of mod.lessons || []) {
-               if (!incomingLessonIds.has(lesson.id)) {
-                 await manager.remove(lesson);
-               }
-             }
-             for (const assignment of mod.assignments || []) {
-               if (!incomingAssignmentIds.has(assignment.id)) {
-                 await manager.remove(assignment);
-               }
-             }
-           }
+          if (!incomingModuleIds.has(mod.id)) {
+            await manager.delete(ModuleEntity, { id: mod.id });
+          } else {
+            for (const lesson of mod.lessons || []) {
+              if (!incomingLessonIds.has(lesson.id)) {
+                await manager.delete(LessonEntity, { id: lesson.id });
+              }
+            }
+            for (const assignment of mod.assignments || []) {
+              if (!incomingAssignmentIds.has(assignment.id)) {
+                await manager.delete(AssignmentEntity, { id: assignment.id });
+              }
+            }
+          }
         }
       } else {
         // Create mode

@@ -16,6 +16,22 @@ export interface LpUpgradeResult {
   assignmentCount: number;
 }
 
+function buildDefaultAssignmentInstructions(
+  moduleTitle: string,
+  lessonTitles: string[],
+  level: 'Easy' | 'Medium' | 'Hard',
+): string {
+  const lessonContext = lessonTitles.length > 0 ? `(${lessonTitles.join(', ')})` : 'in this module';
+  return [
+    `Instructions & Submission Guidelines:`,
+    `1. Prerequisite Review: Thoroughly review preceding module lessons ${lessonContext} before beginning this assessment. Ensure foundational principles are fully understood.`,
+    `2. Question Analysis: For Multiple Choice Questions (MCQs), evaluate all provided technical alternatives and choose the single most optimal engineering solution.`,
+    `3. Reasoning & Evidence: For Subjective and scenario-based tasks, articulate structured step-by-step reasoning, citing specific CLI commands, architectural patterns, or API endpoints.`,
+    `4. Quality Standards: Your submitted solutions must adhere to enterprise production standards, clean code paradigms, and robust error-handling practices.`,
+    `5. Evaluation & Feedback: Upon submission, your responses undergo automated AI evaluation followed by mandatory trainer review against the module grading rubric.`,
+  ].join('\n');
+}
+
 @Injectable()
 export class TrainerLpUpgradeService {
   private readonly logger = new Logger(TrainerLpUpgradeService.name);
@@ -113,7 +129,7 @@ export class TrainerLpUpgradeService {
 
     // 3b. Detect if the instruction requests deletion of specific nodes
     const isDeleteInstruction =
-      /\b(?:delete|remove|drop|discard|omit|trash|erase)\b/i.test(instruction) ||
+      /\b(?:delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|discard(?:ed|s)?|omit(?:ted|s)?|trash(?:ed|es)?|eras(?:e|ed|es|ing))\b/i.test(instruction) ||
       /\bstill\s+visible\b/i.test(instruction);
 
     const explicitDeletedLessonIds = new Set<string>();
@@ -123,27 +139,11 @@ export class TrainerLpUpgradeService {
     let deletionTargetNote = '';
 
     if (isDeleteInstruction) {
-      // Mutual exclusivity check: determine exact target granularity
-      const isQuestionDeletion =
-        /\b(?:delete|remove|drop|discard|omit|trash|erase)\s+(?:the\s+|a\s+|an\s+|this\s+)?quest(?:ion)?\s*([0-9]+)\b/i.test(instruction) ||
-        /\bquest(?:ion)?\s*([0-9]+)\s*.*?\b(?:delete|remove|drop|discard)\b/i.test(instruction);
-
-      const isLessonDeletion = !isQuestionDeletion && (
-        /\b(?:delete|remove|drop|discard|omit|trash|erase)\s+(?:the\s+|a\s+|an\s+|this\s+)?less(?:on)?\s*([0-9]+)\b/i.test(instruction) ||
-        /\bless(?:on)?\s*([0-9]+)\s*.*?\b(?:delete|remove|drop|discard|still\s+visible)\b/i.test(instruction)
-      );
-
-      const isAssignmentDeletion = !isQuestionDeletion && !isLessonDeletion && (
-        /\b(?:delete|remove|drop|discard|omit|trash|erase)\s+(?:the\s+|a\s+|an\s+|this\s+)?(?:assignment|assessment|task|quiz)\s*([0-9]+)?\b/i.test(instruction) ||
-        /\b(?:assignment|assessment|task|quiz)\s*([0-9]+)?\s*.*?\b(?:delete|remove|drop|discard)\b/i.test(instruction)
-      );
-
-      const isModuleDeletion = !isQuestionDeletion && !isLessonDeletion && !isAssignmentDeletion && (
-        /\b(?:delete|remove|drop|discard|omit|trash|erase)\s+(?:the\s+|a\s+|an\s+|this\s+)?mod(?:ule)?\s*([0-9]+)\b/i.test(instruction) ||
-        /\bmod(?:ule)?\s*([0-9]+)\s*.*?\b(?:delete|remove|drop|discard)\b/i.test(instruction)
-      );
-
       // 1. Check for Question targets (e.g. 'from this assignment "Module 1 Hands-On Assessment" remove question 2')
+      const isQuestionDeletion =
+        /\b(?:delete[ds]?|remov(?:e|ed|es|ing)|drop(?:ped)?|discard(?:ed)?|omit(?:ted)?|trash(?:ed)?|erase)\s+(?:the\s+|a\s+|an\s+|this\s+)?quest(?:ion)?\s*([0-9]+)\b/i.test(instruction) ||
+        /\bquest(?:ion)?\s*([0-9]+)\s*.*?\b(?:delete[ds]?|remov(?:e|ed|es|ing)|drop|discard)\b/i.test(instruction);
+
       if (isQuestionDeletion) {
         const questionNumMatch = instruction.match(/\bquest(?:ion)?\s*([0-9]+)\b/i);
         if (questionNumMatch) {
@@ -165,64 +165,139 @@ export class TrainerLpUpgradeService {
         }
       }
 
-      // 2. Check for Lesson targets (e.g. "lesson 4 still visible remove it", "remove lesson 3")
+      // 2. Check for Lesson targets (e.g. "lesson 4 still visible remove it", "remove lesson 3", "in module 2 delete lesson 1")
+      const isLessonDeletion =
+        /\b(?:delete[ds]?|remov(?:e|ed|es|ing)|drop(?:ped)?|discard(?:ed)?|omit(?:ted)?|trash(?:ed)?|erase)\s+(?:the\s+|a\s+|an\s+|this\s+)?less(?:on)?\s*([0-9]+)\b/i.test(instruction) ||
+        /\bless(?:on)?\s*([0-9]+)\s*.*?\b(?:delete[ds]?|remov(?:e|ed|es|ing)|drop|discard|still\s+visible)\b/i.test(instruction);
+
+      const inModMatch = instruction.match(/(?:in|from|for|inside)\s+mod(?:ule)?\s*([0-9]+)/i);
+      const targetModNum = inModMatch ? parseInt(inModMatch[1], 10) : null;
+      const candidateModulesForLesson = targetModNum !== null
+        ? existingTree.modules.filter((m, idx) => {
+            const titleLower = (m.title || '').toLowerCase();
+            return titleLower.includes(`module ${targetModNum}`) || idx + 1 === targetModNum;
+          })
+        : existingTree.modules;
+
       if (isLessonDeletion) {
         const lessonNumMatch = instruction.match(/\bless(?:on)?\s*([0-9]+)\b/i);
         if (lessonNumMatch) {
           const num = parseInt(lessonNumMatch[1], 10);
-          for (const m of existingTree.modules) {
+          let matchedLessonByTitle = false;
+
+          for (const m of candidateModulesForLesson) {
             for (let lIdx = 0; lIdx < (m.lessons || []).length; lIdx++) {
               const l = m.lessons[lIdx];
               const titleLower = (l.title || '').toLowerCase();
               if (
                 titleLower.includes(`lesson ${num}`) ||
-                new RegExp(`\\b${num}[.:\\s]`, 'i').test(titleLower) ||
-                lIdx + 1 === num
+                new RegExp(`\\blesson\\s*#?\\s*${num}\\b`, 'i').test(titleLower) ||
+                new RegExp(`^l${num}\\b`, 'i').test(titleLower)
               ) {
                 explicitDeletedLessonIds.add(l.id);
+                matchedLessonByTitle = true;
               }
+            }
+          }
+
+          // Fallback to 1-based index only if target module was explicitly specified and title didn't match
+          if (!matchedLessonByTitle && candidateModulesForLesson.length === 1) {
+            const mod = candidateModulesForLesson[0];
+            if (mod.lessons && num >= 1 && num <= mod.lessons.length) {
+              explicitDeletedLessonIds.add(mod.lessons[num - 1].id);
             }
           }
         }
       }
 
       // 3. Check for Assignment targets (e.g. "remove assignment 2", "delete Module 1 Assessment")
+      const isAssignmentDeletion =
+        /\b(?:delete[ds]?|remov(?:e|ed|es|ing)|drop(?:ped)?|discard(?:ed)?|omit(?:ted)?|trash(?:ed)?|erase)\s+(?:the\s+|a\s+|an\s+|this\s+)?(?:assignment|assessment|task|quiz)\s*([0-9]+)?\b/i.test(instruction) ||
+        /\b(?:assignment|assessment|task|quiz)\s*([0-9]+)?\s*.*?\b(?:delete[ds]?|remov(?:e|ed|es|ing)|drop|discard)\b/i.test(instruction);
+
       if (isAssignmentDeletion) {
         const assignNumMatch = instruction.match(/\b(?:assignment|assessment|task|quiz)\s*([0-9]+)\b/i);
-        if (assignNumMatch) {
-          const aNum = parseInt(assignNumMatch[1], 10);
-          for (const m of existingTree.modules) {
+        const assignQuoteMatch = instruction.match(/["'“]([^"'“”]+)["'”]/i);
+        const assignNamed = assignQuoteMatch ? assignQuoteMatch[1].toLowerCase().trim() : null;
+
+        if (assignNumMatch || assignNamed) {
+          const aNum = assignNumMatch ? parseInt(assignNumMatch[1], 10) : null;
+          let matchedAssignByTitle = false;
+
+          for (const m of candidateModulesForLesson) {
             for (let aIdx = 0; aIdx < (m.assignments || []).length; aIdx++) {
               const a = m.assignments[aIdx];
               const titleLower = (a.title || '').toLowerCase();
-              if (
+              const matchesNum = aNum !== null && (
                 titleLower.includes(`assignment ${aNum}`) ||
                 titleLower.includes(`assessment ${aNum}`) ||
-                aIdx + 1 === aNum
-              ) {
+                titleLower.includes(`task ${aNum}`) ||
+                titleLower.includes(`quiz ${aNum}`)
+              );
+              const matchesName = Boolean(assignNamed && (
+                titleLower.includes(assignNamed) || assignNamed.includes(titleLower)
+              ));
+
+              if (matchesNum || matchesName) {
                 explicitDeletedAssignmentIds.add(a.id);
+                matchedAssignByTitle = true;
               }
+            }
+          }
+
+          // Fallback to 1-based index if single candidate module and no title match
+          if (!matchedAssignByTitle && aNum !== null && candidateModulesForLesson.length === 1) {
+            const mod = candidateModulesForLesson[0];
+            if (mod.assignments && aNum >= 1 && aNum <= mod.assignments.length) {
+              explicitDeletedAssignmentIds.add(mod.assignments[aNum - 1].id);
             }
           }
         }
       }
 
-      // 4. Check for Module targets (e.g. "delete module 2", "remove module 1")
-      if (isModuleDeletion) {
-        const moduleNumMatch = instruction.match(/\bmod(?:ule)?\s*([0-9]+)\b/i);
-        if (moduleNumMatch) {
-          const num = parseInt(moduleNumMatch[1], 10);
-          for (let mIdx = 0; mIdx < existingTree.modules.length; mIdx++) {
-            const m = existingTree.modules[mIdx];
+      // 4. Check for Module targets (e.g. "delete module 2", "and only deleted module 2 - 'Building and Training LLMs'")
+      const modDelMatch =
+        instruction.match(/(?:delete[ds]?|remov(?:e|ed|es|ing)|drop(?:ped)?|omit(?:ted)?|trash(?:ed)?)\s+(?:only\s+)?(?:the\s+)?mod(?:ule)?\s*([0-9]+)/i) ||
+        instruction.match(/\bmod(?:ule)?\s*([0-9]+)\s*.*?(?:delete[ds]?|remov(?:e|ed|es|ing)|drop|trash)/i);
+
+      const namedModMatch =
+        instruction.match(/mod(?:ule)?\s*[0-9]*\s*[-–—:]\s*["'“]([^"'“”]+)["'”]/i) ||
+        instruction.match(/["'“]([^"'“”]+)["'”]/i);
+      const namedModTitle = namedModMatch ? namedModMatch[1].toLowerCase().trim() : null;
+
+      if (modDelMatch || namedModTitle) {
+        const num = modDelMatch ? parseInt(modDelMatch[1], 10) : null;
+        let matchedByTitle = false;
+
+        // Priority 1: Match by module number in title (e.g. "Module 2: ...")
+        if (num !== null) {
+          for (const m of existingTree.modules) {
             const titleLower = (m.title || '').toLowerCase();
             if (
               titleLower.includes(`module ${num}`) ||
-              new RegExp(`\\b${num}[.:\\s]`, 'i').test(titleLower) ||
-              mIdx + 1 === num
+              new RegExp(`\\bmodule\\s*#?\\s*${num}\\b`, 'i').test(titleLower) ||
+              new RegExp(`^m${num}\\b`, 'i').test(titleLower)
             ) {
               explicitDeletedModuleIds.add(m.id);
+              matchedByTitle = true;
             }
           }
+        }
+
+        // Priority 2: Named match in quotes
+        if (namedModTitle && isDeleteInstruction) {
+          for (const m of existingTree.modules) {
+            const titleLower = (m.title || '').toLowerCase();
+            if (titleLower.includes(namedModTitle) || namedModTitle.includes(titleLower)) {
+              explicitDeletedModuleIds.add(m.id);
+              matchedByTitle = true;
+            }
+          }
+        }
+
+        // Priority 3: Fallback to 1-based index only if NO module title matched
+        if (!matchedByTitle && num !== null && num >= 1 && num <= existingTree.modules.length) {
+          explicitDeletedModuleIds.add(existingTree.modules[num - 1].id);
         }
       }
 
@@ -404,6 +479,10 @@ SCHEMA REQUIRED:
     if (explicitDeletedQuestionIds.size > 0) {
       const qNumMatch = instruction.match(/\bquest(?:ion)?\s*([0-9]+)\b/i);
       upgradeSummary = `Confirmed: Successfully removed Question ${qNumMatch ? qNumMatch[1] : ''} from the assignment.`;
+    } else if (explicitDeletedModuleIds.size > 0) {
+      if (!upgradeSummary.toLowerCase().includes('removed') && !upgradeSummary.toLowerCase().includes('deleted')) {
+        upgradeSummary = `Confirmed: Successfully removed the specified module from the curriculum.`;
+      }
     } else if (isDeleteInstruction && !upgradeSummary.toLowerCase().includes('removed') && !upgradeSummary.toLowerCase().includes('deleted')) {
       upgradeSummary = `Confirmed: Successfully removed the requested curriculum item.`;
     }
@@ -462,23 +541,41 @@ SCHEMA REQUIRED:
 
         const createdLessonIds = lessons.map((l: any) => l.id);
 
+        const moduleDifficulty: 'Easy' | 'Medium' | 'Hard' =
+          mIdx === 0 ? 'Easy' : (mIdx === 1 ? 'Medium' : 'Hard');
+        const timerDays = moduleDifficulty === 'Easy' ? 3 : (moduleDifficulty === 'Medium' ? 5 : 7);
+        const lessonTitles = lessons.map((l: any) => l.title);
+
         const assignments = (m.assignments || []).map((a: any, aIdx: number) => {
-          const questions = (a.questions || []).map((q: any) => ({
-            id: q.id && /^[0-9a-f]{8}-/i.test(q.id) ? q.id : uuidv4(),
-            text: q.text || 'Question',
-            type: q.type === 'MCQ' ? 'MCQ' : 'Subjective',
-            maxPoints: Number(q.maxPoints) || 10,
-            options: q.type === 'MCQ' ? (q.options || ['Option A', 'Option B', 'Option C', 'Option D']) : undefined,
-            correctIndex: q.type === 'MCQ' ? (Number(q.correctIndex) || 0) : undefined,
-            expectedAnswerGuideline: q.expectedAnswerGuideline || undefined,
-            requiresLessonGrounding: true,
-            lessonDependencies: createdLessonIds,
-          }));
+          const instructions = (a.body && a.body.length > 150 && a.body.includes('\n'))
+            ? a.body
+            : buildDefaultAssignmentInstructions(m.title || `Module ${mIdx + 1}`, lessonTitles, moduleDifficulty);
+
+          const questions = (a.questions || []).map((q: any, qIdx: number) => {
+            const specificLessonId = createdLessonIds[qIdx < createdLessonIds.length ? qIdx : createdLessonIds.length - 1] || createdLessonIds[0];
+            return {
+              id: q.id && /^[0-9a-f]{8}-/i.test(q.id) ? q.id : uuidv4(),
+              text: q.text || `Question ${qIdx + 1}`,
+              type: q.type === 'Subjective' ? 'Subjective' : 'MCQ',
+              maxPoints: Number(q.maxPoints) || (moduleDifficulty === 'Easy' ? 10 : 15),
+              options: q.type !== 'Subjective' ? (Array.isArray(q.options) && q.options.length >= 2 ? q.options : ['Option A', 'Option B', 'Option C', 'Option D']) : undefined,
+              correctIndex: q.type !== 'Subjective' ? (Number(q.correctIndex) || 0) : undefined,
+              expectedAnswerGuideline: q.expectedAnswerGuideline || (q.type === 'Subjective' ? 'Comprehensive answer referencing key architecture and practical commands.' : undefined),
+              requiresLessonGrounding: true,
+              lessonDependencies: specificLessonId ? [specificLessonId] : createdLessonIds,
+            };
+          });
+
+          const hasMcq = questions.some((q: any) => q.type === 'MCQ');
+          const hasSub = questions.some((q: any) => q.type === 'Subjective');
+          const assignmentType = hasMcq && hasSub ? 'Hybrid' : (hasSub ? 'Subjective' : 'MCQ');
 
           return {
             id: a.id && /^[0-9a-f]{8}-/i.test(a.id) ? a.id : uuidv4(),
-            title: a.title || `Module ${mIdx + 1} Assessment`,
-            body: a.body || 'Complete the tasks and questions based on this module.',
+            title: a.title || `Module ${mIdx + 1} Assessment (${moduleDifficulty})`,
+            body: instructions,
+            assignmentType,
+            difficultyLevel: moduleDifficulty,
             questions,
             dependsOnLessonIds: createdLessonIds,
             lockConfig: { enabled: true },
@@ -486,7 +583,7 @@ SCHEMA REQUIRED:
               autoEvaluateWithAI: true,
               humanInterventionRequired: true,
             },
-            timerDuration: { days: 7, hours: 0, minutes: 0 },
+            timerDuration: { days: timerDays, hours: 0, minutes: 0 },
             countdownStart: 'taskUnlocked',
           };
         });

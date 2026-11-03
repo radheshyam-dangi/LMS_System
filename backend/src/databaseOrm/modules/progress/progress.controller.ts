@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   Query,
   UseGuards,
@@ -38,6 +39,17 @@ export class ProgressController {
     const userId = currentUser?.id || currentUser?.sub;
     if (!userId) throw new ForbiddenException('User session missing.');
     return await this.progressService.visitResource(userId, resourceId);
+  }
+
+  @Delete('resources/:resourceId/visit')
+  @Roles('Trainee', 'Trainer', 'Admin')
+  async unvisitResource(
+    @Param('resourceId') resourceId: string,
+    @GetUser() currentUser: any,
+  ) {
+    const userId = currentUser?.id || currentUser?.sub;
+    if (!userId) throw new ForbiddenException('User session missing.');
+    return await this.progressService.unvisitResource(userId, resourceId);
   }
 
   @Get('me')

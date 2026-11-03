@@ -18,9 +18,18 @@ export default function LPEditorPage() {
   const [lpStatus, setLpStatus] = useState<string>('Active');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAiAssistant, setShowAiAssistant] = useState<boolean>(false);
+  const [showAiAssistant, setShowAiAssistant] = useState<boolean>(() => {
+    return Boolean(location.state?.openAiAssistant);
+  });
   const [refreshKey, setRefreshKey] = useState<number>(0);
   const [isOwner, setIsOwner] = useState<boolean>(true);
+
+  // Automatically open AI Assistant drawer if requested via navigation state
+  useEffect(() => {
+    if (location.state?.openAiAssistant) {
+      setShowAiAssistant(true);
+    }
+  }, [location.state]);
 
   const focusAction = location.state?.action;
   const targetId = location.state?.targetId;
@@ -81,13 +90,19 @@ export default function LPEditorPage() {
   // Synchronize when preview is requested from Trainer AI Assistant drawer
   useEffect(() => {
     const handlePreviewRequested = (e: Event) => {
-      const customEvent = e as CustomEvent<{ lpId: string }>;
+      const customEvent = e as CustomEvent<{ lpId: string; conversationId?: string }>;
       const targetLpId = customEvent.detail?.lpId;
       if (targetLpId) {
+        setShowAiAssistant(true);
         if (targetLpId === pathId) {
           fetchLp(targetLpId);
         } else {
-          navigate(`/learning-paths/${targetLpId}/edit`);
+          navigate(`/learning-paths/${targetLpId}/edit`, {
+            state: {
+              openAiAssistant: true,
+              conversationId: customEvent.detail?.conversationId,
+            },
+          });
         }
       }
     };
@@ -175,6 +190,7 @@ export default function LPEditorPage() {
           accessToken={token}
           activeLpId={pathId}
           onLpUpgraded={handleRefreshLp}
+          initialConversationId={location.state?.conversationId || sessionStorage.getItem('skillforge_trainer_ai_conv_id')}
         />
       )}
     </div>

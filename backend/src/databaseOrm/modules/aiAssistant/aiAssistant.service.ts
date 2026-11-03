@@ -70,7 +70,10 @@ CORE OPERATIONAL RULES:
    - Practical Takeaway: 1 short sentence or brief practical code snippet if applicable.
    Keep the total response under 150-220 words.
 2. Strict Grounding: Base your answer exclusively on the verified course passages provided.
-3. Capability Boundary: If the question cannot be answered using the provided course passages, state clearly and concisely that this topic is not covered in the current curriculum. Never invent facts.
+3. Capability Boundary & Grounding Verification:
+   - If the question cannot be directly and accurately answered from the provided course passages, or if the topic or definition is missing from the curriculum:
+   - You MUST output "[NOT_COVERED_IN_CURRICULUM]" at the very beginning of your response, followed by stating that this topic is not covered in the current curriculum.
+   - Never invent facts or pretend the curriculum contains the answer when it does not.
 4. Zero Emojis and Zero Decorative Icons: Absolutely NO emojis (no emojis of any kind) and no ASCII/unicode art.
 5. Clean Typography: Do not generate markdown tables, pipe (|) characters, backslashes, decorative divider lines, or hashtags (#, ##) for headers. Use bold text for headers.
 6. Zero Inline Citations: Do not write "Source:", URLs, or bracketed numbers. Institutional references are attached automatically by the platform UI.
@@ -300,8 +303,26 @@ export class AiAssistantService {
     const model = process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b';
 
     const response = await this.callGroq(messages, model, groqKey);
-    const answer = response.content.trim();
+    const rawAnswer = response.content.trim();
     const tokenCount = response.usage?.total_tokens;
+
+    // Detect if the provided LP passages fail to answer the trainee's inquiry
+    const isMissingFromLp =
+      rawAnswer.includes('[NOT_COVERED_IN_CURRICULUM]') ||
+      /not covered in the (current\s+)?curriculum/i.test(rawAnswer) ||
+      /curriculum does not (contain|provide|cover|mention)/i.test(rawAnswer) ||
+      /does not provide a definition/i.test(rawAnswer) ||
+      /not mentioned in the (provided\s+)?course/i.test(rawAnswer) ||
+      /not found in the (provided\s+)?(passages|course|curriculum|material)/i.test(rawAnswer) ||
+      /cannot be answered using the provided/i.test(rawAnswer) ||
+      /no information (about|regarding|is provided) in the provided/i.test(rawAnswer);
+
+    if (isMissingFromLp) {
+      this.logger.log(
+        `AI Assistant: Question "${question}" is not covered in assigned Learning Path content. Seamlessly switching to verified Web Search...`,
+      );
+      return this.generateWebAnswer(conv, history, question, startMs);
+    }
 
     // Pick 1 or 2 specific distinct lesson citations
     const seenLessons = new Set<string>();
@@ -316,7 +337,8 @@ export class AiAssistantService {
     }
 
     const cleanAnswer = sanitizeAiResponse(
-      answer
+      rawAnswer
+        .replace(/\[NOT_COVERED_IN_CURRICULUM\]\s*/gi, '')
         .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
         .replace(/\n*Source:\s*.*$/gim, '')
         .trim(),
@@ -363,8 +385,8 @@ export class AiAssistantService {
       return this.generateGeneralAnswer(conv, history, question, groqKey, startMs);
     }
 
-    // Limit to top 2 results for concise, targeted external context
-    const topWeb = webResults.slice(0, 2);
+    // Limit to top 3 results for concise, targeted external context
+    const topWeb = webResults.slice(0, 3);
     const webContext = topWeb
       .map(
         (r, i) =>

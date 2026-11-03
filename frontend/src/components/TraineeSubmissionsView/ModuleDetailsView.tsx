@@ -875,7 +875,17 @@ export function ModuleDetailsView({ moduleId, accessToken, userRole, onBack }: P
                   lockReason={lockReason}
                   isTrainee={isTrainee}
                   resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
-                  onVisitResource={(res) => res.id && progressService.visitResource(res.id, accessToken).catch(() => { })}
+                  visitedResourceIds={visitedResourceIds}
+                  onVisitResource={(res) => {
+                    if (res.id && isTrainee) {
+                      progressService.visitResource(res.id, accessToken).then(() => { void load(); }).catch(() => { });
+                    }
+                  }}
+                  onUnvisitResource={(res) => {
+                    if (res.id && isTrainee) {
+                      progressService.unvisitResource(res.id, accessToken).then(() => { void load(); }).catch(() => { });
+                    }
+                  }}
                   onMarkWatched={() => markLessonWatched(lesson.id)}
                   onClickLocked={() => toast.warning(lockReason)}
                 />

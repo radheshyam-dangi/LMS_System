@@ -21,12 +21,13 @@ import { parseLPDocument } from './parseLPDocument';
 import { validateLPDocument, type ValidationError } from './validateLPDocument';
 import { lpAuthoringService } from '../../services/lpAuthoringService';
 import { useToast } from '../../context/ToastContext';
-import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT, DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST } from '../../utils/defaultInstructions';
 
 import {
   ModuleNode,
   LessonNode,
   AssignmentNode,
+  InstructionBlockNode,
   VideoBlockNode,
   AudioBlockNode,
   ResourceBlockNode,
@@ -37,6 +38,7 @@ import {
   ModuleNodeView,
   LessonNodeView,
   AssignmentNodeView,
+  InstructionBlockView,
   VideoBlockView,
   AudioBlockView,
   ResourceBlockView,
@@ -462,6 +464,7 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
       ModuleNode.extend({ addNodeView() { return ReactNodeViewRenderer(ModuleNodeView); } }),
       LessonNode.extend({ addNodeView() { return ReactNodeViewRenderer(LessonNodeView); } }),
       AssignmentNode.extend({ addNodeView() { return ReactNodeViewRenderer(AssignmentNodeView); } }),
+      InstructionBlockNode.extend({ addNodeView() { return ReactNodeViewRenderer(InstructionBlockView); } }),
 
       // Media Blocks
       VideoBlockNode.extend({ addNodeView() { return ReactNodeViewRenderer(VideoBlockView); } }),
@@ -786,8 +789,8 @@ export const TiptapLPEditor: React.FC<TiptapLPEditorProps> = ({
       content: [
         { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
         {
-          type: 'paragraph',
-          content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }],
+          type: 'instructionBlock',
+          attrs: { id: uuidv4(), instructions: [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST] },
         },
         {
           type: 'questionBlock',

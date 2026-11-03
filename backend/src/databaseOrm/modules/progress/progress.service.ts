@@ -223,6 +223,14 @@ export class ProgressEntityService {
     return await this.visitRepository.save(visit);
   }
 
+  async unvisitResource(userId: string, resourceId: string) {
+    await this.visitRepository.delete({
+      user: { id: userId },
+      resource: { id: resourceId },
+    } as any);
+    return { success: true };
+  }
+
   async findForUser(userId: string) {
     return await this.repository.find({
       where: { user: { id: userId } },
@@ -632,7 +640,7 @@ export class ProgressEntityService {
     // 1. Fetch total items for the module
     const module = await this.datasource.getRepository('ModuleEntity').findOne({
       where: { id: moduleId },
-      relations: ['lessons', 'resources', 'lessons.assignments', 'learningPath'],
+      relations: ['lessons', 'resources', 'lessons.resources', 'lessons.assignments', 'learningPath'],
     });
 
     if (!module) return {
@@ -649,7 +657,7 @@ export class ProgressEntityService {
     };
 
     const totalLessons = (module.lessons || []).length;
-    const totalResources = (module.resources || []).length;
+    let totalResources = (module.resources || []).length;
     
     const fromLessons = (module.lessons || []).flatMap((l: any) => l.assignments || []);
     
@@ -686,7 +694,10 @@ export class ProgressEntityService {
 
     // 2. Fetch completed items for the user
     const lessonIds = (module.lessons || []).map((l: any) => l.id);
-    const resourceIds = (module.resources || []).map((r: any) => r.id);
+    const moduleResourceIds = (module.resources || []).map((r: any) => r.id);
+    const lessonResourceIds = (module.lessons || []).flatMap((l: any) => (l.resources || []).map((r: any) => r.id));
+    const resourceIds = Array.from(new Set([...moduleResourceIds, ...lessonResourceIds])).filter(Boolean);
+    totalResources = resourceIds.length;
     const assignmentIds = allAssignments.map((a: any) => a.id);
 
     // Completed lessons — fetch full rows to extract IDs

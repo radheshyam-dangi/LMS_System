@@ -30,6 +30,7 @@ import { AiEvaluationModule } from './databaseOrm/modules/aiEvaluation/aiEvaluat
 import { AssignmentChatModule } from './databaseOrm/modules/assignmentChat/assignmentChat.module';
 import { AiAssistantModule } from './databaseOrm/modules/aiAssistant/aiAssistant.module';
 import { TrainerAiAssistantModule } from './databaseOrm/modules/trainerAiAssistant/trainerAiAssistant.module';
+import { McpModule } from './mcp/mcp.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { TrainerAiAssistantModule } from './databaseOrm/modules/trainerAiAssista
     AssignmentChatModule,
     AiAssistantModule,
     TrainerAiAssistantModule,
+    McpModule,
   ],
 })
 export class AppModule {}

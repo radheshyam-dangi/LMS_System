@@ -1294,8 +1294,12 @@ export function ModulesManagementSection({
                       lockReason={node.lockReason}
                       isTrainee={isTrainee}
                       resources={lesson.resources || resources.filter((r: any) => String(r.lesson?.id || r.lessonId) === String(lesson.id))}
+                      visitedResourceIds={visitedResourceIds}
                       onVisitResource={(res) => {
                         if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => { });
+                      }}
+                      onUnvisitResource={(res) => {
+                        if (res.id && isTrainee) progressService.unvisitResource(res.id, accessToken).catch(() => { });
                       }}
                       onMarkWatched={markLessonWatched}
                       onStartLesson={() => {
@@ -1670,6 +1674,13 @@ export function ModulesManagementSection({
             onTriggerAssignment={(task) => {
               setActiveFullscreenLessonIndex(null);
               setInstructionTask(task);
+            }}
+            visitedResourceIds={visitedResourceIds}
+            onVisitResource={(res) => {
+              if (res.id && isTrainee) progressService.visitResource(res.id, accessToken).catch(() => {});
+            }}
+            onUnvisitResource={(res) => {
+              if (res.id && isTrainee) progressService.unvisitResource(res.id, accessToken).catch(() => {});
             }}
           />
         )}

@@ -13,6 +13,7 @@
  * for interactive rendering (toggles, inputs, etc).
  */
 import { Node, mergeAttributes } from '@tiptap/core';
+import { DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST } from '../../utils/defaultInstructions';
 
 /** UUID generator */
 const uid = () => crypto.randomUUID();
@@ -87,7 +88,7 @@ export const LessonNode = Node.create({
 export const AssignmentNode = Node.create({
   name: 'assignment',
   group: 'block',
-  content: '(heading | paragraph | questionBlock)*',
+  content: '(heading | instructionBlock | paragraph | questionBlock)*',
   defining: true,
   isolating: true,
 
@@ -102,6 +103,7 @@ export const AssignmentNode = Node.create({
       timerDuration: { default: { days: 3, hours: 0, minutes: 0 } },
       dependsOnLessonIds: { default: null },
       assignmentType: { default: 'Mixed' },
+      instructionsList: { default: null },
     };
   },
 
@@ -113,6 +115,35 @@ export const AssignmentNode = Node.create({
     return ['div', mergeAttributes(HTMLAttributes, {
       'data-type': 'assignment',
       class: 'tiptap-assignment-node',
+    }), 0];
+  },
+});
+
+// ─────────────────────────────────────────────
+// INSTRUCTION BLOCK NODE
+// ─────────────────────────────────────────────
+export const InstructionBlockNode = Node.create({
+  name: 'instructionBlock',
+  group: 'block',
+  atom: true,
+
+  addAttributes() {
+    return {
+      id: { default: () => uid() },
+      instructions: {
+        default: DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST,
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'div[data-type="instructionBlock"]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, {
+      'data-type': 'instructionBlock',
+      class: 'tiptap-instruction-block',
     }), 0];
   },
 });

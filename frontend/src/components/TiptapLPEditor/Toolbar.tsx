@@ -6,7 +6,7 @@ import {
   Command
 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT, DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST } from '../../utils/defaultInstructions';
 
 interface ToolbarProps {
   editor: Editor;
@@ -56,8 +56,8 @@ const makeAssignmentNode = () => ({
   content: [
     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
     {
-      type: 'paragraph',
-      content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }],
+      type: 'instructionBlock',
+      attrs: { id: uuidv4(), instructions: [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST] },
     },
     {
       type: 'questionBlock',

@@ -1003,6 +1003,242 @@ textarea.styled-form-control {
 }
 
 /* ─────────────────────────────────────────────
+   3.5. ASSIGNMENT INSTRUCTIONS LIST EDITOR
+   ───────────────────────────────────────────── */
+.assignment-instructions-editor {
+  margin: 14px 0 20px 0;
+}
+
+.instructions-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  transition: all 0.2s ease;
+}
+
+.instructions-card:hover {
+  border-color: #cbd5e1;
+}
+
+.instructions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.instructions-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.instructions-icon {
+  color: #6366f1;
+}
+
+.instructions-heading {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #334155;
+}
+
+.instructions-count-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.instructions-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.add-instruction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #ffffff;
+  border: 1px solid #c7d2fe;
+  color: #4f46e5;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.add-instruction-btn:hover {
+  background: #eef2ff;
+  border-color: #a5b4fc;
+}
+
+.instructions-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.instructions-list-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.instruction-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease;
+}
+
+.instruction-item-row:focus-within {
+  border-color: #a5b4fc;
+  box-shadow: 0 0 0 2px rgba(165, 180, 252, 0.2);
+}
+
+.instruction-num-badge {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ede9fe;
+  color: #6d28d9;
+  font-size: 11.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.instruction-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 13.5px;
+  color: #1e293b;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 28px;
+  outline: none;
+  font-family: inherit;
+  padding: 2px 0;
+}
+
+.instruction-input::placeholder {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.instruction-delete-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  margin-top: 2px;
+}
+
+.instruction-delete-btn:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+.instructions-empty-state {
+  text-align: center;
+  padding: 16px;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-restore-defaults {
+  background: #4f46e5;
+  color: #ffffff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-restore-defaults:hover {
+  background: #4338ca;
+}
+
+.instructions-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.ghost-add-instruction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: #6366f1;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.ghost-add-instruction-btn:hover {
+  background: #ede9fe;
+}
+
+.link-restore-defaults {
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 11.5px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.link-restore-defaults:hover {
+  color: #4338ca;
+}
+
+/* ─────────────────────────────────────────────
    4. QUESTION BLOCK NODE
    ───────────────────────────────────────────── */
 .question-block-view {

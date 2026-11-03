@@ -246,6 +246,17 @@ function parseAssignment(assignmentNode: any): ParsedAssignment {
       case 'paragraph':
         body += generateHTML(block);
         break;
+      case 'instructionBlock': {
+        const rawList: string[] = Array.isArray(block.attrs?.instructions) ? block.attrs.instructions : [];
+        const cleanList = rawList.map((s: string) => (s || '').trim()).filter(Boolean);
+        if (cleanList.length > 0) {
+          const listHtml = `<ol class="assessment-instructions-list">\n` +
+            cleanList.map((item: string) => `  <li>${item}</li>`).join('\n') +
+            `\n</ol>`;
+          body += (body ? '\n' : '') + listHtml;
+        }
+        break;
+      }
       case 'questionBlock': {
         let qText = '';
         const qOptions: string[] = [];

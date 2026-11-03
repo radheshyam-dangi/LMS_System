@@ -1,8 +1,8 @@
 import React from 'react';
 import { NodeViewWrapper, NodeViewContent } from '@tiptap/react';
-import { Settings, Lock, Unlock, Play, FileText, LayoutList, ChevronDown, ChevronRight, Video, FileAudio, Link2, Trash2, Clock } from 'lucide-react';
+import { Settings, Lock, Unlock, Play, FileText, LayoutList, ChevronDown, ChevronRight, Video, FileAudio, Link2, Trash2, Clock, Plus, ListOrdered } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT, DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST } from '../../utils/defaultInstructions';
 
 // ─────────────────────────────────────────────
 // MODULE NODE VIEW
@@ -285,7 +285,7 @@ export const ModuleNodeView = (props: any) => {
                   attrs: { id: uuidv4() },
                   content: [
                     { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-                    { type: 'paragraph', content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }] },
+                    { type: 'instructionBlock', attrs: { id: uuidv4(), instructions: [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST] } },
                     { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph' }] }
                   ]
                 });
@@ -459,7 +459,7 @@ export const LessonNodeView = (props: any) => {
               attrs: { id: uuidv4() },
               content: [
                 { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-                { type: 'paragraph', content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }] },
+                { type: 'instructionBlock', attrs: { id: uuidv4(), instructions: [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST] } },
                 { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph' }] }
               ]
             });
@@ -952,7 +952,7 @@ export const AssignmentNodeView = (props: any) => {
               attrs: { id: uuidv4() },
               content: [
                 { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
-                { type: 'paragraph', content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }] },
+                { type: 'instructionBlock', attrs: { id: uuidv4(), instructions: [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST] } },
                 { type: 'questionBlock', attrs: { id: uuidv4(), questionType: 'Subjective', maxPoints: 10, correctIndex: null }, content: [{ type: 'paragraph' }] }
               ]
             });
@@ -1139,10 +1139,20 @@ export const QuestionBlockView = (props: any) => {
 
             // Filter by assignment pool
             const poolIds = parent.attrs.dependsOnLessonIds;
-            if (poolIds === null) {
-              setLessonPool(allLessons); // all preceding
-            } else {
-              setLessonPool(allLessons.filter(l => poolIds.includes(l.id)));
+            const validLessons = poolIds === null
+              ? allLessons
+              : allLessons.filter(l => poolIds.includes(l.id));
+            setLessonPool(validLessons);
+
+            // Auto-default lessonDependencies if grounding is enabled but none selected yet
+            if (
+              node.attrs.requiresLessonGrounding !== false &&
+              (!node.attrs.lessonDependencies || node.attrs.lessonDependencies.length === 0) &&
+              validLessons.length > 0
+            ) {
+              updateAttributes({
+                lessonDependencies: [validLessons[0].id]
+              });
             }
           }
         }
@@ -1386,6 +1396,122 @@ export const QuestionBlockView = (props: any) => {
           </div>
         </div>
       )}
+    </NodeViewWrapper>
+  );
+};
+
+// ─────────────────────────────────────────────
+// INSTRUCTION BLOCK NODE VIEW (Trainer Interactive List)
+// ─────────────────────────────────────────────
+export const InstructionBlockView = (props: any) => {
+  const { node, updateAttributes } = props;
+  const rawList = node.attrs?.instructions;
+  const instructions: string[] = Array.isArray(rawList) && rawList.length > 0
+    ? rawList
+    : DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST;
+
+  const handleUpdate = (index: number, text: string) => {
+    const next = [...instructions];
+    next[index] = text;
+    updateAttributes({ instructions: next });
+  };
+
+  const handleAdd = () => {
+    const next = [...instructions, ''];
+    updateAttributes({ instructions: next });
+  };
+
+  const handleDelete = (index: number) => {
+    const next = instructions.filter((_, i) => i !== index);
+    updateAttributes({ instructions: next });
+  };
+
+  const handleResetDefaults = () => {
+    updateAttributes({ instructions: [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST] });
+  };
+
+  return (
+    <NodeViewWrapper className="assignment-instructions-editor" contentEditable={false}>
+      <div className="instructions-card">
+        <div className="instructions-header">
+          <div className="instructions-title-wrap">
+            <ListOrdered size={16} className="instructions-icon" />
+            <span className="instructions-heading">Assessment Instructions & Guidelines</span>
+            <span className="instructions-count-pill">
+              {instructions.length} {instructions.length === 1 ? 'Instruction' : 'Instructions'}
+            </span>
+          </div>
+          <div className="instructions-actions">
+            <button
+              type="button"
+              className="add-instruction-btn"
+              onClick={handleAdd}
+              title="Add another instruction point"
+            >
+              <Plus size={14} />
+              <span>Add Instruction</span>
+            </button>
+          </div>
+        </div>
+
+        <p className="instructions-hint">
+          Trainees see these guidelines in Step 1 before launching the assessment workspace. You can edit, delete, or add points.
+        </p>
+
+        <div className="instructions-list-wrap">
+          {instructions.map((text, idx) => (
+            <div key={idx} className="instruction-item-row">
+              <span className="instruction-num-badge">{idx + 1}</span>
+              <textarea
+                value={text}
+                onChange={(e) => handleUpdate(idx, e.target.value)}
+                placeholder={`Instruction ${idx + 1} (e.g. Review prerequisite lessons...)`}
+                className="instruction-input"
+                rows={Math.max(1, Math.ceil(text.length / 85))}
+              />
+              <button
+                type="button"
+                className="instruction-delete-btn"
+                onClick={() => handleDelete(idx)}
+                title="Delete this instruction"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+
+          {instructions.length === 0 && (
+            <div className="instructions-empty-state">
+              <span>No instructions configured.</span>
+              <button type="button" className="btn-restore-defaults" onClick={handleResetDefaults}>
+                Restore 5 Default Instructions
+              </button>
+            </div>
+          )}
+        </div>
+
+        {instructions.length > 0 && (
+          <div className="instructions-footer-row">
+            <button
+              type="button"
+              className="ghost-add-instruction-btn"
+              onClick={handleAdd}
+            >
+              <Plus size={13} />
+              <span>Add Instruction</span>
+            </button>
+            {instructions.length !== DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST.length && (
+              <button
+                type="button"
+                className="link-restore-defaults"
+                onClick={handleResetDefaults}
+              >
+                Reset to Standard Defaults
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </NodeViewWrapper>
   );
 };

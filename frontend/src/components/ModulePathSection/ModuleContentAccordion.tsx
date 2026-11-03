@@ -52,6 +52,8 @@ interface ModuleContentAccordionProps {
   onStartLesson: (lessonIndex: number) => void;
   onAttemptAssignment: (task: any) => void;
   onVisitResource?: (res: any) => void;
+  onUnvisitResource?: (res: any) => void;
+  visitedResourceIds?: Set<string> | string[];
   onMarkLessonWatched?: (lessonId: string) => void;
 }
 
@@ -163,6 +165,8 @@ export const ModuleContentAccordion: React.FC<ModuleContentAccordionProps> = ({
   onStartLesson,
   onAttemptAssignment,
   onVisitResource,
+  onUnvisitResource,
+  visitedResourceIds,
   onMarkLessonWatched,
 }) => {
   const [isExpanded, setIsExpanded] = useState<boolean>(isDefaultExpanded);
@@ -396,7 +400,9 @@ export const ModuleContentAccordion: React.FC<ModuleContentAccordionProps> = ({
                   lockReason={node.lockReason}
                   isTrainee={isTrainee}
                   resources={node.lesson.resources}
+                  visitedResourceIds={visitedResourceIds}
                   onVisitResource={onVisitResource}
+                  onUnvisitResource={onUnvisitResource}
                   onMarkWatched={onMarkLessonWatched}
                   onStartLesson={() => onStartLesson(lIdx)}
                   onClickLocked={() => {}}

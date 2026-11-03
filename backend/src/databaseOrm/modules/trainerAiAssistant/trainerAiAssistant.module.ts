@@ -18,6 +18,7 @@ import { AuthModule } from '../../auth/auth.module';
 import { LpAuthoringModule } from '../lpAuthoring/lpAuthoring.module';
 import { LearningPathModule } from '../learningPath/learningPath.module';
 import { AiAssistantModule } from '../aiAssistant/aiAssistant.module';
+import { McpModule } from '../../../mcp/mcp.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { AiAssistantModule } from '../aiAssistant/aiAssistant.module';
       LearningPathEntity,
     ]),
     AuthModule,
+    McpModule,
     forwardRef(() => LpAuthoringModule),
     forwardRef(() => LearningPathModule),
     forwardRef(() => AiAssistantModule),

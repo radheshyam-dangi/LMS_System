@@ -10,6 +10,7 @@ import { TrainerLpGenerationService } from './trainerLpGeneration.service';
 import { TrainerLpUpgradeService } from './trainerLpUpgrade.service';
 import { TrainerActionService } from './trainerAction.service';
 import { sanitizeAiResponse, findReferencedLp } from './trainerAiSanitizer';
+import { McpBridgeService } from '../../../mcp/mcp-bridge.service';
 
 import { IsString, IsNotEmpty, IsOptional, MaxLength } from 'class-validator';
 
@@ -51,6 +52,7 @@ export class TrainerAiAssistantService {
     private readonly generationService: TrainerLpGenerationService,
     private readonly upgradeService: TrainerLpUpgradeService,
     private readonly actionService: TrainerActionService,
+    private readonly mcpBridgeService: McpBridgeService,
   ) {
     this.convRepo = this.datasource.getRepository(TrainerAiConversationEntity);
     this.msgRepo = this.datasource.getRepository(TrainerAiMessageEntity);
@@ -133,20 +135,35 @@ export class TrainerAiAssistantService {
       } else if (classified.intent === 'upgrade_lp') {
         const hasActiveStudioContext = Boolean(dto.pathId);
 
-        // Fetch accessible learning paths: ONLY active, published, confirmed courses!
-        // Strictly exclude unconfirmed drafts (ai_draft), drafts, deleted, or archived courses.
-        const forbiddenStatuses = ['ai_draft', 'Ai_draft', 'draft', 'deleted', 'archived', 'unconfirmed'];
-        const allLps = await this.datasource.getRepository(LearningPathEntity).find({
+        // Fetch candidate learning paths: published courses AND recent paths owned by this trainer (including drafts)
+        const forbiddenStatuses = ['deleted', 'archived'];
+        const allPublishedLps = await this.datasource.getRepository(LearningPathEntity).find({
           relations: ['createdBy'],
           where: {
+            status: Not(In(['ai_draft', 'Ai_draft', 'draft', ...forbiddenStatuses])),
+          },
+          select: ['id', 'title', 'status', 'updatedAt'],
+          order: { updatedAt: 'DESC' },
+          take: 20,
+        });
+
+        const trainerRecentLps = await this.datasource.getRepository(LearningPathEntity).find({
+          relations: ['createdBy'],
+          where: {
+            createdBy: { id: trainerId },
             status: Not(In(forbiddenStatuses)),
           },
           select: ['id', 'title', 'status', 'updatedAt'],
           order: { updatedAt: 'DESC' },
-          take: 30,
+          take: 15,
         });
 
-        const matchedLp = findReferencedLp(question, allLps);
+        const combinedCandidateLps = [
+          ...trainerRecentLps,
+          ...allPublishedLps.filter((p) => !trainerRecentLps.some((t) => t.id === p.id)),
+        ];
+
+        const matchedLp = findReferencedLp(question, combinedCandidateLps);
 
         let targetId: string | undefined;
         let targetLpTitle: string | undefined;
@@ -156,114 +173,113 @@ export class TrainerAiAssistantService {
           targetLpTitle = matchedLp.title;
         } else if (dto.pathId) {
           targetId = dto.pathId;
-          const currentLp = allLps.find(p => p.id === dto.pathId);
+          const currentLp = combinedCandidateLps.find((p) => p.id === dto.pathId);
           targetLpTitle = currentLp?.title;
-        } else if (pendingAction?.targetId && pendingAction.payload?.conversationId === conv.id) {
+        } else if (pendingAction?.targetId) {
           targetId = pendingAction.targetId;
-          const pendingLp = allLps.find(p => p.id === pendingAction.targetId);
+          const pendingLp = combinedCandidateLps.find((p) => p.id === pendingAction.targetId);
           targetLpTitle = pendingLp?.title;
+        } else {
+          // Check for the most recent LP action in this conversation
+          const lastActionInConv = await this.actionRepo.findOne({
+            where: { trainerId },
+            order: { createdAt: 'DESC' },
+          });
+          if (lastActionInConv?.targetId && lastActionInConv.payload?.conversationId === conv.id) {
+            targetId = lastActionInConv.targetId;
+            const lp = combinedCandidateLps.find((p) => p.id === targetId);
+            targetLpTitle = lp?.title;
+          } else if (trainerRecentLps.length > 0) {
+            targetId = trainerRecentLps[0].id;
+            targetLpTitle = trainerRecentLps[0].title;
+          }
         }
 
-        // Fetch target LP with createdBy to verify ownership
         let targetLp: LearningPathEntity | null = null;
         if (targetId) {
           targetLp = await this.datasource.getRepository(LearningPathEntity).findOne({
             where: { id: targetId },
-            relations: ['createdBy'],
+            relations: [
+              'createdBy',
+              'modules',
+              'modules.lessons',
+              'modules.lessons.resources',
+              'modules.assignments',
+            ],
           });
           if (targetLp) {
             targetLpTitle = targetLp.title;
           }
         }
 
-        // ── SCENARIO A: Global AI Assistant Mode (outside Curriculum Studio) ────────
-        if (!hasActiveStudioContext) {
-          const { operationType, summary: crudSummary } = summarizeCrudOperation(question);
+        if (!targetId || !targetLp) {
+          const lpList = combinedCandidateLps.length > 0
+            ? combinedCandidateLps.slice(0, 5).map((lp, idx) => `${idx + 1}. **${lp.title}**`).join('\n')
+            : 'No learning paths currently available.';
 
-          if (targetId && targetLp) {
-            const ownerId = targetLp.createdBy?.id || (targetLp as any)?.createdById;
-            const isOwner = Boolean(ownerId && String(ownerId).toLowerCase() === String(trainerId).toLowerCase()) || isAdmin;
-
-            if (isOwner) {
-              answer = `**Curriculum Modification: Open in Curriculum Studio**\n\n` +
-                `You are currently in **Global AI Assistant** mode. To add, edit, or delete modules and lessons in **"${targetLpTitle}"**, please open this course in **Curriculum Studio**:\n\n` +
-                `- Go to **Manage Curriculum**\n` +
-                `- Click **Edit Learning Path** for **"${targetLpTitle}"**\n` +
-                `- Open the **Curriculum AI Assistant** in the editor toolbar to apply modifications with live canvas preview.\n\n` +
-                `*From the Global Assistant, you can create brand new Learning Paths (e.g. "Create LP: [Title]") or ask for course details.*`;
-            } else {
-              answer = `**Access Notice: Learning Path Ownership Required**\n\n` +
-                `You cannot modify **"${targetLpTitle}"** because you are not the designated owner of this Learning Path.\n\n` +
-                `Only the course creator or an institutional administrator has authorization to edit modules, lessons, and assessments.`;
-            }
-          } else {
-            const lpList = allLps.length > 0
-              ? allLps.slice(0, 6).map((lp, idx) => `${idx + 1}. **${lp.title}**`).join('\n')
-              : 'No learning paths currently available in your catalog.';
-
-            answer = `**Curriculum Modification: Open in Curriculum Studio**\n\n` +
-              `Curriculum modifications (adding, editing, or deleting modules, lessons, and assignments) cannot be made from the Global Assistant.\n\n` +
-              `To update a course, please open it in **Curriculum Studio**:\n` +
-              `- Go to **Manage Curriculum**\n` +
-              `- Click **Edit Learning Path** for the desired course\n` +
-              `- Open the **Curriculum AI Assistant** in the editor toolbar to make changes.\n\n` +
-              `**Available Learning Paths:**\n\n${lpList}\n\n` +
-              `*From the Global Assistant, you can create brand new Learning Paths (e.g. "Create LP: [Title]") or ask for course details.*`;
-          }
+          answer = `Unable to determine which Learning Path you would like to update.\n\n` +
+            `Please specify the name of the Learning Path (e.g. "In LP LLM, add 2 modules...") or open it in **Curriculum Studio**.\n\n` +
+            `**Available Learning Paths:**\n\n${lpList}`;
         } else {
-          // ── SCENARIO B: Curriculum Studio Mode (Inside LPEditorPage) ────────
-          if (!targetId || !targetLp) {
-            answer = `Unable to locate the active Learning Path for this operation. Please reopen the course in Curriculum Studio and try again.`;
+          // Verify OWNERSHIP: Only owner or admin can mutate the curriculum!
+          const ownerId = targetLp.createdBy?.id || (targetLp as any)?.createdById;
+          const isOwner = Boolean(ownerId && String(ownerId).toLowerCase() === String(trainerId).toLowerCase()) || isAdmin;
+
+          if (!isOwner) {
+            answer = `**Access Denied: Learning Path Ownership Required**\n\n` +
+              `You cannot perform modifications on **"${targetLpTitle}"** because you are not the designated owner of this Learning Path.\n\n` +
+              `Only the course creator or an administrator has permission to modify its curriculum.`;
           } else {
-            // Verify OWNERSHIP: Only owner or admin can mutate the curriculum!
-            const ownerId = targetLp.createdBy?.id || (targetLp as any)?.createdById;
-            const isOwner = Boolean(ownerId && String(ownerId).toLowerCase() === String(trainerId).toLowerCase()) || isAdmin;
+            const { operationType, summary: crudSummary } = summarizeCrudOperation(question);
 
-            if (!isOwner) {
-              answer = `**Access Denied: Learning Path Ownership Required**\n\n` +
-                `You cannot perform CRUD operations on **"${targetLpTitle}"** because you are not the designated owner of this Learning Path.\n\n` +
-                `Only the owner or an administrator has permission to add, edit, or remove modules, lessons, and assessments.`;
-            } else {
-              // Owner verified! Stage confirm_crud action
-              const { operationType, summary: crudSummary } = summarizeCrudOperation(question);
+            // Serialize pre-update snapshot for instant rollback on cancel
+            const previousTree = serializeLpToAuthoringPayload(targetLp);
 
-              const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
-              const action = this.actionRepo.create({
-                trainerId,
-                actionType: 'confirm_crud',
-                targetId,
-                status: 'pending',
-                payload: {
-                  conversationId: conv.id,
-                  lpId: targetId,
-                  lpTitle: targetLpTitle,
-                  instruction: question,
-                  operationType,
-                  summary: crudSummary,
-                },
-                expiresAt,
-              });
-              const savedAction = await this.actionRepo.save(action);
+            // Apply the upgrade to the curriculum in the DB immediately so visual preview is updated!
+            const upgradeRes = await this.upgradeService.upgradeLearningPath(targetId, question, trainerId);
 
-              actionCard = {
-                actionId: savedAction.id,
-                actionType: 'confirm_crud',
-                type: 'confirm_crud',
+            const expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+            const action = this.actionRepo.create({
+              trainerId,
+              actionType: 'confirm_crud',
+              targetId,
+              status: 'pending',
+              payload: {
+                conversationId: conv.id,
                 lpId: targetId,
                 lpTitle: targetLpTitle,
+                instruction: question,
                 operationType,
                 summary: crudSummary,
-                status: 'pending',
-              };
+                previousTree,
+                moduleCount: upgradeRes.moduleCount,
+                lessonCount: upgradeRes.lessonCount,
+                assignmentCount: upgradeRes.assignmentCount,
+              },
+              expiresAt,
+            });
+            const savedAction = await this.actionRepo.save(action);
 
-              const isDeletion = operationType === 'delete';
-              const actionWord = isDeletion ? 'removal' : (operationType === 'create' ? 'addition' : 'update');
+            actionCard = {
+              actionId: savedAction.id,
+              actionType: 'confirm_crud',
+              type: 'confirm_crud',
+              lpId: targetId,
+              lpTitle: targetLpTitle,
+              moduleCount: upgradeRes.moduleCount,
+              lessonCount: upgradeRes.lessonCount,
+              assignmentCount: upgradeRes.assignmentCount,
+              operationType,
+              summary: crudSummary,
+              status: 'pending',
+            };
 
-              answer = `**Proposed Curriculum Change: Confirmation Required**\n\n` +
-                `**Target Learning Path:** "${targetLpTitle}"\n` +
-                `**Proposed Operation:** ${crudSummary}\n\n` +
-                `Please confirm this ${actionWord} before modifications are applied to the curriculum. Click **Confirm & Apply** below or reply with **"Confirm"** to proceed. You can also reply with **"Cancel"** to abort.`;
-            }
+            upgradedLpId = targetId;
+
+            answer = `**Proposed Curriculum Change: Confirmation Required**\n\n` +
+              `**Target Learning Path:** "${targetLpTitle}"\n` +
+              `**Proposed Operation:** ${crudSummary}\n\n` +
+              `Please confirm this update before modifications are applied to your catalog. Click **Preview in Studio** to review the live canvas in Curriculum Studio, click **Confirm & Apply** to finalize and publish to your catalog, or click the **Delete** icon to discard these updates and revert to the previous version.`;
           }
         }
       } else if (classified.intent === 'create_lp') {
@@ -293,6 +309,9 @@ export class TrainerAiAssistantService {
           const warningNote = genResult.warning ? `\n\n> *Notice: ${genResult.warning}*` : '';
           answer = `I have researched and generated a complete curriculum for **"${genResult.learningPath.title}"** with **${genResult.moduleCount} modules**, **${genResult.lessonCount} lessons** (including verified tutorial links and documentation), and **${genResult.assignmentCount} assessments**.${warningNote}\n\n*This curriculum is currently saved as an AI draft and is not visible to trainees.* Click **Preview in Studio** to review nodes or click **Confirm & Publish** when you are ready.`;
         }
+      } else if (classified.intent === 'trainee_query') {
+        const queryToUse = classified.sanitizedQuery || question;
+        answer = await this.mcpBridgeService.handleTraineeInquiry(queryToUse, history);
       } else {
         // Q&A / Curriculum Guidance / Deep node inquiries with full multi-turn conversational history
         const queryToUse = classified.sanitizedQuery || question;
@@ -425,59 +444,171 @@ export class TrainerAiAssistantService {
   }
 }
 
+export function serializeLpToAuthoringPayload(lp: LearningPathEntity): any {
+  return {
+    id: lp.id,
+    title: lp.title,
+    description: lp.description,
+    level: lp.difficulty || 'Intermediate',
+    status: lp.status || 'ai_draft',
+    origin: lp.origin || 'ai',
+    duration: lp.duration || '12 weeks',
+    skillsTags: Array.isArray(lp.skillsTags) ? lp.skillsTags : [],
+    modules: (lp.modules || []).map((m: any, mIdx: number) => {
+      const lessons = (m.lessons || []).map((l: any, lIdx: number) => ({
+        id: l.id,
+        title: l.title || `Lesson ${lIdx + 1}`,
+        description: l.description || '',
+        videos: Array.isArray(l.videos) ? l.videos : (l.videoUrl ? [{ url: l.videoUrl, title: l.title }] : []),
+        audios: Array.isArray(l.audios) ? l.audios : [],
+        resources: Array.isArray(l.resources)
+          ? l.resources.map((r: any) => ({
+              url: r.url,
+              label: r.title || r.label || 'Link',
+              type: r.type || 'Link',
+            }))
+          : [],
+      }));
+
+      const createdLessonIds = lessons.map((l: any) => l.id);
+
+      const assignments = (m.assignments || []).map((a: any, aIdx: number) => {
+        const questions = (a.questions || []).map((q: any) => ({
+          id: q.id,
+          text: q.text || 'Question',
+          type: q.type === 'MCQ' ? 'MCQ' : 'Subjective',
+          maxPoints: Number(q.maxPoints) || 10,
+          options: q.type === 'MCQ' ? (q.options || ['Option A', 'Option B', 'Option C', 'Option D']) : undefined,
+          correctIndex: q.type === 'MCQ' ? (Number(q.correctIndex) || 0) : undefined,
+          expectedAnswerGuideline: q.expectedAnswerGuideline || undefined,
+          requiresLessonGrounding: true,
+          lessonDependencies: createdLessonIds,
+        }));
+
+        return {
+          id: a.id,
+          title: a.title || `Module ${mIdx + 1} Assessment`,
+          body: a.description || a.instructions || a.body || '',
+          questions,
+          dependsOnLessonIds: createdLessonIds,
+          lockConfig: a.lockConfig || { enabled: true },
+          evaluation: a.evaluation || {
+            autoEvaluateWithAI: true,
+            humanInterventionRequired: true,
+          },
+          timerDuration: a.timerDuration || { days: 7, hours: 0, minutes: 0 },
+          countdownStart: a.countdownStart || 'taskUnlocked',
+        };
+      });
+
+      return {
+        id: m.id,
+        title: m.title || `Module ${mIdx + 1}`,
+        description: m.description || '',
+        sequentialModuleLock: m.sequentialModuleLock ?? true,
+        sequentialLessonLock: m.sequentialLessonLock ?? true,
+        learningObjectives: m.objectives || m.learningObjectives || [],
+        learningOutcomes: m.outcomes || m.learningOutcomes || [],
+        lessons,
+        assignments,
+      };
+    }),
+  };
+}
+
 function summarizeCrudOperation(instruction: string): { operationType: 'delete' | 'create' | 'update'; summary: string } {
   const lower = instruction.toLowerCase();
-  const isDelete = /\b(?:delete|remove|drop|discard|omit|trash|erase|still\s+visible)\b/i.test(lower);
-  const isAdd = /\b(?:add|insert|append|attach|create|new|make)\b/i.test(lower);
+  const hasDelete = /\b(?:delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|discard(?:ed|s)?|omit(?:ted|s)?|trash(?:ed|es)?|eras(?:e|ed|es|ing)|still\s+visible)\b/i.test(lower);
+  const hasAdd = /\b(?:add[s]?|adding|insert(?:ed|ing|s)?|append(?:ed|ing|s)?|attach(?:ed|ing|s)?|creat(?:e|ed|ing|es)|build(?:ing)?|new|make)\b/i.test(lower);
 
-  // 1. Question removal/addition:
-  // e.g. from this assignment "Module 1 Hands-On Assessment" remove question 2
-  const qMatch = lower.match(/\bquest(?:ion)?\s*([0-9]+)\b/i);
-  const assignQuote = instruction.match(/["'“]([^"'“”]+)["'”]/i);
-  const assignMatch = lower.match(/\b(?:assignment|assessment|task|quiz)\s*([0-9]+)\b/i);
+  const parts: string[] = [];
 
-  if (qMatch) {
-    const qNum = qMatch[1];
-    const assignName = assignQuote ? `"${assignQuote[1]}"` : (assignMatch ? `Assessment ${assignMatch[1]}` : 'the assignment');
-    if (isDelete) {
-      return { operationType: 'delete', summary: `Remove Question ${qNum} from assignment ${assignName}` };
+  // Check additions
+  if (hasAdd) {
+    const modCountMatch = lower.match(/\b(?:add|insert|create|new)\s*([0-9]+)\s*(?:more\s+)?mod(?:ule)?/i);
+    const modCount = modCountMatch ? modCountMatch[1] : null;
+
+    const lessonCountMatch = lower.match(/\b(?:with\s+)?(?:([0-9]+)|one|two|three)\s+less(?:on)?/i);
+    let lessonInfo = '';
+    if (lessonCountMatch) {
+      const rawNum = lessonCountMatch[1] || (lessonCountMatch[0].includes('one') ? '1' : lessonCountMatch[0].includes('two') ? '2' : '3');
+      lessonInfo = `${rawNum} lesson${rawNum === '1' ? '' : 's'}`;
     }
-    return { operationType: isAdd ? 'create' : 'update', summary: `Add Question ${qNum} to assignment ${assignName}` };
-  }
 
-  // 2. Lesson removal/addition:
-  const lessonMatch = lower.match(/\bless(?:on)?\s*([0-9]+)\b/i);
-  if (lessonMatch) {
-    const lNum = lessonMatch[1];
-    if (isDelete) {
-      return { operationType: 'delete', summary: `Permanently delete Lesson ${lNum} from the curriculum` };
+    const assignCountMatch = lower.match(/\b(?:and\s+)?(?:([0-9]+)|one|two|three)\s+(?:assignment|assessment|task|quiz)/i);
+    let assignInfo = '';
+    if (assignCountMatch) {
+      const rawNum = assignCountMatch[1] || (assignCountMatch[0].includes('one') ? '1' : assignCountMatch[0].includes('two') ? '2' : '3');
+      const isMcq = /\bmcq\b/i.test(lower);
+      assignInfo = `${rawNum} ${isMcq ? 'MCQ ' : ''}assessment${rawNum === '1' ? '' : 's'}`;
     }
-    return { operationType: isAdd ? 'create' : 'update', summary: `Add Lesson ${lNum} to the curriculum` };
-  }
 
-  // 3. Module removal/addition:
-  const modMatch = lower.match(/\bmod(?:ule)?\s*([0-9]+)\b/i);
-  if (modMatch) {
-    const mNum = modMatch[1];
-    if (isDelete) {
-      return { operationType: 'delete', summary: `Permanently delete Module ${mNum} from the curriculum` };
+    if (modCount) {
+      const details = [lessonInfo, assignInfo].filter(Boolean).join(' and ');
+      parts.push(`Add ${modCount} module${modCount === '1' ? '' : 's'}${details ? ` (with ${details} each)` : ''}`);
+    } else {
+      const singleModMatch = lower.match(/\bmod(?:ule)?\s*([0-9]+)\b/i);
+      const lessonMatch = lower.match(/\bless(?:on)?\s*([0-9]+)?\b/i);
+      if (lessonMatch && singleModMatch && !hasDelete) {
+        parts.push(`Add lesson to Module ${singleModMatch[1]}`);
+      } else if (singleModMatch && !hasDelete) {
+        parts.push(`Add Module ${singleModMatch[1]} to the curriculum`);
+      } else {
+        parts.push(`Add requested curriculum components`);
+      }
     }
-    return { operationType: isAdd ? 'create' : 'update', summary: `Add Module ${mNum} to the curriculum` };
   }
 
-  // 4. Assignment removal/addition:
-  if (assignMatch || assignQuote) {
-    const aName = assignQuote ? `"${assignQuote[1]}"` : `Assessment ${assignMatch![1]}`;
-    if (isDelete) {
-      return { operationType: 'delete', summary: `Permanently delete assignment ${aName} from the curriculum` };
+  // Check deletions
+  if (hasDelete) {
+    // 1. Question deletion
+    const qMatch = lower.match(/\bquest(?:ion)?\s*([0-9]+)\b/i);
+    const assignQuote = instruction.match(/["'“]([^"'“”]+)["'”]/i);
+    const assignMatch = lower.match(/\b(?:assignment|assessment|task|quiz)\s*([0-9]+)\b/i);
+
+    if (qMatch) {
+      const qNum = qMatch[1];
+      const assignName = assignQuote ? `"${assignQuote[1]}"` : (assignMatch ? `Assessment ${assignMatch[1]}` : 'the assignment');
+      parts.push(`Remove Question ${qNum} from ${assignName}`);
+    } else {
+      // 2. Module deletion
+      const modDelMatch =
+        lower.match(/(?:delete[ds]?|remov(?:e|ed|ing)|drop(?:ped)?|omit(?:ted)?|trash(?:ed)?)\s+(?:only\s+)?(?:the\s+)?mod(?:ule)?\s*([0-9]+)/i) ||
+        lower.match(/\bmod(?:ule)?\s*([0-9]+)\s*.*?(?:delete[ds]?|remov(?:e|ed|es|ing)|drop|trash)/i);
+
+      const namedModMatch =
+        instruction.match(/mod(?:ule)?\s*[0-9]*\s*[-–—:]\s*["'“]([^"'“”]+)["'”]/i) ||
+        instruction.match(/["'“]([^"'“”]+)["'”]/i);
+
+      if (modDelMatch) {
+        const mNum = modDelMatch[1];
+        const titleSuffix = namedModMatch ? ` ("${namedModMatch[1]}")` : '';
+        parts.push(`Delete Module ${mNum}${titleSuffix}`);
+      } else if (namedModMatch) {
+        parts.push(`Delete Module "${namedModMatch[1]}"`);
+      } else {
+        // 3. Lesson deletion
+        const lessDelMatch =
+          lower.match(/(?:delete[ds]?|remov(?:e|ed|ing)|drop(?:ped)?|omit(?:ted)?|trash(?:ed)?)\s+(?:the\s+)?less(?:on)?\s*([0-9]+)/i) ||
+          lower.match(/\bless(?:on)?\s*([0-9]+)\s*.*?(?:delete[ds]?|remov(?:e|ed|es|ing)|still\s+visible)/i);
+
+        if (lessDelMatch) {
+          parts.push(`Delete Lesson ${lessDelMatch[1]}`);
+        } else if (assignMatch || (assignQuote && !hasAdd)) {
+          const aName = assignQuote ? `"${assignQuote[1]}"` : `Assessment ${assignMatch![1]}`;
+          parts.push(`Delete assessment ${aName}`);
+        } else {
+          parts.push(`Remove specified item`);
+        }
+      }
     }
-    return { operationType: isAdd ? 'create' : 'update', summary: `Add assignment ${aName} to the curriculum` };
   }
 
-  // Generic fallback:
-  if (isDelete) {
-    return { operationType: 'delete', summary: `Remove specified item according to: "${instruction}"` };
-  }
-  return { operationType: isAdd ? 'create' : 'update', summary: `Apply modifications according to: "${instruction}"` };
+  const operationType: 'delete' | 'create' | 'update' =
+    hasDelete && hasAdd ? 'update' : (hasDelete ? 'delete' : (hasAdd ? 'create' : 'update'));
+
+  const summary = parts.length > 0 ? parts.join('; ') : `Apply modifications according to: "${instruction}"`;
+
+  return { operationType, summary };
 }
 

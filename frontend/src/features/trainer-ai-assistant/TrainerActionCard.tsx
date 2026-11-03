@@ -17,6 +17,7 @@ interface TrainerActionCardProps {
   onConfirm: (actionId: string) => Promise<any>;
   onCancel: (actionId: string) => Promise<any>;
   onCloseDrawer?: () => void;
+  conversationId?: string | null;
 }
 
 export const TrainerActionCard: React.FC<TrainerActionCardProps> = ({
@@ -24,6 +25,7 @@ export const TrainerActionCard: React.FC<TrainerActionCardProps> = ({
   onConfirm,
   onCancel,
   onCloseDrawer,
+  conversationId,
 }) => {
   const navigate = useNavigate();
   const [isConfirming, setIsConfirming] = useState(false);
@@ -31,8 +33,25 @@ export const TrainerActionCard: React.FC<TrainerActionCardProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const handlePreview = () => {
-    navigate(`/learning-paths/${card.lpId}/edit`);
-    window.dispatchEvent(new CustomEvent('lp_preview_requested', { detail: { lpId: card.lpId } }));
+    const activeConvId = conversationId || sessionStorage.getItem('skillforge_trainer_ai_conv_id') || undefined;
+    if (activeConvId) {
+      try {
+        sessionStorage.setItem('skillforge_trainer_ai_conv_id', activeConvId);
+      } catch {
+        // non-fatal
+      }
+    }
+    navigate(`/learning-paths/${card.lpId}/edit`, {
+      state: {
+        openAiAssistant: true,
+        conversationId: activeConvId,
+      },
+    });
+    window.dispatchEvent(
+      new CustomEvent('lp_preview_requested', {
+        detail: { lpId: card.lpId, conversationId: activeConvId },
+      }),
+    );
   };
 
   const handleConfirm = async () => {
@@ -40,6 +59,11 @@ export const TrainerActionCard: React.FC<TrainerActionCardProps> = ({
     setError(null);
     try {
       await onConfirm(card.actionId);
+      window.dispatchEvent(
+        new CustomEvent('lp_preview_requested', {
+          detail: { lpId: card.lpId, conversationId },
+        }),
+      );
     } catch (err: any) {
       setError(err.message || 'Failed to confirm');
     } finally {
@@ -52,6 +76,11 @@ export const TrainerActionCard: React.FC<TrainerActionCardProps> = ({
     setError(null);
     try {
       await onCancel(card.actionId);
+      window.dispatchEvent(
+        new CustomEvent('lp_preview_requested', {
+          detail: { lpId: card.lpId, conversationId },
+        }),
+      );
     } catch (err: any) {
       setError(err.message || 'Failed to discard draft');
     } finally {

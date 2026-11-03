@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import DOMPurify from 'dompurify';
 import { resolveAssignmentInstructions } from '../../utils/assignmentInstructions';
+import { parseInstructionsToList } from '../../utils/defaultInstructions';
 
 interface AssignmentInstructionModalProps {
   task: any;
@@ -317,53 +318,106 @@ export const AssignmentInstructionModal: React.FC<AssignmentInstructionModalProp
               borderRadius: '12px',
               display: 'flex',
               flexDirection: 'column',
-              gap: '10px',
+              gap: '12px',
             }}
           >
-            <h4
-              style={{
-                fontSize: '13px',
-                fontWeight: 700,
-                color: '#334155',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                margin: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              Assessment Instructions
-            </h4>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h4
+                style={{
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  color: '#334155',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.04em',
+                  margin: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <ListOrdered size={15} color="#4f46e5" />
+                <span>Assessment Instructions</span>
+              </h4>
+              {(() => {
+                const rawText = resolved.content || task.instructions || task.description || '';
+                const items = parseInstructionsToList(rawText);
+                return (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: '#ede9fe',
+                      color: '#5b21b6',
+                    }}
+                  >
+                    {items.length} {items.length === 1 ? 'Guideline' : 'Guidelines'}
+                  </span>
+                );
+              })()}
+            </div>
 
-            {resolved.content ? (
-              <div
-                style={{
-                  fontSize: '13.5px',
-                  lineHeight: 1.65,
-                  color: '#334155',
-                }}
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(resolved.content),
-                }}
-              />
-            ) : task.description ? (
-              <div
-                style={{
-                  fontSize: '13.5px',
-                  lineHeight: 1.65,
-                  color: '#334155',
-                }}
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(task.description),
-                }}
-              />
-            ) : (
-              <p style={{ fontSize: '13.5px', color: '#64748b', margin: 0 }}>
-                Please review all prompt questions carefully before submitting your final response.
-                Answers can be edited or reviewed prior to final submission.
-              </p>
-            )}
+            {(() => {
+              const rawText = resolved.content || task.instructions || task.description || '';
+              const items = parseInstructionsToList(rawText);
+
+              if (items.length === 0) {
+                return (
+                  <p style={{ fontSize: '13.5px', color: '#64748b', margin: 0 }}>
+                    Please review all prompt questions carefully before submitting your final response.
+                    Answers can be edited or reviewed prior to final submission.
+                  </p>
+                );
+              }
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {items.map((item, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '12px',
+                        padding: '12px 14px',
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '10px',
+                        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.02)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          borderRadius: '50%',
+                          background: '#ede9fe',
+                          color: '#6d28d9',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          marginTop: '1px',
+                        }}
+                      >
+                        {item.number || idx + 1}
+                      </div>
+                      <div style={{ flex: 1, fontSize: '13.5px', lineHeight: 1.55 }}>
+                        {item.title && (
+                          <strong style={{ color: '#0f172a', fontWeight: 700, marginRight: '6px' }}>
+                            {item.title.endsWith(':') ? item.title : `${item.title}:`}
+                          </strong>
+                        )}
+                        <span style={{ color: '#334155' }}>{item.body}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
         </div>

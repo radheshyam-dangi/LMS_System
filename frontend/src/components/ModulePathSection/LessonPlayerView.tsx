@@ -15,6 +15,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
+  Circle,
+  Check,
   Play,
   ExternalLink,
   BookOpen,
@@ -43,6 +45,9 @@ interface LessonPlayerViewProps {
   onSelectLessonIndex: (index: number) => void;
   onMarkLessonCompleted: (lessonId: string) => Promise<void>;
   onTriggerAssignment: (task: any) => void;
+  visitedResourceIds?: Set<string> | string[];
+  onVisitResource?: (res: any) => void;
+  onUnvisitResource?: (res: any) => void;
 }
 
 function getEmbedUrl(rawUrl: string): string | null {
@@ -112,6 +117,9 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
   onSelectLessonIndex,
   onMarkLessonCompleted,
   onTriggerAssignment,
+  visitedResourceIds,
+  onVisitResource,
+  onUnvisitResource,
 }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMarkingComplete, setIsMarkingComplete] = useState(false);
@@ -133,6 +141,23 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
   if (!isOpen || !currentNode) return null;
 
   const { lesson, isCompleted, isLocked, dependentAssignments } = currentNode;
+
+  // Track completed media items (video & individual resources)
+  const [completedItems, setCompletedItems] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(`lesson_items_${lesson.id}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`lesson_items_${lesson.id}`);
+      setCompletedItems(saved ? new Set(JSON.parse(saved)) : new Set());
+    } catch {}
+  }, [lesson.id]);
 
   // Resolve video sources
   const videoList: { url: string; title?: string }[] = [];
@@ -164,6 +189,99 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
       }
     });
   }
+
+  // Dedicated state for visited resources (tracked completely independently from lesson completion)
+  // By default, ALL resources start in PENDING status unless explicitly visited in DB or passed via props.
+  const [visitedResources, setVisitedResources] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    if (visitedResourceIds) {
+      if (visitedResourceIds instanceof Set) {
+        visitedResourceIds.forEach((id) => initial.add(String(id)));
+      } else if (Array.isArray(visitedResourceIds)) {
+        visitedResourceIds.forEach((id) => initial.add(String(id)));
+      }
+    }
+    return initial;
+  });
+
+  // Sync state whenever visitedResourceIds updates from backend stats
+  useEffect(() => {
+    if (visitedResourceIds) {
+      const updated = new Set<string>();
+      if (visitedResourceIds instanceof Set) {
+        visitedResourceIds.forEach((id) => updated.add(String(id)));
+      } else if (Array.isArray(visitedResourceIds)) {
+        visitedResourceIds.forEach((id) => updated.add(String(id)));
+      }
+      setVisitedResources(updated);
+    }
+  }, [visitedResourceIds]);
+
+  // Clean up any old un-scoped localStorage keys
+  useEffect(() => {
+    try {
+      localStorage.removeItem(`lesson_visited_resources_${lesson.id}`);
+    } catch {}
+  }, [lesson.id]);
+
+  const isResourceVisited = (resId: string): boolean => {
+    return visitedResources.has(String(resId));
+  };
+
+  /**
+   * Toggles ONLY this resource's visited status.
+   * If pending -> becomes visited.
+   * If visited -> becomes pending.
+   * Independent: Does NOT complete or uncomplete the lesson/video!
+   */
+  const handleResourceRadioToggle = (resId: string, resObj?: any) => {
+    const strId = String(resId);
+    setVisitedResources((prev) => {
+      const next = new Set(prev);
+      const isAlreadyVisited = next.has(strId);
+      if (isAlreadyVisited) {
+        next.delete(strId);
+        if (onUnvisitResource && resObj) {
+          onUnvisitResource(resObj);
+        }
+      } else {
+        next.add(strId);
+        if (onVisitResource && resObj) {
+          onVisitResource(resObj);
+        }
+      }
+      return next;
+    });
+  };
+
+  /**
+   * Opening a resource marks ONLY this resource as visited.
+   * Independent: Does NOT complete or uncomplete the lesson/video!
+   */
+  const handleResourceOpen = (resId: string, resObj?: any) => {
+    const strId = String(resId);
+    setVisitedResources((prev) => {
+      const next = new Set(prev);
+      next.add(strId);
+      return next;
+    });
+    if (onVisitResource && resObj) {
+      onVisitResource(resObj);
+    }
+  };
+
+  /**
+   * Toggles ONLY the lesson completion status.
+   * Independent: Does NOT alter resource visited status!
+   */
+  const handleVideoRadioToggle = (_videoId: string) => {
+    onMarkLessonCompleted(lesson.id);
+  };
+
+  const handleWatchVideo = (_videoId: string) => {
+    // Watching video inline or opening external tab
+    // Does NOT alter resource visited status!
+  };
 
   const primaryVideo = videoList[0];
   const embedUrl = primaryVideo ? getEmbedUrl(primaryVideo.url) : null;
@@ -352,35 +470,43 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
           </button>
 
           {/* Next / Continue Progression Button */}
-          <button
-            type="button"
-            onClick={handleNextProgression}
-            disabled={isMarkingComplete}
-            style={{
-              padding: '7px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
-              color: '#ffffff',
-              fontSize: '12.5px',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              boxShadow: '0 2px 6px rgba(79, 70, 229, 0.25)',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <span>
-              {hasDependentAssignment
-                ? 'Continue to Assignment'
-                : hasNextLesson
-                ? 'Next Lesson'
-                : 'Finish Module'}
-            </span>
-            <ChevronRight size={14} />
-          </button>
+          {(() => {
+            const isNextDisabled = isMarkingComplete || (hasDependentAssignment && !isCompleted);
+            return (
+              <button
+                type="button"
+                onClick={handleNextProgression}
+                disabled={isNextDisabled}
+                title={hasDependentAssignment && !isCompleted ? `Complete this lesson (${lesson.title}) to unlock the assignment` : undefined}
+                style={{
+                  padding: '7px 16px',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: isNextDisabled
+                    ? '#e2e8f0'
+                    : 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                  color: isNextDisabled ? '#94a3b8' : '#ffffff',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: isNextDisabled ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: isNextDisabled ? 'none' : '0 2px 6px rgba(79, 70, 229, 0.25)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <span>
+                  {hasDependentAssignment
+                    ? (isCompleted ? 'Continue to Assignment' : 'Complete Lesson to Continue')
+                    : hasNextLesson
+                    ? 'Next Lesson'
+                    : 'Finish Module'}
+                </span>
+                <ChevronRight size={14} />
+              </button>
+            );
+          })()}
 
           {/* Curriculum Index Drawer Toggle */}
           <button
@@ -534,6 +660,7 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
                     href={primaryVideo.url}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={() => handleWatchVideo(`video-${lesson.id}`)}
                     style={{
                       background: '#ffffff',
                       color: '#0f172a',
@@ -551,6 +678,100 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
                   </a>
                 </div>
               )}
+
+              {/* Highly Visible Video Radio Completion Bar */}
+              {(() => {
+                const videoId = `video-${lesson.id}`;
+                const isVideoDone = isCompleted;
+                return (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '12px 18px',
+                      background: isVideoDone ? '#f0fdf4' : '#f8fafc',
+                      border: `1.5px solid ${isVideoDone ? '#86efac' : '#cbd5e1'}`,
+                      borderRadius: '12px',
+                      boxShadow: isVideoDone ? '0 1px 3px rgba(34, 197, 94, 0.1)' : '0 1px 3px rgba(0,0,0,0.04)',
+                      transition: 'all 0.18s ease',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleVideoRadioToggle(videoId)}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        cursor: 'pointer',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        fontSize: '13.5px',
+                        fontWeight: 700,
+                        color: isVideoDone ? '#166534' : '#1e293b',
+                      }}
+                      title={isVideoDone ? 'Lesson completed (Click to unmark)' : 'Click to complete lesson'}
+                    >
+                      <div
+                        style={{
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '50%',
+                          background: isVideoDone ? '#16a34a' : '#ffffff',
+                          border: `2px solid ${isVideoDone ? '#16a34a' : '#6366f1'}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          boxShadow: isVideoDone ? '0 0 0 3px rgba(22, 163, 74, 0.18)' : '0 1px 2px rgba(0,0,0,0.08)',
+                          transition: 'all 0.15s ease',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {isVideoDone ? (
+                          <Check size={13} color="#ffffff" strokeWidth={3.5} />
+                        ) : (
+                          <div
+                            style={{
+                              width: '7px',
+                              height: '7px',
+                              borderRadius: '50%',
+                              background: '#6366f1',
+                            }}
+                          />
+                        )}
+                      </div>
+                      <span>{isVideoDone ? 'Video Lecture Watched ✓' : 'Mark Video Lecture Watched'}</span>
+                    </button>
+
+                    {primaryVideo && (
+                      <a
+                        href={primaryVideo.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => handleWatchVideo(videoId)}
+                        style={{
+                          fontSize: '12.5px',
+                          color: '#4f46e5',
+                          textDecoration: 'none',
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '6px 12px',
+                          background: '#eef2ff',
+                          borderRadius: '8px',
+                          border: '1px solid #c7d2fe',
+                        }}
+                      >
+                        Watch on YouTube <ExternalLink size={12} />
+                      </a>
+                    )}
+                  </div>
+                );
+              })()}
             </section>
           )}
 
@@ -573,38 +794,75 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
                 <BookOpen size={12} /> Core Reading & Study Resources ({combinedResources.length})
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '12px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
                 {combinedResources.map((res, rIdx) => {
                   const meta = getResourceMeta(res.url, res.title);
+                  const resId = res.id || `res-${lesson.id}-${rIdx}`;
+                  const isResDone = isResourceVisited(resId);
+
                   return (
-                    <a
+                    <div
                       key={res.id || rIdx}
-                      href={res.url}
-                      target="_blank"
-                      rel="noreferrer"
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: '12px',
-                        padding: '12px 16px',
-                        background: '#ffffff',
-                        border: '1.5px solid #e2e8f0',
+                        gap: '14px',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '14px 18px',
+                        background: isResDone ? '#f0fdf4' : '#ffffff',
+                        border: `1.5px solid ${isResDone ? '#86efac' : '#e2e8f0'}`,
                         borderRadius: '12px',
-                        textDecoration: 'none',
-                        boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+                        boxShadow: isResDone ? '0 1px 3px rgba(34, 197, 94, 0.08)' : '0 1px 3px rgba(15, 23, 42, 0.04)',
                         transition: 'all 0.15s ease',
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.borderColor = '#818cf8';
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.borderColor = '#e2e8f0';
-                        e.currentTarget.style.transform = 'none';
-                      }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px', minWidth: 0, flex: 1 }}>
+                        <button
+                          type="button"
+                          onClick={() => handleResourceRadioToggle(resId, res)}
+                          title={isResDone ? 'Resource visited (Click to unmark as pending)' : 'Click to mark resource as visited'}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            cursor: 'pointer',
+                            padding: 0,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: '22px',
+                              height: '22px',
+                              borderRadius: '50%',
+                              background: isResDone ? '#16a34a' : '#ffffff',
+                              border: `2px solid ${isResDone ? '#16a34a' : '#64748b'}`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: isResDone ? '0 0 0 3px rgba(22, 163, 74, 0.18)' : '0 1px 2px rgba(0,0,0,0.06)',
+                              transition: 'all 0.15s ease',
+                            }}
+                          >
+                            {isResDone ? (
+                              <Check size={13} color="#ffffff" strokeWidth={3.5} />
+                            ) : (
+                              <div
+                                style={{
+                                  width: '7px',
+                                  height: '7px',
+                                  borderRadius: '50%',
+                                  background: '#94a3b8',
+                                }}
+                              />
+                            )}
+                          </div>
+                        </button>
+
                         <div
                           className={meta.badgeClass}
                           style={{
@@ -619,43 +877,63 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
                         >
                           {meta.icon}
                         </div>
-                        <div style={{ minWidth: 0 }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
                           <span
                             style={{
-                              fontSize: '13px',
+                              fontSize: '14px',
                               fontWeight: 700,
-                              color: '#0f172a',
+                              color: isResDone ? '#166534' : '#0f172a',
                               display: 'block',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
+                              lineHeight: 1.45,
+                              wordBreak: 'break-word',
                             }}
                           >
                             {res.title || 'Learning Resource'}
                           </span>
-                          <span style={{ fontSize: '11px', color: '#64748b' }}>
+                          <span style={{ fontSize: '11.5px', color: '#64748b' }}>
                             {meta.type} · {meta.domain}
                           </span>
                         </div>
                       </div>
 
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 700,
-                          color: '#4f46e5',
-                          background: '#f5f3ff',
-                          padding: '4px 8px',
-                          borderRadius: '6px',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          flexShrink: 0,
-                        }}
-                      >
-                        Open <ArrowUpRight size={11} />
-                      </span>
-                    </a>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: isResDone ? '#15803d' : '#64748b',
+                            background: isResDone ? '#dcfce7' : '#f1f5f9',
+                            border: `1px solid ${isResDone ? '#bbf7d0' : '#e2e8f0'}`,
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {isResDone ? '✓ Visited' : 'Pending'}
+                        </span>
+                        <a
+                          href={res.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => handleResourceOpen(resId, res)}
+                          style={{
+                            fontSize: '11.5px',
+                            fontWeight: 700,
+                            color: '#4f46e5',
+                            background: '#f5f3ff',
+                            border: '1px solid #c7d2fe',
+                            padding: '5px 10px',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          Open <ArrowUpRight size={11} />
+                        </a>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -672,53 +950,108 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
                 marginBottom: '36px',
               }}
             >
-              {dependentAssignments.map((dep) => (
-                <div
-                  key={dep.task.id}
-                  style={{
-                    padding: '16px 20px',
-                    background: '#faf5ff',
-                    border: '1.5px solid #d8b4fe',
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '16px',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: '15px',
-                      fontWeight: 700,
-                      color: '#581c87',
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {dep.task.title}
-                  </span>
+              {dependentAssignments.map((dep) => {
+                const isTaskPlayable = isCompleted && !dep.isLocked;
 
-                  <button
-                    type="button"
-                    onClick={() => onTriggerAssignment(dep.task)}
+                return (
+                  <div
+                    key={dep.task.id}
                     style={{
-                      padding: '8px 18px',
-                      borderRadius: '8px',
-                      background: '#7e22ce',
-                      color: '#ffffff',
-                      border: 'none',
-                      fontWeight: 700,
-                      fontSize: '13px',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      transition: 'background 0.2s ease',
+                      padding: '16px 20px',
+                      background: isTaskPlayable ? '#faf5ff' : '#f8fafc',
+                      border: isTaskPlayable ? '1.5px solid #d8b4fe' : '1.5px solid #e2e8f0',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '16px',
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = '#6b21a8')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = '#7e22ce')}
                   >
-                    Start Assessment →
-                  </button>
-                </div>
-              ))}
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          style={{
+                            fontSize: '15px',
+                            fontWeight: 700,
+                            color: isTaskPlayable ? '#581c87' : '#475569',
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {dep.task.title}
+                        </span>
+                        {!isTaskPlayable && (
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              color: '#b45309',
+                              background: '#fef3c7',
+                              border: '1px solid #fde68a',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <Lock size={11} /> Locked
+                          </span>
+                        )}
+                      </div>
+                      {!isTaskPlayable && (
+                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                          🔒 {dep.lockReason || `Complete this lesson (${lesson.title}) to unlock this assessment.`}
+                        </div>
+                      )}
+                    </div>
+
+                    {isTaskPlayable ? (
+                      <button
+                        type="button"
+                        onClick={() => onTriggerAssignment(dep.task)}
+                        style={{
+                          padding: '8px 18px',
+                          borderRadius: '8px',
+                          background: '#7e22ce',
+                          color: '#ffffff',
+                          border: 'none',
+                          fontWeight: 700,
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          transition: 'background 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = '#6b21a8')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = '#7e22ce')}
+                      >
+                        Start Assessment →
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        style={{
+                          padding: '8px 18px',
+                          borderRadius: '8px',
+                          background: '#f1f5f9',
+                          color: '#94a3b8',
+                          border: '1px solid #e2e8f0',
+                          fontWeight: 700,
+                          fontSize: '13px',
+                          cursor: 'not-allowed',
+                          whiteSpace: 'nowrap',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                        title={dep.lockReason || `Complete this lesson (${lesson.title}) to unlock this assessment.`}
+                      >
+                        <Lock size={13} /> Assessment Locked
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -754,34 +1087,42 @@ export const LessonPlayerView: React.FC<LessonPlayerViewProps> = ({
               <ChevronLeft size={16} /> Previous Lesson
             </button>
 
-            <button
-              type="button"
-              onClick={handleNextProgression}
-              disabled={isMarkingComplete}
-              style={{
-                padding: '10px 22px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
-                color: '#ffffff',
-                fontSize: '13px',
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                boxShadow: '0 2px 8px rgba(79, 70, 229, 0.25)',
-              }}
-            >
-              <span>
-                {hasDependentAssignment
-                  ? 'Continue to Assignment'
-                  : hasNextLesson
-                  ? 'Next Lesson'
-                  : 'Complete Module'}
-              </span>
-              <ChevronRight size={16} />
-            </button>
+            {(() => {
+              const isNextDisabled = isMarkingComplete || (hasDependentAssignment && !isCompleted);
+              return (
+                <button
+                  type="button"
+                  onClick={handleNextProgression}
+                  disabled={isNextDisabled}
+                  title={hasDependentAssignment && !isCompleted ? `Complete this lesson (${lesson.title}) to unlock the assignment` : undefined}
+                  style={{
+                    padding: '10px 22px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: isNextDisabled
+                      ? '#e2e8f0'
+                      : 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+                    color: isNextDisabled ? '#94a3b8' : '#ffffff',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: isNextDisabled ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    boxShadow: isNextDisabled ? 'none' : '0 2px 8px rgba(79, 70, 229, 0.25)',
+                  }}
+                >
+                  <span>
+                    {hasDependentAssignment
+                      ? (isCompleted ? 'Continue to Assignment' : 'Complete Lesson to Continue')
+                      : hasNextLesson
+                      ? 'Next Lesson'
+                      : 'Complete Module'}
+                  </span>
+                  <ChevronRight size={16} />
+                </button>
+              );
+            })()}
           </div>
         </main>
 

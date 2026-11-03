@@ -11,7 +11,7 @@ import { AssignmentSubmissionEntity } from '../../entities/assignmentSubmission.
 export class AssignmentChatService {
    private readonly logger = new Logger(AssignmentChatService.name);
    private readonly groqApiKey = process.env.GROQ_API_KEY;
-   private readonly groqModel = process.env.GROQ_CHAT_MODEL || 'llama-3.1-70b-versatile'; // fallback model if needed
+   private readonly groqModel = process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b'; // fallback model if needed
 
    constructor(
       @InjectRepository(AssignmentChatThreadEntity)
@@ -165,37 +165,41 @@ export class AssignmentChatService {
          // Ensure we always have at least 2 prerequisite lessons available for citations
          if (dependsOnLessons.length < 2) {
             let fallbackLessons: any[] = [];
-            if (assModId) {
-               fallbackLessons = await this.dataSource.query(
-                  `SELECT id, title, "moduleId", "learningPathId" FROM "Lesson" WHERE "moduleId" = $1 ORDER BY "sequence_index" ASC, "created_at" ASC LIMIT 4`,
-                  [assModId]
-               );
-            }
-            if (!fallbackLessons.length && assLpId) {
-               fallbackLessons = await this.dataSource.query(
-                  `SELECT l.id, l.title, l."moduleId", m."learningPathId" FROM "Lesson" l 
-                   JOIN "Module" m ON m.id = l."moduleId" 
-                   WHERE m."learningPathId" = $1 
-                   ORDER BY m."sequence_index" ASC, l."sequence_index" ASC LIMIT 4`,
-                  [assLpId]
-               );
-            }
-            const existingIds = new Set(lessonIds);
-            for (const fl of fallbackLessons) {
-               if (!existingIds.has(fl.id) && dependsOnLessons.length < 2) {
-                  existingIds.add(fl.id);
-                  lessonIds.push(fl.id);
-                  dependsOnLessons.push({
-                     ref: `L${dependsOnLessons.length + 1}`,
-                     lessonId: fl.id,
-                     lessonNumber: dependsOnLessons.length + 1,
-                     lessonTitle: fl.title || 'Prerequisite Lesson',
-                     url: this.computeLessonUrl(fl, assModId, assLpId)
-                  });
+            try {
+               if (assModId) {
+                  fallbackLessons = await this.dataSource.query(
+                     `SELECT id, title, "moduleId", "learningPathId" FROM "Lesson" WHERE "moduleId" = $1 ORDER BY COALESCE("display_order", 1) ASC, "created_at" ASC LIMIT 4`,
+                     [assModId]
+                  );
                }
-            }
-            if (chunks.length === 0 && lessonIds.length > 0) {
-               chunks = await this.fetchLessonChunks(lessonIds, message);
+               if (!fallbackLessons.length && assLpId) {
+                  fallbackLessons = await this.dataSource.query(
+                     `SELECT l.id, l.title, l."moduleId", m."learningPathId" FROM "Lesson" l 
+                      JOIN "Module" m ON m.id = l."moduleId" 
+                      WHERE m."learningPathId" = $1 
+                      ORDER BY m."created_at" ASC, COALESCE(l."display_order", 1) ASC, l."created_at" ASC LIMIT 4`,
+                     [assLpId]
+                  );
+               }
+               const existingIds = new Set(lessonIds);
+               for (const fl of fallbackLessons) {
+                  if (!existingIds.has(fl.id) && dependsOnLessons.length < 2) {
+                     existingIds.add(fl.id);
+                     lessonIds.push(fl.id);
+                     dependsOnLessons.push({
+                        ref: `L${dependsOnLessons.length + 1}`,
+                        lessonId: fl.id,
+                        lessonNumber: dependsOnLessons.length + 1,
+                        lessonTitle: fl.title || 'Prerequisite Lesson',
+                        url: this.computeLessonUrl(fl, assModId, assLpId)
+                     });
+                  }
+               }
+               if (chunks.length === 0 && lessonIds.length > 0) {
+                  chunks = await this.fetchLessonChunks(lessonIds, message);
+               }
+            } catch (err) {
+               this.logger.warn(`Failed to retrieve fallback prerequisite lessons: ${(err as Error).message}`);
             }
          }
 
@@ -382,20 +386,25 @@ export class AssignmentChatService {
    private async fetchLessonChunks(lessonIds: string[], query: string) {
       if (!lessonIds.length) return [];
 
-      const queryStr = `
-       SELECT lesson_id AS "lessonId", chunk_text AS "chunkText", 
-              ts_rank(search_vector, plainto_tsquery('english', $1)) AS rank
-       FROM "LessonContentChunk"
-       WHERE lesson_id = ANY($2)
-         AND search_vector IS NOT NULL
-       ORDER BY rank DESC
-       LIMIT 2
-     `;
-      const rawResult = await this.dataSource.query(queryStr, [query, lessonIds]);
-      return rawResult.map((r: any) => ({
-         ...r,
-         chunkText: r.chunkText ? r.chunkText.substring(0, 800) : ''
-      }));
+      try {
+         const queryStr = `
+          SELECT lesson_id AS "lessonId", chunk_text AS "chunkText", 
+                 ts_rank(search_vector, plainto_tsquery('english', $1)) AS rank
+          FROM "LessonContentChunk"
+          WHERE lesson_id = ANY($2)
+            AND search_vector IS NOT NULL
+          ORDER BY rank DESC
+          LIMIT 2
+        `;
+         const rawResult = await this.dataSource.query(queryStr, [query, lessonIds]);
+         return rawResult.map((r: any) => ({
+            ...r,
+            chunkText: r.chunkText ? r.chunkText.substring(0, 800) : ''
+         }));
+      } catch (err) {
+         this.logger.warn(`Failed to fetch lesson chunks: ${(err as Error).message}`);
+         return [];
+      }
    }
 
    private async callGroq(contexts: any[], message: string, recentHistory: AssignmentChatMessageEntity[] = []) {
@@ -478,9 +487,12 @@ ${JSON.stringify(contexts)}
 
          // Prioritize fast, reliable JSON model
          const candidateModels = [
-            'qwen/qwen3.8-27b',
             this.groqModel || 'openai/gpt-oss-120b',
-            'openai/gpt-oss-20b'
+            'openai/gpt-oss-120b',
+            'openai/gpt-oss-20b',
+            'llama-3.3-70b-versatile',
+            'llama-3.1-8b-instant',
+            'qwen/qwen3.8-27b'
          ].filter((v, i, a) => v && a.indexOf(v) === i);
 
          for (const model of candidateModels) {

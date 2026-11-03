@@ -311,36 +311,63 @@ export class ContentExtractionService {
 
     const systemPrompt = 'You are creating a grading rubric for an educator.\n\nFrom the following lesson content, extract 5–10 concise, factual teaching points that a subject-matter expert would use to grade a student\'s answer about this lesson. Focus on concrete facts, concepts, and definitions — not tone or delivery style.\n\nReturn ONLY a JSON array: [{"point": "...", "weight": 0.1}, ...]\nWeights should sum to 1.0 across all points. DO NOT wrap in markdown, return RAW JSON array only.';
 
-    try {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Lesson content:\n${fullText.substring(0, 15000)}` }
-          ],
-          temperature: 0.2
-        }),
-      });
+    const primaryModel = process.env.GROQ_EVAL_MODEL || process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b';
+    const modelsToTry = Array.from(new Set([
+      primaryModel,
+      process.env.GROQ_CHAT_MODEL,
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.8-27b',
+    ].filter(Boolean))) as string[];
 
-      if (!response.ok) throw new Error(`Groq returned ${response.status}`);
-      const data = (await response.json()) as any;
-      let contentStr = data.choices?.[0]?.message?.content || '[]';
-      
-      contentStr = contentStr.replace(/^\s*```json/i, '').replace(/```\s*$/, '').trim();
-      const points = JSON.parse(contentStr);
-      if (!Array.isArray(points)) throw new Error('Groq did not return an array');
+    let points: any[] | null = null;
+    let lastError: Error | null = null;
 
+    for (const model of modelsToTry) {
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${groqKey}` },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: `Lesson content:\n${fullText.substring(0, 15000)}` }
+            ],
+            temperature: 0.2
+          }),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          if (response.status === 404 || response.status === 429) {
+            this.logger.warn(`Model ${model} returned ${response.status}. Retrying with fallback model...`);
+            continue;
+          }
+          throw new Error(`Groq API error ${response.status}: ${errText}`);
+        }
+
+        const data = (await response.json()) as any;
+        let contentStr = data.choices?.[0]?.message?.content || '[]';
+        
+        contentStr = contentStr.replace(/^\s*```json/i, '').replace(/```\s*$/, '').trim();
+        const parsed = JSON.parse(contentStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          points = parsed;
+          break;
+        }
+      } catch (e) {
+        lastError = e as Error;
+      }
+    }
+
+    if (points && points.length > 0) {
       rubric.keyPoints = points;
       rubric.generationStatus = 'SUCCESS';
       rubric.generatedAt = new Date();
       await this.rubricRepo.save(rubric);
-
-    } catch (e) {
-      const err = e as Error;
-      this.logger.error(`Failed to distill rubric for ${cache.lessonId}: ${err.message}`);
+    } else {
+      this.logger.error(`Failed to distill rubric for ${cache.lessonId}: ${lastError?.message || 'No valid rubric points returned'}`);
       rubric.generationStatus = 'FAILED';
       await this.rubricRepo.save(rubric);
     }

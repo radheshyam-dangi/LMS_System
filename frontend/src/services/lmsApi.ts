@@ -199,6 +199,13 @@ export const progressService = {
     );
     return data;
   },
+  unvisitResource: async (resourceId: string, token: string) => {
+    const { data } = await axios.delete(
+      `${API_BASE_URL}/progress/resources/${resourceId}/visit`,
+      auth(token),
+    );
+    return data;
+  },
   fetchCohort: async (token: string) => {
     const { data } = await axios.get(`${API_BASE_URL}/progress/cohort`, auth(token));
     return data;

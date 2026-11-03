@@ -48,7 +48,9 @@ const STOP_WORDS = new Set([
   'can', 'you', 'explain', 'tell', 'me', 'about', 'and', 'or', 'with', 'from',
   'by', 'are', 'was', 'were', 'it', 'its', 'this', 'that', 'do', 'does', 'did',
   'who', 'whom', 'which', 'where', 'when', 'into', 'such', 'some', 'than',
-  'work', 'works', 'working', 'used', 'using', 'make', 'makes', 'know', 'need', 'way', 'thing', 'things'
+  'work', 'works', 'working', 'used', 'using', 'make', 'makes', 'know', 'need', 'way', 'thing', 'things',
+  'define', 'definition', 'definitions', 'describe', 'describing', 'meaning', 'mean', 'means',
+  'concept', 'concepts', 'overview', 'summary', 'summarize', 'give', 'show', 'provide', 'details'
 ]);
 
 @Injectable()
@@ -453,7 +455,8 @@ export class AiAssistantRetrievalService {
     if (!qTokens.length) return 0.5;
 
     const cleanText = text.toLowerCase().replace(/[^\w\s]/g, ' ');
-    const textWordSet = new Set(cleanText.split(/\s+/).filter(Boolean));
+    const textWords = cleanText.split(/\s+/).filter(Boolean);
+    const textWordSet = new Set(textWords);
 
     let matches = 0;
     for (const token of qTokens) {
@@ -462,6 +465,15 @@ export class AiAssistantRetrievalService {
       }
     }
     let score = matches / qTokens.length;
+
+    // For single-token queries (e.g. "cloud"), a single casual mention should not artificially score 100%
+    if (qTokens.length === 1 && matches === 1) {
+      const token = qTokens[0];
+      const count = textWords.filter((w) => w === token).length;
+      if (count < 2) {
+        score = 0.40; // Needs strong vector alignment to cross strong gate, otherwise routes to web
+      }
+    }
 
     // Exact phrase match bonus
     const trimmed = query.toLowerCase().trim();

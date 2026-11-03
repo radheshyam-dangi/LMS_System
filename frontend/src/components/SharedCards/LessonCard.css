@@ -504,6 +504,20 @@
   flex-shrink: 0;
 }
 
+.lesson-media-radio-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+
+.lesson-media-radio-btn:active {
+  transform: translateY(0);
+}
+
+.lesson-resource-row:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+}
+
 .lesson-video-inline-toggle {
   background: rgba(255, 255, 255, 0.1);
   color: #e2e8f0;
@@ -621,9 +635,10 @@
 
 /* ── CORE RESOURCES & READING SECTION (Full Title Visible, Never Truncated) ── */
 .lesson-resources-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
 }
 
 .lesson-resource-card {

@@ -1,4 +1,9 @@
-import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
+import { v4 as uuidv4 } from 'uuid';
+import {
+  DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT,
+  DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST,
+  extractInstructionStrings,
+} from '../../utils/defaultInstructions';
 
 function cleanHTML(html: string | undefined): string {
   if (!html) return '';
@@ -154,18 +159,14 @@ export function convertLpToTiptap(lp: any): Record<string, any> {
       };
 
       const rawInstructions = assignment.instructions || assignment.description;
-      if (rawInstructions && cleanHTML(rawInstructions)) {
-        const assignmentDesc = createTextNode(rawInstructions);
-        assignmentNode.content.push({
-          type: 'paragraph',
-          ...(assignmentDesc.length ? { content: assignmentDesc } : {})
-        });
-      } else {
-        assignmentNode.content.push({
-          type: 'paragraph',
-          content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }]
-        });
-      }
+      const parsedInstructions = extractInstructionStrings(rawInstructions);
+      assignmentNode.content.push({
+        type: 'instructionBlock',
+        attrs: {
+          id: uuidv4(),
+          instructions: parsedInstructions.length > 0 ? parsedInstructions : [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST]
+        }
+      });
 
       for (const q of assignment.questions || []) {
         const isPlaceholder = !q.text || q.text.trim() === 'Type your question here...' || q.text.trim() === 'New Question';

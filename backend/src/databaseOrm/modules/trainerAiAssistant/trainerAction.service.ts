@@ -11,6 +11,7 @@ import { TrainerAiMessageEntity } from '../../entities/trainerAiMessage.entity';
 import { UserEntity } from '../../entities/user.entity';
 import { EmbeddingOutboxService } from '../aiAssistant/embeddingOutbox.service';
 import { TrainerLpUpgradeService } from './trainerLpUpgrade.service';
+import { LpAuthoringService } from '../lpAuthoring/lpAuthoring.service';
 
 export interface ActionResolutionResult {
   success: boolean;
@@ -32,6 +33,8 @@ export class TrainerActionService {
     private readonly embeddingOutbox: EmbeddingOutboxService,
     @Inject(forwardRef(() => TrainerLpUpgradeService))
     private readonly upgradeService: TrainerLpUpgradeService,
+    @Inject(forwardRef(() => LpAuthoringService))
+    private readonly lpAuthoringService: LpAuthoringService,
   ) {
     this.actionRepo = this.datasource.getRepository(AssistantActionEntity);
     this.auditRepo = this.datasource.getRepository(AssistantAuditEntity);
@@ -158,8 +161,25 @@ export class TrainerActionService {
       const instruction = action.payload?.instruction || '';
       const summary = action.payload?.summary || 'Curriculum modification';
 
-      // Perform the actual upgrade / CRUD operation
-      const upgradeRes = await this.upgradeService.upgradeLearningPath(lp.id, instruction, trainerId);
+      let upgradeSummary = summary;
+      let moduleCount = action.payload?.moduleCount;
+      let lessonCount = action.payload?.lessonCount;
+      let assignmentCount = action.payload?.assignmentCount;
+
+      // If changes were not applied yet (e.g. legacy action without previousTree), execute upgrade now
+      if (!action.payload?.previousTree) {
+        const upgradeRes = await this.upgradeService.upgradeLearningPath(lp.id, instruction, trainerId);
+        upgradeSummary = upgradeRes.summary;
+        moduleCount = upgradeRes.moduleCount;
+        lessonCount = upgradeRes.lessonCount;
+        assignmentCount = upgradeRes.assignmentCount;
+      }
+
+      // Ensure the LP status is promoted to Active so it is immediately visible in the trainer course catalog
+      if (lp.status === 'ai_draft' || lp.status === 'Ai_draft' || lp.status === 'draft') {
+        lp.status = 'Active';
+        await this.lpRepo.save(lp);
+      }
 
       // Mark action executed
       action.status = 'executed';
@@ -167,6 +187,16 @@ export class TrainerActionService {
 
       // Update message action card in chat history if stored
       await this.updateMessageActionCardStatus(action.id, 'confirmed');
+
+      // Trigger embedding indexing so the confirmed path is indexed for search
+      try {
+        await this.embeddingOutbox.enqueue('lp_saved', lp.id);
+        this.embeddingOutbox.processEntityImmediate('lp_saved', lp.id).catch(err => {
+          this.logger.warn(`Immediate embedding processing failed for confirmed LP ${lp.id}: ${(err as Error).message}`);
+        });
+      } catch (err) {
+        this.logger.warn(`Failed to enqueue embedding for confirmed LP ${lp.id}: ${(err as Error).message}`);
+      }
 
       // Record audit
       await this.auditRepo.save(
@@ -181,32 +211,36 @@ export class TrainerActionService {
           metadata: {
             lpTitle: lp.title,
             actionId: action.id,
-            summary: upgradeRes.summary,
+            summary: upgradeSummary,
           },
         }),
       );
 
-      const isDeletion = /\b(?:delete|remove|drop|discard|omit|trash|erase|still\s+visible)\b/i.test(instruction);
+      const isDeletion = /\b(?:delete[ds]?|remov(?:e|ed|es|ing)|drop(?:ped|s)?|discard(?:ed|s)?|omit(?:ted|s)?|trash(?:ed|es)?|eras(?:e|ed|es|ing)|still\s+visible)\b/i.test(instruction);
       const headerTitle = isDeletion
         ? '**Curriculum Updated: Node Removed**'
-        : '**Curriculum Upgraded Successfully**';
+        : '**Curriculum Upgraded & Published Successfully**';
 
       const actionDescription = isDeletion
         ? 'The specified item has been permanently removed from the curriculum.'
         : 'The requested additions and modifications have been applied to the curriculum.';
+
+      const statsSection = (moduleCount !== undefined && lessonCount !== undefined && assignmentCount !== undefined)
+        ? `**Current Curriculum Structure:**\n` +
+          `- **Total Modules:** ${moduleCount}\n` +
+          `- **Total Lessons:** ${lessonCount}\n` +
+          `- **Total Assessments:** ${assignmentCount}\n\n`
+        : '';
 
       return {
         success: true,
         message: `${headerTitle}\n\n` +
           `**Target Learning Path:** "${lp.title}"\n\n` +
           `**Final Confirmation of Action:**\n` +
-          `- **Status:** Completed\n` +
-          `- **Operation:** ${upgradeRes.summary}\n\n` +
-          `**Current Curriculum Structure:**\n` +
-          `- **Total Modules:** ${upgradeRes.moduleCount}\n` +
-          `- **Total Lessons:** ${upgradeRes.lessonCount}\n` +
-          `- **Total Assessments:** ${upgradeRes.assignmentCount}\n\n` +
-          `The Curriculum Studio canvas has been updated in real-time. ${actionDescription} You can review the updated structure directly in the visual editor.`,
+          `- **Status:** Active (Published to Catalog)\n` +
+          `- **Operation:** ${upgradeSummary}\n\n` +
+          statsSection +
+          `The learning path is created in the database effectively and is visible in your course catalog. ${actionDescription}`,
         lpId: lp.id,
         lpTitle: lp.title,
       };
@@ -285,9 +319,15 @@ export class TrainerActionService {
     // Update message action card in chat
     await this.updateMessageActionCardStatus(action.id, 'cancelled');
 
-    // Clean up draft LP row ONLY if this was a new LP creation draft (DO NOT delete existing LPs for CRUD actions!)
+    // Clean up draft LP row or restore previous curriculum state
     if (action.actionType === 'confirm_create' && action.targetId) {
       await this.deleteDraftLpCascade(action.targetId);
+    } else if (action.actionType === 'confirm_crud' && action.payload?.previousTree && action.targetId) {
+      try {
+        await this.lpAuthoringService.createLearningPathFromDocument(action.payload.previousTree, trainerId);
+      } catch (err) {
+        this.logger.warn(`Failed to restore previousTree on cancelAction: ${(err as Error).message}`);
+      }
     }
 
     // Record audit
@@ -309,7 +349,9 @@ export class TrainerActionService {
     return {
       success: true,
       message: action.actionType === 'confirm_crud'
-        ? 'The proposed curriculum change has been cancelled. No modifications were made.'
+        ? (action.payload?.previousTree
+            ? 'The proposed curriculum updates have been discarded and the Learning Path has been restored to its previous state.'
+            : 'The proposed curriculum change has been cancelled. No modifications were made.')
         : `Draft Learning Path **"${action.payload?.title || 'Course'}"** has been discarded.`,
       lpId: action.targetId || undefined,
       lpTitle: action.payload?.title || undefined,

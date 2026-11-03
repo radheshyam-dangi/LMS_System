@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core';
 import Suggestion from '@tiptap/suggestion';
 import { v4 as uuidv4 } from 'uuid';
-import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT } from '../../utils/defaultInstructions';
+import { DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT, DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST } from '../../utils/defaultInstructions';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 
@@ -82,8 +82,8 @@ export const getSuggestionItems = ({ query, editor }: { query: string; editor: a
           content: [
             { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'New Assignment' }] },
             {
-              type: 'paragraph',
-              content: [{ type: 'text', text: DEFAULT_ASSIGNMENT_INSTRUCTION_TEXT }],
+              type: 'instructionBlock',
+              attrs: { id: uuidv4(), instructions: [...DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST] },
             }
           ]
         }).run();

@@ -1,5 +1,19 @@
-import { DEFAULT_ASSIGNMENT_INSTRUCTIONS } from './defaultInstructions';
+import {
+  DEFAULT_ASSIGNMENT_INSTRUCTIONS,
+  DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST,
+  parseInstructionsToList,
+  extractInstructionStrings,
+} from './defaultInstructions';
+import type { ParsedInstructionItem } from './defaultInstructions';
 import { isTiptapContentEmpty } from './textUtils';
+
+export {
+  DEFAULT_ASSIGNMENT_INSTRUCTIONS,
+  DEFAULT_ASSIGNMENT_INSTRUCTIONS_LIST,
+  parseInstructionsToList,
+  extractInstructionStrings,
+};
+export type { ParsedInstructionItem };
 
 /**
  * Returns the trainer-authored instructions regardless of which historic

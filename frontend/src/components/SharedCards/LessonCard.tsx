@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Lock, CheckCircle2, Play, ExternalLink, FileText, 
+  Lock, CheckCircle2, Circle, Check, Play, ExternalLink, FileText, 
   Headphones, ChevronDown, ChevronUp, BookOpen,
   Globe, Code, ArrowUpRight, X
 } from 'lucide-react';
@@ -40,6 +40,8 @@ interface Props {
   onClickLocked?: () => void;
   resources?: any[];
   onVisitResource?: (res: any) => void;
+  onUnvisitResource?: (res: any) => void;
+  visitedResourceIds?: Set<string> | string[];
 }
 
 /**
@@ -163,6 +165,8 @@ export const LessonCard: React.FC<Props> = ({
   onClickLocked,
   resources = [],
   onVisitResource,
+  onUnvisitResource,
+  visitedResourceIds,
 }) => {
   const [showEmbed, setShowEmbed] = useState(false);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
@@ -205,6 +209,104 @@ export const LessonCard: React.FC<Props> = ({
     });
   }
 
+  // Dedicated state for visited resources (tracked completely independently from lesson completion)
+  // By default, ALL resources start in PENDING status unless explicitly visited in DB or passed via props.
+  const [visitedResources, setVisitedResources] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    if (visitedResourceIds) {
+      if (visitedResourceIds instanceof Set) {
+        visitedResourceIds.forEach((id) => initial.add(String(id)));
+      } else if (Array.isArray(visitedResourceIds)) {
+        visitedResourceIds.forEach((id) => initial.add(String(id)));
+      }
+    }
+    return initial;
+  });
+
+  // Sync state whenever visitedResourceIds updates from backend stats
+  useEffect(() => {
+    if (visitedResourceIds) {
+      const updated = new Set<string>();
+      if (visitedResourceIds instanceof Set) {
+        visitedResourceIds.forEach((id) => updated.add(String(id)));
+      } else if (Array.isArray(visitedResourceIds)) {
+        visitedResourceIds.forEach((id) => updated.add(String(id)));
+      }
+      setVisitedResources(updated);
+    }
+  }, [visitedResourceIds]);
+
+  // Clean up any old un-scoped localStorage keys
+  useEffect(() => {
+    try {
+      localStorage.removeItem(`lesson_visited_resources_${lesson.id}`);
+    } catch {}
+  }, [lesson.id]);
+
+  const isResourceVisited = (resId: string): boolean => {
+    return visitedResources.has(String(resId));
+  };
+
+  /**
+   * Toggles ONLY this resource's visited status.
+   * If pending -> becomes visited.
+   * If visited -> becomes pending.
+   * Independent: Does NOT complete or uncomplete the lesson/video!
+   */
+  const handleResourceRadioToggle = (resId: string, resObj?: any) => {
+    if (isLocked) return;
+    const strId = String(resId);
+    setVisitedResources((prev) => {
+      const next = new Set(prev);
+      const isAlreadyVisited = next.has(strId);
+      if (isAlreadyVisited) {
+        next.delete(strId);
+        if (onUnvisitResource && resObj) {
+          onUnvisitResource(resObj);
+        }
+      } else {
+        next.add(strId);
+        if (onVisitResource && resObj) {
+          onVisitResource(resObj);
+        }
+      }
+      return next;
+    });
+  };
+
+  /**
+   * Opening a resource marks ONLY this resource as visited.
+   * Independent: Does NOT complete or uncomplete the lesson/video!
+   */
+  const handleResourceOpen = (resId: string, resObj?: any) => {
+    if (isLocked) return;
+    const strId = String(resId);
+    setVisitedResources((prev) => {
+      const next = new Set(prev);
+      next.add(strId);
+      return next;
+    });
+    if (onVisitResource && resObj) {
+      onVisitResource(resObj);
+    }
+  };
+
+  /**
+   * Toggles ONLY the lesson completion status.
+   * Independent: Does NOT alter resource visited status!
+   */
+  const handleVideoRadioToggle = (_videoId: string) => {
+    if (isLocked) return;
+    if (onMarkWatched) {
+      onMarkWatched(lesson.id);
+    }
+  };
+
+  const handleWatchVideo = (_videoId: string) => {
+    // Watching video inline or launching player
+    // Does NOT alter resource visited status!
+  };
+
   const primaryVideo = videoList[0];
   const embedUrl = primaryVideo ? getEmbedUrl(primaryVideo.url) : null;
 
@@ -243,10 +345,10 @@ export const LessonCard: React.FC<Props> = ({
             onClick={(e) => {
               if (isTrainee && !isLocked) {
                 e.stopPropagation();
-                if (onStartLesson) {
-                  onStartLesson(lesson);
-                } else if (!isDone && onMarkWatched) {
+                if (onMarkWatched) {
                   onMarkWatched(lesson.id);
+                } else if (onStartLesson) {
+                  onStartLesson(lesson);
                 }
               }
             }}
@@ -401,14 +503,18 @@ export const LessonCard: React.FC<Props> = ({
           {videoList.map((video, vIdx) => {
             const thumbUrl = getYouTubeThumbnail(video.url);
             const isYt = video.url.includes('youtube') || video.url.includes('youtu.be');
+            const videoId = (video as any).id || `video-${vIdx}-${lesson.id}`;
+            const isVidDone = isDone;
             return (
               <div key={vIdx} className="lesson-video-card-container">
                 <div
-                  className="lesson-video-card"
+                  className={`lesson-video-card ${isVidDone ? 'is-completed' : ''}`}
                   onClick={() => {
                     if (embedUrl) {
                       setShowEmbed(!showEmbed);
+                      handleWatchVideo(videoId);
                     } else {
+                      handleWatchVideo(videoId);
                       window.open(video.url, '_blank', 'noreferrer');
                     }
                   }}
@@ -463,11 +569,69 @@ export const LessonCard: React.FC<Props> = ({
 
                   {/* Right: Actions */}
                   <div className="lesson-video-action-group" onClick={(e) => e.stopPropagation()}>
+                    {/* Highly Visible Custom Radio Button for Lesson Completion */}
+                    <button
+                      type="button"
+                      className={`lesson-media-radio-btn ${isVidDone ? 'is-completed' : ''}`}
+                      onClick={() => handleVideoRadioToggle(videoId)}
+                      title={isVidDone ? 'Lesson completed (Click to unmark)' : 'Click to complete lesson'}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: isVidDone 
+                          ? 'linear-gradient(135deg, #059669 0%, #047857 100%)' 
+                          : '#ffffff',
+                        border: `2px solid ${isVidDone ? '#34d399' : '#cbd5e1'}`,
+                        borderRadius: '24px',
+                        padding: '6px 14px',
+                        color: isVidDone ? '#ffffff' : '#0f172a',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        boxShadow: isVidDone 
+                          ? '0 2px 8px rgba(5, 150, 105, 0.35), 0 0 0 2px rgba(52, 211, 153, 0.25)' 
+                          : '0 2px 6px rgba(0, 0, 0, 0.15)',
+                        transition: 'all 0.18s cubic-bezier(0.16, 1, 0.3, 1)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          background: isVidDone ? '#ffffff' : '#f8fafc',
+                          border: `2px solid ${isVidDone ? '#ffffff' : '#6366f1'}`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {isVidDone ? (
+                          <Check size={12} color="#047857" strokeWidth={3.5} />
+                        ) : (
+                          <div
+                            style={{
+                              width: '6px',
+                              height: '6px',
+                              borderRadius: '50%',
+                              background: '#6366f1',
+                            }}
+                          />
+                        )}
+                      </div>
+                      <span>{isVidDone ? 'Watched ✓' : 'Mark Watched'}</span>
+                    </button>
+
                     {embedUrl && (
                       <button
                         type="button"
                         className={`lesson-video-inline-toggle ${showEmbed ? 'is-active' : ''}`}
-                        onClick={() => setShowEmbed(!showEmbed)}
+                        onClick={() => {
+                          setShowEmbed(!showEmbed);
+                          handleWatchVideo(videoId);
+                        }}
                         title={showEmbed ? 'Hide embedded player' : 'Watch inline'}
                       >
                         <Play size={12} fill={showEmbed ? 'none' : 'currentColor'} />
@@ -479,6 +643,7 @@ export const LessonCard: React.FC<Props> = ({
                       href={video.url}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={() => handleWatchVideo(videoId)}
                       className="lesson-video-action-btn"
                       title="Open video in a new tab"
                     >
@@ -561,44 +726,146 @@ export const LessonCard: React.FC<Props> = ({
             <BookOpen size={12} /> Core Reading & Study Resources
           </div>
 
-          <div className="lesson-resources-grid">
+          <div className="lesson-resources-grid" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {combinedResources.map((res, rIdx) => {
               const meta = getResourceMeta(res.url, res.title);
+              const resId = res.id || `res-${rIdx}-${lesson.id}`;
+              const isResDone = isResourceVisited(resId);
               return (
-                <a
-                  key={res.id || rIdx}
-                  href={res.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => onVisitResource && onVisitResource(res)}
-                  className="lesson-resource-card"
-                  title={`Open ${res.title || 'Resource'}`}
+                <div
+                  key={resId}
+                  className={`lesson-resource-row ${isResDone ? 'is-completed' : ''}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '14px',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    background: isResDone ? '#f0fdf4' : '#ffffff',
+                    border: `1.5px solid ${isResDone ? '#86efac' : '#e2e8f0'}`,
+                    borderRadius: '12px',
+                    padding: '12px 18px',
+                    boxShadow: isResDone ? '0 1px 3px rgba(34, 197, 94, 0.08)' : '0 1px 3px rgba(15, 23, 42, 0.04)',
+                    transition: 'all 0.2s ease',
+                  }}
                 >
-                  <div className="lesson-resource-card-left">
-                    <div className={`lesson-resource-icon-badge ${meta.badgeClass}`}>
-                      {meta.icon}
+                  {/* Left: Highly Visible Custom Radio Button for Resource */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleResourceRadioToggle(resId, res);
+                    }}
+                    title={isResDone ? 'Resource visited (Click to unmark as pending)' : 'Click to mark resource as visited'}
+                    style={{
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      padding: '2px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      outline: 'none',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '50%',
+                        background: isResDone ? '#16a34a' : '#ffffff',
+                        border: `2px solid ${isResDone ? '#16a34a' : '#64748b'}`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: isResDone ? '0 0 0 3px rgba(22, 163, 74, 0.18)' : '0 1px 2px rgba(0,0,0,0.06)',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {isResDone ? (
+                        <Check size={12} color="#ffffff" strokeWidth={3.5} />
+                      ) : (
+                        <div
+                          style={{
+                            width: '6px',
+                            height: '6px',
+                            borderRadius: '50%',
+                            background: '#94a3b8',
+                          }}
+                        />
+                      )}
                     </div>
-                    <div className="lesson-resource-text">
-                      <span className="lesson-resource-title" title={res.title || 'Learning Resource'}>
-                        {res.title || 'Learning Resource'}
-                      </span>
-                      <div className="lesson-resource-meta-row">
-                        <span className="lesson-resource-type-tag">{meta.type}</span>
-                        {meta.domain && (
-                          <>
-                            <span className="lesson-resource-dot">•</span>
-                            <span className="lesson-resource-domain">{meta.domain}</span>
-                          </>
-                        )}
+                  </button>
+
+                  <a
+                    href={res.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={() => {
+                      handleResourceOpen(resId, res);
+                    }}
+                    className="lesson-resource-card"
+                    title={`Open ${res.title || 'Resource'}`}
+                    style={{ flex: 1, border: 'none', background: 'transparent', margin: 0, padding: 0, textDecoration: 'none' }}
+                  >
+                    <div className="lesson-resource-card-left" style={{ gap: '10px' }}>
+                      <div className={`lesson-resource-icon-badge ${meta.badgeClass}`} style={{ width: '34px', height: '34px' }}>
+                        {meta.icon}
+                      </div>
+                      <div className="lesson-resource-text">
+                        <span className="lesson-resource-title" style={{ fontSize: '13.5px', color: isResDone ? '#166534' : '#0f172a' }}>
+                          {res.title || 'Learning Resource'}
+                        </span>
+                        <div className="lesson-resource-meta-row">
+                          <span className="lesson-resource-type-tag">{meta.type}</span>
+                          {meta.domain && (
+                            <>
+                              <span className="lesson-resource-dot">•</span>
+                              <span className="lesson-resource-domain">{meta.domain}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="lesson-resource-action">
-                    <span className="lesson-resource-open-btn">
-                      Open <ArrowUpRight size={13} />
+                  </a>
+
+                  {/* Right: Status Pill & Open Button */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        color: isResDone ? '#15803d' : '#64748b',
+                        background: isResDone ? '#dcfce7' : '#f1f5f9',
+                        border: `1px solid ${isResDone ? '#bbf7d0' : '#e2e8f0'}`,
+                        padding: '3px 8px',
+                        borderRadius: '6px',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {isResDone ? '✓ Visited' : 'Pending'}
                     </span>
+
+                    <a
+                      href={res.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => {
+                        handleResourceOpen(resId, res);
+                      }}
+                      className="lesson-resource-open-btn"
+                      style={{
+                        padding: '5px 10px',
+                        fontSize: '11.5px',
+                        fontWeight: 700,
+                        borderRadius: '6px',
+                      }}
+                    >
+                      Open <ArrowUpRight size={12} />
+                    </a>
                   </div>
-                </a>
+                </div>
               );
             })}
           </div>
