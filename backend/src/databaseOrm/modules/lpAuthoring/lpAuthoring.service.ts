@@ -96,7 +96,7 @@ export class LpAuthoringService {
         }
 
         // Authorization check: Only Admin or the original creator can edit
-        const ownerId = existingLP.createdBy?.id;
+        const ownerId = existingLP.createdBy?.id || (existingLP as any)?.createdById;
         const isAdmin = String(creator.primaryRole?.name || '').toLowerCase() === 'admin' || (creator.roles || []).some((r: any) => String(r.name).toLowerCase() === 'admin');
         if (!isAdmin && String(ownerId || '').toLowerCase() !== String(creatorId).toLowerCase()) {
           const { ForbiddenException } = await import('@nestjs/common');

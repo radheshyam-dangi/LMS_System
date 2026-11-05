@@ -12,59 +12,15 @@ export interface ExtractedTraineeParams {
 export class McpBridgeService {
   private readonly logger = new Logger(McpBridgeService.name);
 
-  // Negative guards: Operational curriculum mutations that mention trainees but are NOT lookup inquiries
-  private readonly NEGATIVE_MUTATION_PATTERNS =
-    /\b(?:assign|attach|grade|evaluate|create\s+(?:assignment|lesson|module|quiz|test|exam))\b/i;
-
-  // Senior AI Architect Pattern Suite: Comprehensive multi-angle intent recognition
-  private readonly TRAINEE_PATTERNS: RegExp[] = [
-    // 1. Retrieval Action Verbs + Trainee Entities (e.g., 'find all the trainee exist inside the Database', 'show all enrolled users')
-    /(?:list|show|get|display|view|fetch|find|retrieve|pull\s+up|look\s*up|search(?:ing)?(?:\s+for)?|check|inspect|tell\s+me|give\s+me|who\s+is|who\s+are|who\s+all|which\s+users|what\s+users|are\s+there\s+any|do\s+we\s+have|browse)\b.*?\b(?:trainees?|students?|learners?|enrollees?|enrolled\s+users?|candidates?|participants?|attendees?|pupils?)\b/i,
-
-    // 2. Quantifier / State / Scope Modifiers + Trainee Entities (e.g., 'all enrolled users across platform', 'registered students')
-    /\b(?:all|every|total|entire|registered|active|inactive|enrolled|existing|current|all\s+the)\s+(?:trainees?|students?|learners?|enrollees?|enrolled\s+users?|candidates?|participants?|attendees?)\b/i,
-
-    // 3. User with Role Trainee phrasing variants (e.g. 'users with trainee role in entire database', 'who has trainee role')
-    /\b(?:users?|accounts?|members?|people|profiles?)\s+(?:with|having|holding|assigned|possessing)\s+(?:the\s+)?(?:role\s+)?trainee\b/i,
-    /\btrainee\s+(?:role\s+)?(?:users?|accounts?|members?)\b/i,
-    /\bwho\s+has\s+(?:the\s+)?trainee\s+role\b/i,
-
-    // 4. System / Database Scope inquiries (e.g. 'exist inside the database', 'in entire system', 'registered in our LMS')
-    /\b(?:exist(?:ing)?\s+(?:in|inside)|registered\s+(?:in|on)|enrolled\s+(?:in|on|across))\s+(?:the\s+)?(?:entire\s+|whole\s+)?(?:database|db|postgres(?:ql)?|system|platform|lms|records|catalog)\b/i,
-    /\b(?:database|db|postgres(?:ql)?|entire\s+system|whole\s+system|platform|lms)\b.*?\b(?:trainees?|students?|learners?|enrollees?)\b/i,
-    /\b(?:trainees?|students?|learners?|enrollees?)\b.*?\b(?:in|on|inside|across)\s+(?:the\s+)?(?:database|db|postgres(?:ql)?|entire\s+system|whole\s+system|platform|lms)\b/i,
-
-    // 5. Roster, Directory, Cohort, and Batch phrases (e.g. 'pull up student roster', 'trainee list please', 'class directory')
-    /\b(?:student|trainee|learner|class|enrolled\s+user|candidate|cohort|batch)\s+(?:list|roster|directory|records?)\b/i,
-    /^(?:trainee|student|learner)s?\s*(?:list|directory|roster)?\s*(?:please)?$/i,
-    /\bwho\s+(?:is|are|all\s+are)\s+(?:enrolled|studying|registered|learning)\b/i,
-
-    // 6. Counting & Metrics Queries (e.g. 'how many trainees in database', 'count of students enrolled')
-    /\b(?:how\s+many|count\s+of|number\s+of|total\s+count\s+of|headcount\s+of)\s+(?:trainees?|students?|learners?|enrollees?|candidates?)\b/i,
-
-    // 7. Bilingual & Hinglish Queries (e.g. 'kaun kaun se trainees enrolled hain', 'kitne students hain')
-    /(?:kaun\s+kaun\s+se\s+|kitne\s+)(?:trainees?|students?|learners?)/i,
-    /(?:trainees?|students?|learners?)\s+(?:dikhao|ki\s+list|enrolled\s+hain|database\s+mein)/i,
-  ];
-
-  constructor(private readonly postgresMcpService: PostgresMcpService) {}
+  constructor(private readonly postgresMcpService: PostgresMcpService) { }
 
   /**
-   * High-accuracy semantic intent detection for all trainee / student / learner inquiries.
-   * Evaluates comprehensive phrasing variants, synonyms, scope qualifiers, and negative guards.
+   * Deprecated intent check: Retained for backward-compatibility.
+   * LLM ReAct agent autonomously selects the 'query_database_trainees' tool natively.
    */
   isTraineeInquiry(message: string): boolean {
-    const normalized = message.toLowerCase().trim();
-
-    // Check negative operational guards (e.g. assigning or grading actions)
-    if (this.NEGATIVE_MUTATION_PATTERNS.test(normalized)) {
-      // Allow only if explicitly combined with a lookup request (e.g. 'show trainees before assigning')
-      if (!/\b(?:list|show|view|display|fetch|find|tell\s+me|how\s+many)\b/i.test(normalized)) {
-        return false;
-      }
-    }
-
-    return this.TRAINEE_PATTERNS.some((pattern) => pattern.test(normalized));
+    const normalized = (message || '').toLowerCase().trim();
+    return /\btrainees?\b/i.test(normalized);
   }
 
   /**
@@ -227,7 +183,7 @@ export class McpBridgeService {
         let functionArgs = {};
         try {
           functionArgs = JSON.parse(toolCall.function?.arguments || '{}');
-        } catch {}
+        } catch { }
 
         this.logger.log(`LLM decided to call MCP tool: ${functionName}`);
 
@@ -389,9 +345,8 @@ ${JSON.stringify(toolResult, null, 2)}`;
     const { totalCount, activeCount, inactiveCount, trainees } = result;
 
     const searchNotice = options?.search ? ` matching "${options.search}"` : '';
-    const summaryLine = `**Trainee Roster**\n\nFound **${totalCount} registered trainee${
-      totalCount === 1 ? '' : 's'
-    }**${searchNotice} (${activeCount} active, ${inactiveCount} inactive):\n\n`;
+    const summaryLine = `**Trainee Roster**\n\nFound **${totalCount} registered trainee${totalCount === 1 ? '' : 's'
+      }**${searchNotice} (${activeCount} active, ${inactiveCount} inactive):\n\n`;
 
     const listItems = trainees
       .map((t, idx) => {

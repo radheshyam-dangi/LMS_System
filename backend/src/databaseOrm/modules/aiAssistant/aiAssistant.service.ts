@@ -60,39 +60,83 @@ export interface CitationDto {
 import { sanitizeAiResponse } from '../trainerAiAssistant/trainerAiSanitizer';
 
 const MAX_HISTORY_TURNS = 6;
-const LP_ANSWER_PROMPT = `You are a Senior Academic AI Assistant for SkillForge LMS trainees.
-Your goal is to provide trainees with effective, clear, and concise answers based on their assigned course material.
 
-CORE OPERATIONAL RULES:
-1. Effective & Concise Structure: Deliver clear, high-impact answers without verbose academic lecturing or bloated preambles. Structure your response as follows:
-   - Direct Answer: 1-2 direct sentences answering the question immediately.
-   - Key Points: 2-4 concise bullet points explaining the core concepts, mechanisms, or steps.
-   - Practical Takeaway: 1 short sentence or brief practical code snippet if applicable.
-   Keep the total response under 150-220 words.
-2. Strict Grounding: Base your answer exclusively on the verified course passages provided.
-3. Capability Boundary & Grounding Verification:
-   - If the question cannot be directly and accurately answered from the provided course passages, or if the topic or definition is missing from the curriculum:
-   - You MUST output "[NOT_COVERED_IN_CURRICULUM]" at the very beginning of your response, followed by stating that this topic is not covered in the current curriculum.
-   - Never invent facts or pretend the curriculum contains the answer when it does not.
-4. Zero Emojis and Zero Decorative Icons: Absolutely NO emojis (no emojis of any kind) and no ASCII/unicode art.
-5. Clean Typography: Do not generate markdown tables, pipe (|) characters, backslashes, decorative divider lines, or hashtags (#, ##) for headers. Use bold text for headers.
-6. Zero Inline Citations: Do not write "Source:", URLs, or bracketed numbers. Institutional references are attached automatically by the platform UI.
-7. Pedagogical Integrity: Never disclose assignment answer keys, exam rubrics, or quiz solutions. Guide comprehension rather than solving tests for them.
-8. Ambiguous Course Edits: When asked to add or create a module, lesson, or assignment without context (e.g. "add one module", "create a lesson", "add an assignment"), ask: "In which Learning Path would you like to create or add the lesson, assignment, or module?" and guide them to specify the course.`;
+const TRAINEE_SYSTEM_PROMPT = `You are the Senior Academic AI Learning Assistant for Trainees at SkillForge LMS.
+Your mission is to guide students with clear, accurate, and encouraging educational explanations.
 
-const WEB_ANSWER_PROMPT = `You are a Senior Academic AI Assistant for SkillForge LMS trainees.
-The trainee's question extends beyond their local Learning Path catalog. Provide a clear, effective, and concise synthesis from verified educational web context.
+CORE CAPABILITIES & TOOLS:
+1. "vector_search_lp_content": Call this tool to look up internal course lessons, video summaries, and assignment guidelines.
+   - Ground your answer in the retrieved course passages.
+   - Clearly explain concepts in accessible, high-impact language.
+2. "web_search": Call this tool if internal course search returns no results, if the user explicitly asks for external docs/articles, or if the question is an industry topic outside the LMS curriculum.
+   - Synthesize a concise explanation using the web results.
+3. "query_course_catalog": Call this tool when the trainee asks about available learning paths, catalog courses, or their enrolled titles.
 
-CORE OPERATIONAL RULES:
-1. Effective & Concise Synthesis: Provide a direct, well-structured explanation synthesized from verified web excerpts:
-   - Direct Answer: 1-2 concise sentences answering the core inquiry.
-   - Key Points: 2-4 brief bullet points explaining the key principles or technical details.
-   - Keep the total response under 150-200 words. Avoid filler phrases and conversational fluff.
-2. Capability Boundary: If the retrieved excerpts do not contain sufficient verified data to answer accurately, concisely state your inability to provide a confirmed answer.
-3. Zero Emojis and Zero Decorative Icons: Absolutely NO emojis and no decorative borders or symbols.
-4. Clean Typography: Do not generate markdown tables, pipe (|) characters, or hashtags for headers.
-5. Zero Inline Citations: Do not write "Source:" or raw URLs in the text body. References are rendered independently in the user interface.
-6. Ambiguous Course Edits: When asked to add or create a module, lesson, or assignment without context (e.g. "add one module", "create a lesson", "add an assignment"), ask: "In which Learning Path would you like to create or add the lesson, assignment, or module?" and guide them to specify the course.`;
+ROLE & ACCESS BOUNDARIES:
+- Trainees CANNOT author, create, modify, or delete Learning Paths, modules, lessons, or assignments.
+- If a trainee asks you to add, edit, or delete curriculum (e.g. "add a new module", "create a lesson", "delete assignment", "make a quiz"):
+  Politely inform the trainee:
+  "As a trainee, you do not have permission to add or modify courses in the LMS. Only designated trainers and administrators can author or update curriculum. You can explore your current assigned courses or reach out to your instructor to request new topics."
+- Never invent database IDs, UUIDs, or internal identifiers.
+- Do NOT use emojis, pictograms, or decorative icons under any circumstances.
+- Do NOT generate markdown tables, pipe (|) characters, backslashes, or divider lines. Use bold text (**Heading**) for headers.`;
+
+const TRAINEE_TOOLS = [
+  {
+    type: 'function',
+    function: {
+      name: 'vector_search_lp_content',
+      description:
+        'Searches the trainee assigned course curriculum, modules, lessons, and assignments for technical explanations, definitions, and tutorials. Call this first whenever the trainee asks about course topics, concepts, code examples, or curriculum definitions.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query or concept to look up in the assigned learning paths.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description:
+        'Searches the public web for authoritative documentation, technical articles, and tutorials. Use this when the concept is NOT covered in the LMS course, or when the user asks for external real-world documentation, news, or general programming help.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'The search query to look up on the web.',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_course_catalog',
+      description:
+        'Queries available Learning Paths and courses in the LMS catalog. Use when the trainee asks: "what courses exist", "list learning paths", "show my courses", or asks about available curriculums.',
+      parameters: {
+        type: 'object',
+        properties: {
+          search: {
+            type: 'string',
+            description: 'Optional keyword to filter courses.',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+];
 
 @Injectable()
 export class AiAssistantService {
@@ -134,62 +178,197 @@ export class AiAssistantService {
     // Save user message
     await this.saveMessage(conv.id, 'user', dto.question);
 
-    // Ambiguous module/lesson/assignment creation inquiry without context
-    const isAmbiguousCurriculumCommand =
-      /^(?:please\s+)?(?:add|create|insert|append|make)\s+(?:a\s+|an\s+|the\s+|one\s+|\d+\s+)?(?:new\s+|more\s+)?(?:module|lesson|assignment|task|quiz)s?\b/i.test(
-        dto.question.trim(),
+    const groqKey = process.env.GROQ_API_KEY;
+    if (!groqKey) {
+      throw new Error('GROQ_API_KEY not configured');
+    }
+    const model = process.env.GROQ_CHAT_MODEL || process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+
+    const messages: any[] = [
+      { role: 'system', content: TRAINEE_SYSTEM_PROMPT },
+      ...history.slice(-8).map((h) => ({ role: h.role, content: h.content.substring(0, 1500) })),
+      { role: 'user', content: dto.question },
+    ];
+
+    let finalAnswer = '';
+    let sourceLabel: 'lp_content' | 'web' | 'none' = 'none';
+    let citations: CitationDto[] = [];
+    let totalTokens: number | undefined = undefined;
+
+    const MAX_TOOL_ITERATIONS = 3;
+    let iteration = 0;
+
+    while (iteration < MAX_TOOL_ITERATIONS) {
+      iteration++;
+
+      this.logger.log(
+        `[TraineeAiAssistant] Turn ${iteration}/${MAX_TOOL_ITERATIONS}: Invoking LLM (${model}) with ${messages.length} messages and ${TRAINEE_TOOLS.length} tools...`,
       );
 
-    if (isAmbiguousCurriculumCommand) {
-      const assignedIds = await this.retrieval.getAssignedLpIds(traineeId);
-      let lps: Array<{ id: string; title: string }> = [];
+      const completion = await this.callGroqWithTools(messages, model, groqKey, TRAINEE_TOOLS);
+      const assistantMessage = completion.message;
+      totalTokens = (totalTokens || 0) + (completion.usage?.total_tokens || 0);
 
-      if (assignedIds.length > 0) {
-        lps = await this.datasource.query(
-          `SELECT id, title FROM "LearningPath" WHERE id = ANY($1) ORDER BY "updated_at" DESC LIMIT 8`,
-          [assignedIds],
-        );
-      }
-      if (lps.length === 0) {
-        lps = await this.datasource.query(
-          `SELECT id, title FROM "LearningPath" WHERE (status = 'Active' OR status = 'Published') ORDER BY "updated_at" DESC LIMIT 8`,
-        );
+      if (!assistantMessage) {
+        throw new Error('LLM returned an empty response');
       }
 
-      const qLower = dto.question.toLowerCase();
-      const mentionsLp = lps.some(lp => qLower.includes(lp.title.toLowerCase()));
+      const toolCalls = assistantMessage.tool_calls;
 
-      if (!mentionsLp) {
-        const lpList = lps.length > 0
-          ? lps.map((lp, idx) => `${idx + 1}. **${lp.title}**`).join('\n')
-          : 'No learning paths currently available in your catalog.';
+      // Case A: Model requested tool execution
+      if (toolCalls && Array.isArray(toolCalls) && toolCalls.length > 0) {
+        messages.push(assistantMessage);
 
-        const answer =
-          `In which Learning Path would you like to create or add the lesson, assignment, or module?\n\n` +
-          `Please specify one of the Learning Paths:\n\n${lpList}\n\n` +
-          `*For example: "Add a module on Microservices to ${lps[0]?.title || 'your course'}"*`;
+        for (const call of toolCalls) {
+          const fnName = call.function?.name;
+          let fnArgs: any = {};
+          try {
+            fnArgs = JSON.parse(call.function?.arguments || '{}');
+          } catch (e) {
+            this.logger.warn(`Failed to parse tool arguments for ${fnName}: ${(e as Error).message}`);
+          }
 
-        const msg = await this.saveMessage(conv.id, 'assistant', answer, { sourceLabel: 'none', citations: [] });
-        return {
-          conversationId: conv.id,
-          messageId: msg.id,
-          answer,
-          sourceLabel: 'none',
-          citations: [],
-        };
+          this.logger.log(`[TraineeAiAssistant] Executing tool "${fnName}" with args: ${JSON.stringify(fnArgs)}`);
+
+          let toolResult: any;
+
+          if (fnName === 'vector_search_lp_content') {
+            const searchQuery = fnArgs.query || dto.question;
+            const retrieval = await this.retrieval.retrieve(traineeId, searchQuery, 5);
+            if (retrieval.chunks && retrieval.chunks.length > 0) {
+              sourceLabel = 'lp_content';
+              const seen = new Set<string>();
+              for (const c of retrieval.chunks) {
+                const key = c.lessonTitle || c.lessonId;
+                if (!seen.has(key)) {
+                  seen.add(key);
+                  citations.push({
+                    type: 'lp',
+                    lessonId: c.lessonId,
+                    lessonTitle: c.lessonTitle,
+                    lpTitle: c.lpTitle,
+                    url: c.lpId ? `/learning-paths/${c.lpId}/modules` : '/learning-paths',
+                    preview: c.chunkText.substring(0, 120) + '…',
+                  });
+                  if (citations.length >= 3) break;
+                }
+              }
+
+              toolResult = {
+                found: true,
+                passagesCount: retrieval.chunks.length,
+                passages: retrieval.chunks.slice(0, 3).map((c, i) => ({
+                  passageIndex: i + 1,
+                  lessonTitle: c.lessonTitle,
+                  lpTitle: c.lpTitle,
+                  text: c.chunkText.substring(0, 800),
+                })),
+              };
+            } else {
+              toolResult = {
+                found: false,
+                message: `No matching content found in assigned courses for "${searchQuery}". You may search the web using web_search tool if relevant.`,
+              };
+            }
+          } else if (fnName === 'web_search') {
+            const searchQuery = fnArgs.query || dto.question;
+            const webResults = await this.webSearch(searchQuery);
+            if (webResults && webResults.length > 0) {
+              sourceLabel = 'web';
+              const topWeb = webResults.slice(0, 3);
+              citations = topWeb.map((r) => ({
+                type: 'web',
+                url: r.url,
+                title: r.title,
+                preview: r.content.substring(0, 120) + '…',
+              }));
+
+              toolResult = {
+                found: true,
+                resultsCount: topWeb.length,
+                results: topWeb.map((r) => ({
+                  title: r.title,
+                  url: r.url,
+                  content: r.content.substring(0, 800),
+                })),
+              };
+            } else {
+              toolResult = {
+                found: false,
+                message: `Web search returned no results for "${searchQuery}".`,
+              };
+            }
+          } else if (fnName === 'query_course_catalog') {
+            sourceLabel = 'lp_content';
+            const assignedIds = await this.retrieval.getAssignedLpIds(traineeId);
+            let lps: Array<{ id: string; title: string; difficulty?: string; description?: string }> = [];
+
+            if (assignedIds.length > 0) {
+              lps = await this.datasource.query(
+                `SELECT id, title, difficulty, description FROM "LearningPath" WHERE id = ANY($1) ORDER BY "updated_at" DESC LIMIT 10`,
+                [assignedIds],
+              );
+            }
+            if (lps.length === 0) {
+              lps = await this.datasource.query(
+                `SELECT id, title, difficulty, description FROM "LearningPath" WHERE (status = 'Active' OR status = 'Published') ORDER BY "updated_at" DESC LIMIT 10`,
+              );
+            }
+
+            toolResult = {
+              totalCourses: lps.length,
+              courses: lps.map((lp) => ({
+                title: lp.title,
+                difficulty: lp.difficulty || 'Intermediate',
+                description: lp.description ? lp.description.substring(0, 150) + '...' : '',
+              })),
+            };
+          } else {
+            toolResult = { error: `Tool "${fnName}" is not recognized.` };
+          }
+
+          messages.push({
+            role: 'tool',
+            tool_call_id: call.id,
+            name: fnName,
+            content: JSON.stringify(toolResult),
+          });
+        }
+
+        continue;
       }
+
+      // Case B: Model returned natural language answer
+      finalAnswer = assistantMessage.content || '';
+      break;
     }
 
-    // Retrieve relevant chunks with Senior AIML Cosine & multi-signal reranking
-    const retrieval = await this.retrieval.retrieve(traineeId, dto.question, 6);
-
-    // Gate: strong -> Inbuilt Embedding LP Answer
-    if (retrieval.gate === 'strong' && retrieval.chunks.length > 0) {
-      return this.generateLpAnswer(conv, history, dto.question, retrieval.chunks, startMs);
+    if (!finalAnswer) {
+      finalAnswer = 'I have processed your query. Let me know if you need more details on this topic.';
     }
 
-    // Gate: weak / none / out-of-path -> Seamless Web Search Tool with concise response and clickable citations
-    return this.generateWebAnswer(conv, history, dto.question, startMs);
+    const cleanAnswer = sanitizeAiResponse(
+      finalAnswer
+        .replace(/\[NOT_COVERED_IN_CURRICULUM\]\s*/gi, '')
+        .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
+        .replace(/\n*Source:\s*.*$/gim, '')
+        .trim(),
+    );
+
+    const savedMsg = await this.saveMessage(conv.id, 'assistant', cleanAnswer, {
+      sourceLabel,
+      citations,
+      tokenCount: totalTokens,
+      latencyMs: Date.now() - startMs,
+    });
+
+    return {
+      conversationId: conv.id,
+      messageId: savedMsg.id,
+      answer: cleanAnswer,
+      sourceLabel,
+      citations,
+    };
   }
 
   async listConversations(traineeId: string) {
@@ -275,199 +454,74 @@ export class AiAssistantService {
     };
   }
 
-  private async generateLpAnswer(
-    conv: AiAssistantConversationEntity,
-    history: AiAssistantMessageEntity[],
-    question: string,
-    chunks: RetrievedChunk[],
-    startMs: number,
-  ): Promise<AiAssistantResponseDto> {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) {
-      throw new Error('GROQ_API_KEY not configured');
-    }
+  /**
+   * Resilient Groq Tool-Calling Client with Fallback Model Pool
+   */
+  private async callGroqWithTools(
+    messages: Array<{ role: string; content?: string;[key: string]: any }>,
+    model: string,
+    apiKey: string,
+    tools?: any[],
+  ): Promise<{ message: any; usage?: any }> {
+    const candidateModels = [
+      model,
+      process.env.GROQ_MODEL || process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b',
+      'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+    ].filter((m, i, arr) => m && arr.indexOf(m) === i);
 
-    // Top 3 chunks for context synthesis
-    const passagesText = chunks
-      .slice(0, 3)
-      .map(
-        (c, i) =>
-          `[Passage ${i + 1} | Lesson: ${c.lessonTitle} | Learning Path: ${c.lpTitle || 'Course'}]\n${c.chunkText.substring(0, 900)}`,
-      )
-      .join('\n\n---\n\n')
-      .substring(0, 6000);
+    let lastError: Error | null = null;
 
-    const userContent = `QUESTION: ${question}\n\nCOURSE PASSAGES:\n${passagesText}`;
+    for (let mIdx = 0; mIdx < candidateModels.length; mIdx++) {
+      const currentModel = candidateModels[mIdx];
+      const payload: any = {
+        model: currentModel,
+        messages,
+        temperature: 0.2,
+        max_tokens: 1500,
+      };
 
-    const messages = this.buildMessages(LP_ANSWER_PROMPT, history, userContent);
-    const model = process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b';
+      if (tools && tools.length > 0) {
+        payload.tools = tools;
+        payload.tool_choice = 'auto';
+      }
 
-    const response = await this.callGroq(messages, model, groqKey);
-    const rawAnswer = response.content.trim();
-    const tokenCount = response.usage?.total_tokens;
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(35000),
+        });
 
-    // Detect if the provided LP passages fail to answer the trainee's inquiry
-    const isMissingFromLp =
-      rawAnswer.includes('[NOT_COVERED_IN_CURRICULUM]') ||
-      /not covered in the (current\s+)?curriculum/i.test(rawAnswer) ||
-      /curriculum does not (contain|provide|cover|mention)/i.test(rawAnswer) ||
-      /does not provide a definition/i.test(rawAnswer) ||
-      /not mentioned in the (provided\s+)?course/i.test(rawAnswer) ||
-      /not found in the (provided\s+)?(passages|course|curriculum|material)/i.test(rawAnswer) ||
-      /cannot be answered using the provided/i.test(rawAnswer) ||
-      /no information (about|regarding|is provided) in the provided/i.test(rawAnswer);
+        if (!response.ok) {
+          const errText = await response.text();
+          if ((response.status === 429 || response.status >= 500) && mIdx < candidateModels.length - 1) {
+            this.logger.warn(`Model ${currentModel} returned ${response.status}. Retrying with fallback model...`);
+            await new Promise((r) => setTimeout(r, 1200));
+            continue;
+          }
+          throw new Error(`Groq completions call failed: ${response.status} - ${errText}`);
+        }
 
-    if (isMissingFromLp) {
-      this.logger.log(
-        `AI Assistant: Question "${question}" is not covered in assigned Learning Path content. Seamlessly switching to verified Web Search...`,
-      );
-      return this.generateWebAnswer(conv, history, question, startMs);
-    }
-
-    // Pick 1 or 2 specific distinct lesson citations
-    const seenLessons = new Set<string>();
-    const topChunks: RetrievedChunk[] = [];
-    for (const c of chunks) {
-      const key = c.lessonTitle || c.lessonId;
-      if (!seenLessons.has(key)) {
-        seenLessons.add(key);
-        topChunks.push(c);
-        if (topChunks.length >= 2) break;
+        const completion = (await response.json()) as any;
+        const msg = completion.choices?.[0]?.message;
+        if (msg) {
+          return { message: msg, usage: completion.usage };
+        }
+      } catch (err: any) {
+        lastError = err;
+        if (mIdx === candidateModels.length - 1) {
+          throw err;
+        }
+        this.logger.warn(`Error querying model ${currentModel}: ${err.message}. Retrying fallback...`);
       }
     }
 
-    const cleanAnswer = sanitizeAiResponse(
-      rawAnswer
-        .replace(/\[NOT_COVERED_IN_CURRICULUM\]\s*/gi, '')
-        .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
-        .replace(/\n*Source:\s*.*$/gim, '')
-        .trim(),
-    );
-
-    const citations: CitationDto[] = topChunks.map((c) => ({
-      type: 'lp',
-      lessonId: c.lessonId,
-      lessonTitle: c.lessonTitle,
-      lpTitle: c.lpTitle,
-      url: c.lpId ? `/learning-paths/${c.lpId}/modules` : '/learning-paths',
-      preview: c.chunkText.substring(0, 120) + '…',
-    }));
-
-    const msg = await this.saveMessage(conv.id, 'assistant', cleanAnswer, {
-      sourceLabel: 'lp_content',
-      citations,
-      tokenCount,
-      latencyMs: Date.now() - startMs,
-    });
-
-    return {
-      conversationId: conv.id,
-      messageId: msg.id,
-      answer: cleanAnswer,
-      sourceLabel: 'lp_content',
-      citations,
-    };
-  }
-
-  private async generateWebAnswer(
-    conv: AiAssistantConversationEntity,
-    history: AiAssistantMessageEntity[],
-    question: string,
-    startMs: number,
-  ): Promise<AiAssistantResponseDto> {
-    const groqKey = process.env.GROQ_API_KEY;
-    if (!groqKey) throw new Error('GROQ_API_KEY not configured');
-
-    const webResults = await this.webSearch(question);
-
-    if (!webResults.length) {
-      // If web search returned 0 results, fall back to general explanation
-      return this.generateGeneralAnswer(conv, history, question, groqKey, startMs);
-    }
-
-    // Limit to top 3 results for concise, targeted external context
-    const topWeb = webResults.slice(0, 3);
-    const webContext = topWeb
-      .map(
-        (r, i) =>
-          `[Source ${i + 1}: ${r.title}]\nURL: ${r.url}\nExcerpt: ${r.content.substring(0, 800)}`,
-      )
-      .join('\n\n---\n\n');
-
-    const userContent = `QUESTION: ${question}\n\nWEB SEARCH RESULTS:\n${webContext}`;
-    const messages = this.buildMessages(WEB_ANSWER_PROMPT, history, userContent);
-    const model = process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b';
-
-    const response = await this.callGroq(messages, model, groqKey);
-    const answer = response.content.trim();
-
-    const cleanAnswer = sanitizeAiResponse(
-      answer
-        .replace(/\n*Source:\s*(\[[^\]]+\]\([^)]+\)(?:,\s*)?)+/gi, '')
-        .replace(/\n*Source:\s*.*$/gim, '')
-        .trim(),
-    );
-
-    const citations: CitationDto[] = topWeb.map((r) => ({
-      type: 'web',
-      url: r.url,
-      title: r.title,
-      preview: r.content.substring(0, 120) + '…',
-    }));
-
-    const msg = await this.saveMessage(conv.id, 'assistant', cleanAnswer, {
-      sourceLabel: 'web',
-      citations,
-      tokenCount: response.usage?.total_tokens,
-      latencyMs: Date.now() - startMs,
-    });
-
-    return {
-      conversationId: conv.id,
-      messageId: msg.id,
-      answer: cleanAnswer,
-      sourceLabel: 'web',
-      citations,
-    };
-  }
-
-  private async generateGeneralAnswer(
-    conv: AiAssistantConversationEntity,
-    history: AiAssistantMessageEntity[],
-    question: string,
-    groqKey: string,
-    startMs: number,
-  ): Promise<AiAssistantResponseDto> {
-    const GENERAL_PROMPT = `You are a Senior Academic AI Assistant for SkillForge LMS trainees.
-Provide an effective, concise, and clear educational answer to the trainee's inquiry.
-CORE RULES:
-1. Effective & Concise: Deliver a direct 1-2 sentence core answer followed by 2-4 brief bullet points explaining the essential principles. Keep response under 150-180 words.
-2. Inability Handling: If the topic is outside educational scope, clearly and directly state your inability to answer.
-3. Zero Emojis or decorative icons under any circumstances.
-4. Clean Typography: No tables, pipe (|) characters, backslashes, or divider lines.`;
-
-    const messages = this.buildMessages(GENERAL_PROMPT, history, question);
-    const model = process.env.GROQ_CHAT_MODEL || 'openai/gpt-oss-120b';
-
-    const response = await this.callGroq(messages, model, groqKey);
-    const cleanAnswer = sanitizeAiResponse(response.content.trim());
-
-    const tokenCount = response.usage?.total_tokens;
-
-    const msg = await this.saveMessage(conv.id, 'assistant', cleanAnswer, {
-      sourceLabel: 'none',
-      citations: [],
-      tokenCount,
-      latencyMs: Date.now() - startMs,
-    });
-
-    return {
-      conversationId: conv.id,
-      messageId: msg.id,
-      answer: cleanAnswer,
-      sourceLabel: 'none',
-      citations: [],
-    };
+    throw lastError || new Error('Empty response from Groq');
   }
 
   /**
@@ -595,54 +649,6 @@ CORE RULES:
     }
 
     return [];
-  }
-
-  private buildMessages(
-    systemPrompt: string,
-    history: AiAssistantMessageEntity[],
-    userContent: string,
-  ) {
-    const messages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: systemPrompt },
-    ];
-    for (const h of history) {
-      if (h.role === 'user' || h.role === 'assistant') {
-        messages.push({ role: h.role, content: h.content.substring(0, 1000) });
-      }
-    }
-    messages.push({ role: 'user', content: userContent });
-    return messages;
-  }
-
-  private async callGroq(
-    messages: Array<{ role: string; content: string }>,
-    model: string,
-    apiKey: string,
-  ): Promise<{ content: string; usage?: any }> {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.35,
-        max_tokens: 750,
-      }),
-      signal: AbortSignal.timeout(20000),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`Groq API error ${response.status}: ${errText}`);
-    }
-    const data = (await response.json()) as any;
-    return {
-      content: data.choices?.[0]?.message?.content || 'No response generated.',
-      usage: data.usage,
-    };
   }
 
   private async resolveConversation(

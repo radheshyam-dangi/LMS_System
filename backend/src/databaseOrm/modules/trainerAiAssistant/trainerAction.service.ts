@@ -184,6 +184,9 @@ export class TrainerActionService {
       // Mark action executed
       action.status = 'executed';
       await this.actionRepo.save(action);
+      this.logger.log(
+        `[TrainerActionService] Trainer ${trainerId} confirmed CRUD mutation on LP "${lp.title}" (${lp.id}) | Operation: ${upgradeSummary}`,
+      );
 
       // Update message action card in chat history if stored
       await this.updateMessageActionCardStatus(action.id, 'confirmed');
@@ -256,6 +259,9 @@ export class TrainerActionService {
     // Mark action executed
     action.status = 'executed';
     await this.actionRepo.save(action);
+    this.logger.log(
+      `[TrainerActionService] Trainer ${trainerId} confirmed and published draft LP "${lp.title}" (${lp.id})`,
+    );
 
     // Update message action card in chat history if stored
     await this.updateMessageActionCardStatus(action.id, 'confirmed');
@@ -315,6 +321,9 @@ export class TrainerActionService {
 
     action.status = 'cancelled';
     await this.actionRepo.save(action);
+    this.logger.log(
+      `[TrainerActionService] Trainer ${trainerId} cancelled action ${action.id} (${action.actionType}) for LP ${action.targetId}`,
+    );
 
     // Update message action card in chat
     await this.updateMessageActionCardStatus(action.id, 'cancelled');

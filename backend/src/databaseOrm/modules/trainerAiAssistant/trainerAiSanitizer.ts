@@ -38,35 +38,11 @@ export function sanitizeTrainerQuery(rawQuery: string): {
 
   const lower = cleaned.toLowerCase();
 
-  // 3. Detect advisory / logical / consultative intent
-  const hasAdvisoryIntent =
-    /(?:why|how|what|which|where|when|who|suggest|recommend|advice|advise|idea|review|analyze|analysis|evaluate|evaluation|critique|feedback|gap|pros and cons|compare|difference|overview|summary|summarize|explain|tell me|opinion|rationale|logic|guidance|guide|prerequisite|best practice|should i|could we)\b/i.test(
-      lower,
-    );
-
-  // 4. Detect direct mutation command intent (e.g. "Add lesson Kafka in Module 1", "Delete Module 2", "Can you add one more module inside...")
-  const hasDirectMutationIntent =
-    /(?:^|\b)(?:can\s+you\s+|could\s+you\s+|please\s+|i\s+want\s+to\s+|i\s+would\s+like\s+to\s+|we\s+need\s+to\s+)?(?:add[s]?|adding|insert(?:ed|ing|s)?|append(?:ed|ing|s)?|attach(?:ed|ing|s)?|embed(?:ded|ing|s)?|put|delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|rename[ds]?|replace[ds]?|creat(?:e|ed|ing|es)|make|update[ds]?|updating|modify|modified|modifying|edit(?:ed|ing|s)?)\s+(?:a\s+|an\s+|the\s+|one\s+|\d+\s+)?(?:new\s+|more\s+)?(?:lesson|module|assignment|task|question|quiz|assessment|video|resource|doc)s?\b/i.test(
-      lower,
-    ) ||
-    /(?:^|\b)(?:please\s+)?(?:upgrade|restructure|rebuild|revise|modify|refactor)\s+(?:the\s+)?(?:curriculum|learning\s+path|course|syllabus)\b/i.test(
-      lower,
-    ) ||
-    /\b(?:delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|discard(?:ed|s)?|omit(?:ted|s)?|trash(?:ed|es)?|eras(?:e|ed|es|ing))\s+(?:only\s+)?(?:the\s+|a\s+|an\s+|this\s+|that\s+)?(?:lesson|module|assignment|task|question|quiz|assessment|video|resource)s?\b/i.test(
-      lower,
-    ) ||
-    /\b(?:lesson|module|assignment|task|question|quiz|assessment|video|resource)s?\s*(?:[0-9]+)?\s*.*?\b(?:delete[ds]?|deleting|remov(?:e|ed|es|ing)|drop(?:ped|s)?|discard(?:ed|s)?|erase|trash(?:ed)?)\b/i.test(
-      lower,
-    ) ||
-    /\b(?:still\s+visible\s+)?(?:remove|removed|delete|deleted|drop)\s+(?:it|this|that|them)\b/i.test(
-      lower,
-    );
-
   return {
     cleanQuery: cleaned,
     normalizedQuery: lower,
-    hasAdvisoryIntent,
-    hasDirectMutationIntent,
+    hasAdvisoryIntent: false,
+    hasDirectMutationIntent: false,
   };
 }
 
@@ -81,13 +57,15 @@ export function sanitizeAiResponse(text: string): string {
   if (!text) return '';
 
   return text
-    // 1. Remove database IDs, UUIDs, and internal identifiers (e.g. "- ID: 0ba216e6-...", "ID: ...", "(ID: ...)")
-    .replace(/\s*[-–—]?\s*\(?\b(?:ID|id|UUID|uuid)\s*[:=]\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b\)?/gi, '')
-    // 2. Remove standalone UUIDs that might have leaked into text
+    // 1. Remove entire lines with database internal IDs (e.g. "• Enrollment ID: ...", "- User ID: ...", "Course ID: ...", "ID: ...")
+    .replace(/^\s*[-–—*•]?\s*(?:\*\*)?(?:[A-Za-z0-9_ ]+)?(?:ID|id|UUID|uuid)(?:\*\*)?\s*[:=].*$/gim, '')
+    // 2. Remove inline database IDs, UUIDs, and internal identifiers (e.g. "- ID: 0ba216e6-...", "ID: ...", "(ID: ...)")
+    .replace(/\s*[-–—]?\s*\(?\b(?:[A-Za-z0-9_ ]+)?(?:ID|id|UUID|uuid)\s*[:=]\s*[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b\)?/gi, '')
+    // 3. Remove standalone UUIDs that might have leaked into text
     .replace(/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, '')
-    // 3. Remove trailing/hanging "- ID:" or "- ID" leftovers if any
-    .replace(/\s*[-–—]\s*(?:ID|id)\s*[:=]?\s*$/gm, '')
-    // 4. Remove emojis, pictograms, and special symbol glyphs
+    // 4. Remove trailing/hanging "- ID:" or "- ID" leftovers if any
+    .replace(/^\s*[-–—*•]?\s*(?:\*\*)?(?:[A-Za-z0-9_ ]+)?(?:ID|id|UUID|uuid)(?:\*\*)?\s*[:=]?\s*$/gim, '')
+    // 5. Remove emojis, pictograms, and special symbol glyphs
     .replace(
       /[\u{1F300}-\u{1F9FF}\u{1FA00}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E0}-\u{1F1FF}\u{FE00}-\u{FE0F}\u{200D}\u{23E9}-\u{23EC}\u{23F0}\u{23F3}\u{2B50}\u{2B55}\u{2934}\u{2935}]/gu,
       '',
@@ -101,16 +79,20 @@ export function sanitizeAiResponse(text: string): string {
     // 8. Remove backslashes used as escapes (\-, \*, \_, \., etc.)
     .replace(/\\([_*\-#`~[\]()\\/])/g, '$1')
     .replace(/\\+/g, '')
-    // 9. Clean up slash delimiters (e.g. "Skills / Focus" -> "Skills, Focus" or " / " -> ", ")
-    .replace(/\s+\/\s+/g, ', ')
-    // 10. Clean up double/multiple commas created by delimiter replacements
+    // 9. Preserve fraction counts like "6 / 6" -> "6/6"
+    .replace(/(\d+)\s*\/\s*(\d+)/g, '$1/$2')
+    // 10. Clean up text slash delimiters (e.g. "Skills / Focus" -> "Skills, Focus") only when not between numbers
+    .replace(/(?<!\d)\s*\/\s*(?!\d)/g, ', ')
+    // 11. Repair any accidental comma fractions like "6, 6 Lessons" -> "6/6 Lessons"
+    .replace(/(\d+),\s*(\d+)\s*(lessons?|assessments?|tasks?|modules?)/gi, '$1/$2 $3')
+    // 12. Clean up double/multiple commas created by delimiter replacements
     .replace(/,\s*,+/g, ',')
-    // 11. Clean up stray leading/trailing commas on lines
+    // 13. Clean up stray leading/trailing commas on lines
     .replace(/^,\s+/gm, '')
     .replace(/,\s*$/gm, '')
-    // 12. Normalize multiple consecutive inline spaces
+    // 14. Normalize multiple consecutive inline spaces
     .replace(/[ \t]{2,}/g, ' ')
-    // 13. Normalize multiple consecutive blank lines to at most two
+    // 15. Normalize multiple consecutive blank lines to at most two
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

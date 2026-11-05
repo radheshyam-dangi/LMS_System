@@ -85,6 +85,8 @@ export class TrainerLpGenerationService {
       throw new Error('GROQ_API_KEY is not configured in environment');
     }
 
+    this.logger.log(`[TrainerLpGenerationService] Generating AI Learning Path for "${title}" (trainer: ${trainerId})...`);
+
     // 1. Check for similar existing paths to provide a helpful notice
     const existingSimilar = await this.lpRepo
       .createQueryBuilder('lp')
@@ -366,6 +368,10 @@ CRITICAL RULES:
     const moduleCount = formattedPayload.modules.length;
     const lessonCount = formattedPayload.modules.reduce((sum: number, m: any) => sum + (m.lessons?.length || 0), 0);
     const assignmentCount = formattedPayload.modules.reduce((sum: number, m: any) => sum + (m.assignments?.length || 0), 0);
+
+    this.logger.log(
+      `[TrainerLpGenerationService] Successfully generated draft LP "${savedLp.title}" (${savedLp.id}) with ${moduleCount} modules, ${lessonCount} lessons, ${assignmentCount} assignments. Staged action: ${savedAction.id}`,
+    );
 
     return {
       learningPath: savedLp,

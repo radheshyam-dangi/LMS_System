@@ -42,7 +42,7 @@ export class EvaluationWorkerService {
     this.isProcessing = true;
 
     try {
-       const pendingJobs = await this.jobRepo.createQueryBuilder('job')
+      const pendingJobs = await this.jobRepo.createQueryBuilder('job')
         .leftJoinAndSelect('job.submission', 'submission')
         .leftJoinAndSelect('submission.assignment', 'assignment')
         .leftJoinAndSelect('assignment.createdBy', 'createdBy')
@@ -64,7 +64,7 @@ export class EvaluationWorkerService {
     }
   }
 
-  
+
   async processSubmission(jobId: string, submissionId: string) {
     if (!submissionId) return;
 
@@ -227,8 +227,8 @@ export class EvaluationWorkerService {
       const strVal = String(ans).trim();
       if (!strVal) return;
 
-      const existing = results.find(r => 
-        (qId && r.questionId === qId) || 
+      const existing = results.find(r =>
+        (qId && r.questionId === qId) ||
         (idx !== undefined && r.index === idx)
       );
 
@@ -352,7 +352,7 @@ export class EvaluationWorkerService {
         const p = JSON.parse(assignment.questions);
         if (Array.isArray(p) && p.length > 0) rawList = p;
         else if (Array.isArray(p?.questions) && p.questions.length > 0) rawList = p.questions;
-      } catch {}
+      } catch { }
     } else if (typeof assignment.mcqConfig === 'string') {
       try {
         const p = JSON.parse(assignment.mcqConfig);
@@ -367,7 +367,7 @@ export class EvaluationWorkerService {
             type: 'MCQ',
           }];
         }
-      } catch {}
+      } catch { }
     } else if (assignment.mcqConfig && Array.isArray(assignment.mcqConfig.options) && assignment.mcqConfig.options.length > 0) {
       rawList = [{
         id: '0',
@@ -557,7 +557,7 @@ Return ONLY valid JSON matching this exact shape:
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.API_KEY}` },
       body: JSON.stringify({
         model: this.MODEL,
-        messages: [ { role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt } ],
+        messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
         temperature: 0.1,
         response_format: { type: 'json_object' }
       })
@@ -591,7 +591,7 @@ Return ONLY valid JSON matching this exact shape:
         }
       }
     }
-    
+
     // clamp score strictly between 0 and maxPoints
     parsed.score = Math.min(Math.max(Number(parsed.score) || 0, 0), maxPoints);
 
@@ -654,6 +654,21 @@ Return ONLY valid JSON matching this exact shape:
     } else {
       submission.status = 'ai_evaluated_pending_review';
       submission.evaluationMethod = 'ai_assisted';
+
+      // Pre-fill questionScores dict from AI scores & set feedback from AI overall remark
+      const scoresDict: Record<string, number> = {};
+      questionScores.forEach(qs => {
+        scoresDict[String(qs.questionId)] = qs.score;
+      });
+      submission.questionScores = scoresDict;
+      submission.totalScore = totalScore;
+      submission.totalMaxScore = totalMaxScore;
+      submission.overallRemark = overallRemark;
+      submission.feedback = overallRemark;
+      submission.score = null as any;
+      submission.evaluatedBy = null as any;
+      submission.evaluatedAt = null as any;
+
       await this.submissionRepo.save(submission);
 
       await this.notificationService.create({
@@ -712,7 +727,7 @@ Return ONLY valid JSON matching this exact shape:
     submission.aiEvaluationError = true;
     submission.evaluationMethod = 'manual';
     await this.submissionRepo.save(submission);
-    
+
     await this.notificationService.create({
       userId: recipientId,
       type: 'ai_evaluation_failed',

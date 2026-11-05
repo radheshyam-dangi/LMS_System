@@ -52,7 +52,19 @@ export class TrainerAiAssistantController {
     if (!trainerId) throw new ForbiddenException('Unauthenticated');
     if (!dto.question?.trim()) throw new BadRequestException('Question cannot be empty');
 
-    return this.service.sendMessage(trainerId, dto, req.user);
+    const cleanSnippet = dto.question.trim().replace(/\s+/g, ' ');
+    const preview = cleanSnippet.length > 80 ? cleanSnippet.substring(0, 80) + '...' : cleanSnippet;
+    this.logger.log(
+      `[TrainerAiAssistantController] Incoming message from trainer ${trainerId} | PathId: ${dto.pathId || 'none'} | Query: "${preview}"`,
+    );
+
+    try {
+      const result = await this.service.sendMessage(trainerId, dto, req.user);
+      return result;
+    } catch (e) {
+      this.logger.error(`[TrainerAiAssistantController] Error for trainer ${trainerId}: ${(e as Error).message}`);
+      throw e;
+    }
   }
 
   /**
@@ -83,6 +95,7 @@ export class TrainerAiAssistantController {
   async deleteConversation(@Req() req: any, @Param('id') id: string) {
     const trainerId = req.user?.userId || req.user?.sub || req.user?.id;
     if (!trainerId) throw new ForbiddenException('Unauthenticated');
+    this.logger.log(`[TrainerAiAssistantController] Deleting conversation ${id} for trainer ${trainerId}`);
     await this.service.deleteConversation(trainerId, id);
   }
 
@@ -98,6 +111,7 @@ export class TrainerAiAssistantController {
   ) {
     const trainerId = req.user?.userId || req.user?.sub || req.user?.id;
     if (!trainerId) throw new ForbiddenException('Unauthenticated');
+    this.logger.log(`[TrainerAiAssistantController] Trainer ${trainerId} submitted feedback "${body.feedback}" for message ${messageId}`);
     await this.service.submitFeedback(trainerId, messageId, body.feedback, body.comment);
     return { success: true };
   }
@@ -110,6 +124,7 @@ export class TrainerAiAssistantController {
   async confirmAction(@Req() req: any, @Param('id') actionId: string) {
     const trainerId = req.user?.userId || req.user?.sub || req.user?.id;
     if (!trainerId) throw new ForbiddenException('Unauthenticated');
+    this.logger.log(`[TrainerAiAssistantController] Trainer ${trainerId} confirming action ${actionId}`);
     return this.actionService.confirmAction(trainerId, actionId, req.user);
   }
 
@@ -121,6 +136,7 @@ export class TrainerAiAssistantController {
   async cancelAction(@Req() req: any, @Param('id') actionId: string) {
     const trainerId = req.user?.userId || req.user?.sub || req.user?.id;
     if (!trainerId) throw new ForbiddenException('Unauthenticated');
+    this.logger.log(`[TrainerAiAssistantController] Trainer ${trainerId} cancelling action ${actionId}`);
     return this.actionService.cancelAction(trainerId, actionId);
   }
 

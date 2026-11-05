@@ -370,6 +370,11 @@
   gap: 10px;
 }
 
+.chat-body-p.chat-body-bullet {
+  padding-left: 4px;
+  line-height: 1.55;
+}
+
 .chat-body-p {
   margin: 0;
   color: #334155;

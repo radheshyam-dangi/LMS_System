@@ -918,6 +918,22 @@ export class AssignmentEntityService extends BaseService<AssignmentEntity> {
       submission.status = 'SUBMITTED';
       submission.submittedAt = new Date();
       if (answers) submission.answers = answers;
+
+      // Reset previous manual & AI evaluation fields upon resubmission
+      submission.score = null as any;
+      submission.totalScore = null as any;
+      submission.totalMaxScore = null as any;
+      submission.questionScores = null as any;
+      submission.feedback = null as any;
+      submission.overallRemark = null as any;
+      submission.evaluatedBy = null as any;
+      submission.evaluatedAt = null as any;
+      submission.aiTotalScore = null as any;
+      submission.aiTotalMaxScore = null as any;
+      submission.aiOverallRemark = null as any;
+      submission.aiQuestionScores = null as any;
+      submission.aiContextIncomplete = false;
+      submission.aiEvaluationError = false;
     } else {
       // B3: Compute total duration from real entity fields — assignment.durationValue does not exist
       const totalDurationMinutes =

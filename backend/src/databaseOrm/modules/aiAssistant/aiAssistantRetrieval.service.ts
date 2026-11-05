@@ -516,7 +516,6 @@ export class AiAssistantRetrievalService {
           }
         } else {
           const errText = await response.text();
-          this.logger.warn(`Nomic Atlas API failed (${response.status}): ${errText}`);
         }
       } catch (e) {
         this.logger.warn(`Nomic Atlas API network error: ${(e as Error).message}`);

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   Sparkles,
@@ -359,6 +359,13 @@ export function SubmissionDetailView({
   const questions = useMemo(() => extractAssignmentQuestions(submission.assignment), [submission.assignment]);
   const parsedSubmission = useMemo(() => parseSubmissionData(submission), [submission]);
 
+  // Check if this submission has an AI evaluation pending trainer review
+  const isAiPendingReview =
+    submission.status === 'ai_evaluated_pending_review' ||
+    submission.status === 'Submitted' ||
+    submission.status === 'SUBMITTED' ||
+    Boolean(submission.aiTotalScore != null && !submission.evaluatedAt);
+
   // Pre-calculate initial scores per question from AI or past trainer grading
   const initialScores = useMemo(() => {
     const scores: Record<string, number> = {};
@@ -371,20 +378,26 @@ export function SubmissionDetailView({
         if (traineeChoiceIdx !== null && q.correctIndex !== null && traineeChoiceIdx === q.correctIndex) {
           scores[q.id] = q.points;
         } else {
-          scores[q.id] = 0;
+          const aiQ = Array.isArray(submission.aiQuestionScores)
+            ? submission.aiQuestionScores.find(
+                (s: any) => String(s.questionId) === q.id || String(s.questionId) === String(idx)
+              )
+            : null;
+          scores[q.id] = aiQ && aiQ.score != null ? Math.min(q.points, Math.max(0, Number(aiQ.score) || 0)) : 0;
         }
       } else {
-        if (submission.questionScores && submission.questionScores[q.id] !== undefined) {
+        const aiQ = Array.isArray(submission.aiQuestionScores)
+          ? submission.aiQuestionScores.find(
+              (s: any) => String(s.questionId) === q.id || String(s.questionId) === String(idx)
+            )
+          : null;
+
+        if (isAiPendingReview && aiQ && aiQ.score != null) {
+          scores[q.id] = Math.min(q.points, Math.max(0, Number(aiQ.score) || 0));
+        } else if (submission.questionScores && submission.questionScores[q.id] !== undefined) {
           scores[q.id] = Math.min(q.points, Math.max(0, Number(submission.questionScores[q.id]) || 0));
-        } else if (Array.isArray(submission.aiQuestionScores)) {
-          const aiQ = submission.aiQuestionScores.find(
-            (s: any) => String(s.questionId) === q.id || String(s.questionId) === String(idx)
-          );
-          if (aiQ && aiQ.score != null) {
-            scores[q.id] = Math.min(q.points, Math.max(0, Number(aiQ.score) || 0));
-          } else {
-            scores[q.id] = 0;
-          }
+        } else if (aiQ && aiQ.score != null) {
+          scores[q.id] = Math.min(q.points, Math.max(0, Number(aiQ.score) || 0));
         } else {
           scores[q.id] = 0;
         }
@@ -392,7 +405,7 @@ export function SubmissionDetailView({
     });
 
     return scores;
-  }, [questions, parsedSubmission, submission.questionScores, submission.aiQuestionScores]);
+  }, [questions, parsedSubmission, submission.questionScores, submission.aiQuestionScores, isAiPendingReview]);
 
   const [questionScores, setQuestionScores] = useState<Record<string, number>>(initialScores);
 
@@ -400,15 +413,35 @@ export function SubmissionDetailView({
     if (questions.length > 0) {
       return Object.values(initialScores).reduce((sum, s) => sum + (Number(s) || 0), 0);
     }
+    if (isAiPendingReview && submission.aiTotalScore != null) return Number(submission.aiTotalScore);
     if (submission.score != null) return submission.score;
     if (submission.totalScore != null) return submission.totalScore;
-    if (submission.aiTotalScore != null) return submission.aiTotalScore;
+    if (submission.aiTotalScore != null) return Number(submission.aiTotalScore);
     return '';
   });
 
-  const [evalFeedback, setEvalFeedback] = useState<string>(
-    submission.feedback || submission.aiOverallRemark || ''
-  );
+  const [evalFeedback, setEvalFeedback] = useState<string>(() => {
+    if (isAiPendingReview && submission.aiOverallRemark) {
+      return submission.aiOverallRemark;
+    }
+    return submission.feedback || submission.aiOverallRemark || '';
+  });
+
+  useEffect(() => {
+    setQuestionScores(initialScores);
+    if (questions.length > 0) {
+      setEvalScore(Object.values(initialScores).reduce((sum, s) => sum + (Number(s) || 0), 0));
+    } else if (isAiPendingReview && submission.aiTotalScore != null) {
+      setEvalScore(Number(submission.aiTotalScore));
+    } else {
+      setEvalScore(submission.score ?? submission.totalScore ?? '');
+    }
+    if (isAiPendingReview && submission.aiOverallRemark) {
+      setEvalFeedback(submission.aiOverallRemark);
+    } else {
+      setEvalFeedback(submission.feedback || submission.aiOverallRemark || '');
+    }
+  }, [submission.id, submission.updatedAt, initialScores, isAiPendingReview]);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const toast = useToast();
 

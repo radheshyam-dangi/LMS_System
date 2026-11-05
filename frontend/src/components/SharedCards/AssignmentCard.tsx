@@ -161,174 +161,177 @@ export const AssignmentCard: React.FC<Props> = ({
   const isCardInteractive = !(isEffectiveLocked || (displayStatus === 'Expired' && !submission?.submittedAt && typeof submission?.score !== 'number'));
 
   return (
-    <div
-      className={`assignment-card-executive ${
-        isEffectiveLocked
-          ? 'assignment-card-executive--locked'
-          : isApproved
-          ? 'assignment-card-executive--approved'
-          : ''
-      }`}
-      title={isEffectiveLocked ? lockReason || 'Locked assessment' : displayStatus === 'Expired' && !submission?.submittedAt ? 'Deadline has expired. Submissions are closed.' : `Open ${task.title}`}
-      onClick={handleCardClick}
-      role="button"
-      tabIndex={isCardInteractive ? 0 : -1}
-      style={!isCardInteractive ? { cursor: 'default' } : undefined}
-      onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && isCardInteractive) {
-          handleCardClick();
-        }
-      }}
-    >
-      {/* ── COLUMN 1: ICON + TITLE + METADATA ── */}
-      <div className="assignment-card-left-col">
-        {!isTrainee && (
-          <div
-            className={`assignment-type-icon-box ${
-              isEffectiveLocked
-                ? 'assignment-type-icon--locked'
-                : isApproved
-                ? 'assignment-type-icon--approved'
-                : isMcq
-                ? 'assignment-type-icon--mcq'
-                : isCoding
-                ? 'assignment-type-icon--ai'
-                : 'assignment-type-icon--task'
-            }`}
-          >
-            {isEffectiveLocked ? (
-              <Lock size={18} strokeWidth={2.2} />
-            ) : isApproved ? (
-              <CheckCircle2 size={20} strokeWidth={2.2} />
-            ) : isMcq ? (
-              <CheckSquare size={19} strokeWidth={2.2} />
-            ) : isCoding ? (
-              <Sparkles size={19} strokeWidth={2.2} />
-            ) : (
-              <ClipboardList size={19} strokeWidth={2.2} />
-            )}
-          </div>
-        )}
-
-        <div className="assignment-card-details">
-          <h4 className="assignment-card-title" title={task.title}>
-            {task.title}
-          </h4>
-
-          <div className="assignment-card-tags-row">
-            <span className="assignment-tag-pill assignment-tag-pill--type">
-              {task.assignmentType || 'Assessment'}
-            </span>
-
-            {task.lessonTitle && (
-              <span className="assignment-tag-pill">
-                {task.lessonTitle}
-              </span>
-            )}
-
-            <span className="assignment-tag-pill assignment-tag-pill--points">
-              Max: {maxScore} pts
-            </span>
-          </div>
-
-          {isEffectiveLocked && lockReason && (
-            <div className="assignment-lock-warning">
-              <Lock size={12} />
-              <span>{lockReason}</span>
+    <div className="assignment-card-executive-wrapper">
+      <div
+        className={`assignment-card-executive ${
+          isEffectiveLocked
+            ? 'assignment-card-executive--locked'
+            : isApproved
+            ? 'assignment-card-executive--approved'
+            : ''
+        }`}
+        title={isEffectiveLocked ? lockReason || 'Locked assessment' : displayStatus === 'Expired' && !submission?.submittedAt ? 'Deadline has expired. Submissions are closed.' : `Open ${task.title}`}
+        onClick={handleCardClick}
+        role="button"
+        tabIndex={isCardInteractive ? 0 : -1}
+        style={!isCardInteractive ? { cursor: 'default' } : undefined}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && isCardInteractive) {
+            handleCardClick();
+          }
+        }}
+      >
+        {/* ── COLUMN 1: ICON + TITLE + METADATA ── */}
+        <div className="assignment-card-left-col">
+          {!isTrainee && (
+            <div
+              className={`assignment-type-icon-box ${
+                isEffectiveLocked
+                  ? 'assignment-type-icon--locked'
+                  : isApproved
+                  ? 'assignment-type-icon--approved'
+                  : isMcq
+                  ? 'assignment-type-icon--mcq'
+                  : isCoding
+                  ? 'assignment-type-icon--ai'
+                  : 'assignment-type-icon--task'
+              }`}
+            >
+              {isEffectiveLocked ? (
+                <Lock size={18} strokeWidth={2.2} />
+              ) : isApproved ? (
+                <CheckCircle2 size={20} strokeWidth={2.2} />
+              ) : isMcq ? (
+                <CheckSquare size={19} strokeWidth={2.2} />
+              ) : isCoding ? (
+                <Sparkles size={19} strokeWidth={2.2} />
+              ) : (
+                <ClipboardList size={19} strokeWidth={2.2} />
+              )}
             </div>
           )}
-        </div>
-      </div>
 
-      {/* ── COLUMN 2: DUE DATE / DEADLINE ── */}
-      <div className="assignment-card-due-col">
-        <DeadlineDisplay task={task} submission={submission} />
-      </div>
+          <div className="assignment-card-details">
+            <h4 className="assignment-card-title" title={task.title}>
+              {task.title}
+            </h4>
 
-      {/* ── COLUMN 3: STATUS PILL & ACTION BUTTON ── */}
-      <div
-        className="assignment-card-actions-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {isEffectiveLocked ? (
-          <button
-            type="button"
-            className="assignment-action-btn assignment-action-btn--locked"
-            onClick={() => onClickLocked?.(lockReason)}
-            title={lockReason || 'Complete prerequisites to unlock'}
-          >
-            <Lock size={13} />
-            <span>Locked</span>
-          </button>
-        ) : (
-          <>
-            {displayStatus !== 'Expired' && (
-              <span
-                className="assignment-status-pill"
-                style={{
-                  background: badgeTheme.bg,
-                  color: badgeTheme.color,
-                  border: `1.5px solid ${badgeTheme.border}`,
-                }}
-              >
-                {isApproved ? (
-                  <CheckCircle2 size={13} />
-                ) : null}
-                <span>{displayStatus}</span>
-                {typeof submission?.score === 'number' ? <strong>({submission.score}/{maxScore} pts)</strong> : null}
+            <div className="assignment-card-tags-row">
+              <span className="assignment-tag-pill assignment-tag-pill--type">
+                {task.assignmentType || 'Assessment'}
               </span>
-            )}
 
-            {isTrainee && (
-              isApproved || displayStatus === 'Submitted' || displayStatus === 'Under Review' ? (
-                <button
-                  type="button"
-                  className="assignment-action-btn assignment-action-btn--review"
-                  onClick={() => onAttempt?.(task)}
-                  title="Review submission and evaluation results"
-                >
-                  <FileCheck size={14} />
-                  <span>Review Details</span>
-                </button>
-              ) : displayStatus === 'Expired' ? (
-                // 🌟 When deadline has expired: Resubmit and Submit buttons are NOT visible over here!
-                // Trainee is not able to submit or resubmit it.
-                // If trainee already submitted previously, allow read-only review of evaluated results.
-                submission?.submittedAt || typeof submission?.score === 'number' ? (
-                  <button
-                    type="button"
-                    className="assignment-action-btn assignment-action-btn--review"
-                    onClick={() => onAttempt?.(task)}
-                    title="Review past evaluation (Read-only, deadline has expired)"
-                  >
-                    <FileCheck size={14} />
-                    <span>Review Details</span>
-                  </button>
-                ) : null
-              ) : displayStatus === 'Need Improvement' ? (
-                <button
-                  type="button"
-                  className="assignment-action-btn assignment-action-btn--retry"
-                  onClick={() => onAttempt?.(task)}
-                  title="Resubmit improved assignment"
-                >
-                  <span>Resubmit Task</span>
-                  <ArrowRight size={14} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="assignment-action-btn assignment-action-btn--primary"
-                  onClick={() => onAttempt?.(task)}
-                  title="Start assignment"
-                >
-                  <span>Start Assessment</span>
-                  <ArrowRight size={14} />
-                </button>
-              )
+              {task.lessonTitle && (
+                <span className="assignment-tag-pill">
+                  {task.lessonTitle}
+                </span>
+              )}
+
+              <span className="assignment-tag-pill assignment-tag-pill--points">
+                Max: {maxScore} pts
+              </span>
+            </div>
+
+            {isEffectiveLocked && lockReason && (
+              <div className="assignment-lock-warning">
+                <Lock size={12} />
+                <span>{lockReason}</span>
+              </div>
             )}
-          </>
-        )}
+          </div>
+        </div>
+
+        {/* ── RIGHT GROUP: DUE DATE + STATUS PILL + ACTION BUTTON ── */}
+        <div className="assignment-card-right-group">
+          <div className="assignment-card-due-col">
+            <DeadlineDisplay task={task} submission={submission} />
+          </div>
+
+          <div
+            className="assignment-card-actions-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {isEffectiveLocked ? (
+              <button
+                type="button"
+                className="assignment-action-btn assignment-action-btn--locked"
+                onClick={() => onClickLocked?.(lockReason)}
+                title={lockReason || 'Complete prerequisites to unlock'}
+              >
+                <Lock size={13} />
+                <span>Locked</span>
+              </button>
+            ) : (
+              <>
+                {displayStatus !== 'Expired' && (
+                  <span
+                    className="assignment-status-pill"
+                    style={{
+                      background: badgeTheme.bg,
+                      color: badgeTheme.color,
+                      border: `1.5px solid ${badgeTheme.border}`,
+                    }}
+                  >
+                    {isApproved ? (
+                      <CheckCircle2 size={13} />
+                    ) : null}
+                    <span>{displayStatus}</span>
+                    {typeof submission?.score === 'number' && (isApproved || displayStatus === 'Need Improvement' || displayStatus === 'Needs Improvement') ? <strong>({submission.score}/{maxScore} pts)</strong> : null}
+                  </span>
+                )}
+
+                {isTrainee && (
+                  isApproved || displayStatus === 'Submitted' || displayStatus === 'Under Review' ? (
+                    <button
+                      type="button"
+                      className="assignment-action-btn assignment-action-btn--review"
+                      onClick={() => onAttempt?.(task)}
+                      title="Review submission and evaluation results"
+                    >
+                      <FileCheck size={14} />
+                      <span>Review Details</span>
+                    </button>
+                  ) : displayStatus === 'Expired' ? (
+                    // 🌟 When deadline has expired: Resubmit and Submit buttons are NOT visible over here!
+                    // Trainee is not able to submit or resubmit it.
+                    // If trainee already submitted previously, allow read-only review of evaluated results.
+                    submission?.submittedAt || typeof submission?.score === 'number' ? (
+                      <button
+                        type="button"
+                        className="assignment-action-btn assignment-action-btn--review"
+                        onClick={() => onAttempt?.(task)}
+                        title="Review past evaluation (Read-only, deadline has expired)"
+                      >
+                        <FileCheck size={14} />
+                        <span>Review Details</span>
+                      </button>
+                    ) : null
+                  ) : displayStatus === 'Need Improvement' ? (
+                    <button
+                      type="button"
+                      className="assignment-action-btn assignment-action-btn--retry"
+                      onClick={() => onAttempt?.(task)}
+                      title="Resubmit improved assignment"
+                    >
+                      <span>Resubmit Task</span>
+                      <ArrowRight size={14} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="assignment-action-btn assignment-action-btn--primary"
+                      onClick={() => onAttempt?.(task)}
+                      title="Start assignment"
+                    >
+                      <span>Start Assessment</span>
+                      <ArrowRight size={14} />
+                    </button>
+                  )
+                )}
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

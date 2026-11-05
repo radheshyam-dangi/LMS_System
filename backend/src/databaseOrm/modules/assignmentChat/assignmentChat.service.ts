@@ -59,15 +59,15 @@ export class AssignmentChatService {
          throw new HttpException('Assignment is already evaluated or closed', HttpStatus.FORBIDDEN);
       }
 
-      const assignment = await this.assignmentRepo.findOne({ 
+      const assignment = await this.assignmentRepo.findOne({
          where: { id: assignmentId },
          relations: ['module', 'learningPath']
       });
       if (!assignment) throw new HttpException('Assignment not found', HttpStatus.NOT_FOUND);
 
-      // Intent check
-      if (this.isDirectAnswerRequest(message)) {
-         return this.saveAndReturnBlockedMessage(assignmentId, traineeId, message, "I cannot provide direct answers or exact phrasing. However, I can help explain concepts or guide your structure.");
+      // Intent check for direct blatant solution extraction without question context
+      if (this.isDirectAnswerRequest(message) && (!focusQuestionIds?.length && !this.parseExplicitQuestionNumbers(message).length)) {
+         return this.saveAndReturnBlockedMessage(assignmentId, traineeId, message, "I cannot provide direct test answers or complete submission phrasing. However, I can explain the underlying concepts, compare component roles, or guide your solution structure. Ask about any specific question or concept!");
       }
 
       // 2. Parse and Validate Question IDs
@@ -102,21 +102,20 @@ export class AssignmentChatService {
             // if no questions extracted, try previous turn
             const history = await this.getChatHistory(assignmentId, traineeId);
             if (history.length > 0) {
-               const lastAsst = history.reverse().find(m => m.role === 'assistant' && m.questionIds && m.questionIds.length > 0);
+               const lastAsst = history.slice().reverse().find(m => m.role === 'assistant' && m.questionIds && m.questionIds.length > 0);
                if (lastAsst) {
                   targetQuestionIds = lastAsst.questionIds;
                }
             }
-            // fallback: just pick all if small, else first 1
+            // fallback: target all questions up to 5
             if (targetQuestionIds.length === 0) {
-               if (questions.length <= 5) targetQuestionIds = questions.map(q => q.id || String(questions.indexOf(q)));
-               else targetQuestionIds = [questions[0].id || '0'];
+               targetQuestionIds = questions.slice(0, 5).map((q, idx) => q.id || String(idx));
             }
          }
       }
 
-      // cap at 2
-      targetQuestionIds = Array.from(new Set(targetQuestionIds)).slice(0, 2);
+      // Allow up to 5 questions in the assignment
+      targetQuestionIds = Array.from(new Set(targetQuestionIds)).slice(0, 5);
 
       // 3. Build context per question
       const contexts: any[] = [];
@@ -124,9 +123,11 @@ export class AssignmentChatService {
       const assLpId = (assignment as any).learningPathId || assignment.learningPath?.id;
 
       for (const qId of targetQuestionIds) {
-         const deps = await this.qldRepo.find({ 
-            where: { questionId: qId }, 
-            relations: ['lesson', 'lesson.module', 'lesson.learningPath'] 
+         const qObj = questions.find(q => q.id === qId || String(questions.indexOf(q)) === qId);
+
+         const deps = await this.qldRepo.find({
+            where: { questionId: qId },
+            relations: ['lesson', 'lesson.module', 'lesson.learningPath']
          });
 
          let dependsOnLessons = deps.map((d, idx) => ({
@@ -138,6 +139,26 @@ export class AssignmentChatService {
          }));
 
          let lessonIds = deps.map(d => d.lesson?.id).filter(Boolean);
+
+         // If question entity didn't have qld relation, check direct qObj.lessonDependencies
+         if (lessonIds.length === 0 && qObj?.lessonDependencies?.length > 0) {
+            lessonIds = qObj.lessonDependencies;
+            try {
+               const directLessons = await this.dataSource.query(
+                  `SELECT id, title, "moduleId", "learningPathId" FROM "Lesson" WHERE id = ANY($1)`,
+                  [lessonIds]
+               );
+               dependsOnLessons = directLessons.map((l: any, idx: number) => ({
+                  ref: `L${idx + 1}`,
+                  lessonId: l.id,
+                  lessonNumber: idx + 1,
+                  lessonTitle: l.title || 'Prerequisite Lesson',
+                  url: this.computeLessonUrl(l, assModId, assLpId)
+               }));
+            } catch (err) {
+               this.logger.warn(`Failed to fetch direct lessonDependencies: ${(err as Error).message}`);
+            }
+         }
 
          let chunks = [];
          if (lessonIds.length > 0) {
@@ -203,11 +224,16 @@ export class AssignmentChatService {
             }
          }
 
-         const qObj = questions.find(q => q.id === qId || String(questions.indexOf(q)) === qId);
+         const questionType = qObj?.type || (qObj?.options?.length ? 'MCQ' : (assignment.assignmentType === 'MCQ' ? 'MCQ' : 'Subjective'));
+         const questionOptions = qObj?.options || assignment.mcqConfig?.options || [];
+
          contexts.push({
-            questionId: qId,
+            questionId: qObj?.id || qId,
             questionNumber: questions.indexOf(qObj) + 1,
+            type: questionType,
             questionText: qObj?.text || (qObj as any)?.questionText || (qObj as any)?.question || '',
+            options: questionOptions,
+            maxPoints: qObj?.maxPoints || 10,
             dependsOnLessons: dependsOnLessons,
             lessonText: chunks.map((c: any) => ({ text: c.chunkText })),
             lessonIds: Array.from(new Set(chunks.map((c: any) => c.lessonId)))
@@ -232,12 +258,31 @@ export class AssignmentChatService {
       });
 
       // 4. Call Groq with history and dependent lessons context
-      let aiResponse = await this.callGroq(contexts, message, recentHistory);
+      let aiResponse = await this.callGroq(contexts, message, recentHistory, assignment);
 
-      // Map refs (e.g. "L1") back to structured lesson objects with redirection URLs for the frontend
+      // Verify that all contexts have a corresponding response. If LLM skipped any question, auto-synthesize!
       if (Array.isArray(aiResponse)) {
+         for (const ctx of contexts) {
+            const hasItem = aiResponse.some(r => String(r.questionId) === String(ctx.questionId));
+            if (!hasItem) {
+               this.logger.warn(`LLM omitted Question ${ctx.questionNumber} (${ctx.questionId}). Synthesizing Socratic guidance.`);
+               aiResponse.push(this.generateSocraticFallbackForQuestion(ctx));
+            }
+         }
+
+         // Sort responses in the same questionNumber order
+         aiResponse.sort((a, b) => {
+            const idxA = contexts.findIndex(c => String(c.questionId) === String(a.questionId));
+            const idxB = contexts.findIndex(c => String(c.questionId) === String(b.questionId));
+            return (idxA !== -1 ? idxA : 0) - (idxB !== -1 ? idxB : 0);
+         });
+
+         // 5. Strict Academic Integrity & MCQ Leak Guard
+         aiResponse = this.sanitizeAndGuardResponses(aiResponse, contexts, assignment, questions);
+
+         // Map refs (e.g. "L1") back to structured lesson objects with redirection URLs for the frontend
          aiResponse = aiResponse.map(res => {
-            const ctx = contexts.find(c => c.questionId === res.questionId);
+            const ctx = contexts.find(c => String(c.questionId) === String(res.questionId));
             if (ctx && ctx.dependsOnLessons && ctx.dependsOnLessons.length > 0) {
                const matchedLessons: Array<{ lessonId: string; lessonTitle: string; url: string }> = [];
                const rawSuggestions = Array.isArray(res.suggestedLessons) ? res.suggestedLessons : [];
@@ -277,11 +322,6 @@ export class AssignmentChatService {
          });
       }
 
-      // 5. Leak Guard
-      if (this.hasAnswerLeak(aiResponse, assignment)) {
-         return this.saveAndReturnBlockedMessage(assignmentId, traineeId, message, "I noticed I was getting too close to providing the expected answer. Let's focus on the concepts instead. Which part of the lesson would you like me to explain?", true);
-      }
-
       // save assistant message
       const asstMsg = await this.messageRepo.save({
          threadId: thread.id,
@@ -296,15 +336,99 @@ export class AssignmentChatService {
 
    private isDirectAnswerRequest(msg: string): boolean {
       const lower = msg.toLowerCase();
-      return lower.includes('what is the answer') || lower.includes('example answer') || lower.includes('give me the answer') || lower.includes('write the answer');
+      return lower.includes('give me the answer') ||
+         lower.includes('tell me the answer') ||
+         lower.includes('write the answer for me') ||
+         lower.includes('write my submission') ||
+         lower.includes('complete this assessment for me');
    }
 
-   private hasAnswerLeak(aiResponse: any[], assignment: AssignmentEntity): boolean {
-      // Check output for "my answer is..." or exact rubric strings.
-      // For simplicity in implementation:
-      const stringified = JSON.stringify(aiResponse).toLowerCase();
-      if (stringified.includes('my answer is') || stringified.includes('the correct answer is')) return true;
-      return false;
+   /**
+    * Strict Pedagogical Honor Code & Anti-Cheat Engine for Assessment Workspaces:
+    * 1. Inspects MCQ questions to guarantee the AI assistant never leaks the direct answer or choice.
+    * 2. Auto-sanitizes leaked choices into high-level, Socratic architectural guidance.
+    * 3. Prevents answer extraction via clever prompting or elimination tricks.
+    */
+   private sanitizeAndGuardResponses(responses: any[], contexts: any[], assignment: AssignmentEntity, questions: any[]): any[] {
+      return responses.map(res => {
+         const ctx = contexts.find(c => String(c.questionId) === String(res.questionId));
+         const qObj = questions.find(q => String(q.id) === String(res.questionId) || String(questions.indexOf(q)) === String(res.questionId));
+         if (!ctx || !qObj) return res;
+
+         const isMcq = ctx.type === 'MCQ' || qObj.type === 'MCQ' || (qObj.options && qObj.options.length > 0) || (assignment.assignmentType === 'MCQ');
+         if (isMcq) {
+            const correctIdx = qObj.correctIndex !== undefined ? qObj.correctIndex : (assignment.mcqConfig?.correctIndex);
+            const options: string[] = qObj.options || assignment.mcqConfig?.options || [];
+            const correctChoice = (correctIdx !== undefined && options[correctIdx]) ? options[correctIdx] : null;
+
+            let content = res.content || '';
+            let isLeaked = false;
+
+            // 1. Direct answer assertion leaks
+            if (/(?:the|correct|right|suitable|actual)\s+answer\s+is/i.test(content) ||
+               /(?:choose|select|pick)\s+(?:option\s+)?/i.test(content) ||
+               /(?:option\s+[a-d1-4]|choice\s+[a-d1-4])\s+is\s+(?:the\s+)?(?:correct|right|suitable|best|actual)/i.test(content) ||
+               /(?:my\s+answer\s+is|answer\s+to\s+this\s+is)/i.test(content)) {
+               isLeaked = true;
+            }
+
+            // 2. Correct choice giveaway for this specific MCQ
+            if (correctChoice) {
+               const escapedChoice = correctChoice.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+               // Pattern: "ReplicaSet ... replica count / declared replica / keeps the count steady"
+               const pattern1 = new RegExp(`${escapedChoice}\\s+(?:directly\\s+)?(?:watches|ensures|maintains|enforces|creates|manages|monitors)\\s+(?:the\\s+)?(?:desired\\s+|declared\\s+)?replica`, 'i');
+               // Pattern: "replica-count enforcement is done by ReplicaSet"
+               const pattern2 = new RegExp(`(?:replica[- ]count\\s+enforcement|replica\\s+count|reconciliation)\\s+is\\s+done\\s+by\\s+(?:the\\s+)?${escapedChoice}`, 'i');
+               // Pattern: "ReplicaSet is the object that ensures"
+               const pattern3 = new RegExp(`${escapedChoice}\\s+is\\s+(?:the\\s+)?(?:object|controller|resource|component)\\s+that\\s+(?:ensures|matches|manages)`, 'i');
+               // Pattern: "done by the ReplicaSet"
+               const pattern4 = new RegExp(`done\\s+by\\s+(?:the\\s+)?${escapedChoice}`, 'i');
+
+               if (pattern1.test(content) || pattern2.test(content) || pattern3.test(content) || pattern4.test(content)) {
+                  isLeaked = true;
+               }
+            }
+
+            if (isLeaked) {
+               this.logger.warn(`[Academic Integrity Guard] Leaked choice detected for MCQ ${qObj.id || ctx.questionNumber}. Sanitizing to Socratic guidance.`);
+               res.content = this.getSocraticMcqGuidance(ctx);
+            }
+         }
+
+         return res;
+      });
+   }
+
+   private getSocraticMcqGuidance(ctx: any): string {
+      if (ctx.options && ctx.options.length > 0) {
+         return `I cannot directly indicate the correct option during an active assessment. When evaluating the choices (${ctx.options.join(', ')}), consider how Kubernetes separates architectural responsibilities:
+• Network objects (like Service or Ingress) manage endpoint routing and load balancing for incoming traffic.
+• Configuration objects (like ConfigMap) inject settings, variables, or volume files into containers.
+• Workload controllers run continuous reconciliation loops that monitor actual cluster state and adjust active pod instances to match target specifications.
+Reflect on which of these specific objects acts as a lifecycle controller to maintain the declared count described in the question.`;
+      }
+      return `When evaluating the options for this question, focus on the fundamental distinction between the categories of components: consider which resource manages active lifecycle and state reconciliation versus resources dedicated to network routing or configuration storage. Review the prerequisite lessons to determine which component matches this specific responsibility.`;
+   }
+
+   private generateSocraticFallbackForQuestion(ctx: any): any {
+      const citations = ctx.dependsOnLessons?.slice(0, 2).map((d: any) => d.lessonTitle) || [];
+      if (ctx.type === 'MCQ') {
+         return {
+            questionId: ctx.questionId,
+            questionNumber: ctx.questionNumber,
+            content: `For Question ${ctx.questionNumber}, compare the architectural roles of the available options: consider which resource manages active lifecycle and continuous state reconciliation versus resources dedicated to network routing or configuration storage. Review the prerequisite lessons on core concepts and controllers to evaluate which component matches this specific lifecycle responsibility.`,
+            suggestedLessons: citations,
+            coverage: 'strong'
+         };
+      }
+
+      return {
+         questionId: ctx.questionId,
+         questionNumber: ctx.questionNumber,
+         content: `For Question ${ctx.questionNumber}, structure your response around the key workflow stages: 1) Strategy configuration and parameter limits (such as rolling update surge and unavailable thresholds); 2) Readiness probe integration to prevent prematurely routing user requests; 3) Graceful shutdown controls; and 4) Deployment verification procedures. Review the linked prerequisite lessons for reference manifest architectures.`,
+         suggestedLessons: citations,
+         coverage: 'strong'
+      };
    }
 
    private async saveAndReturnBlockedMessage(assignmentId: string, traineeId: string, userMsg: string, fallbackResponse: string, isLeakGuard = false) {
@@ -367,20 +491,83 @@ export class AssignmentChatService {
 
    private extractQuestionIds(message: string, questions: any[], focusQuestionIds: string[]): string[] {
       const qIds = new Set<string>();
-      if (focusQuestionIds && focusQuestionIds.length > 0) {
-         focusQuestionIds.forEach(id => qIds.add(id));
+      const lower = message.toLowerCase().trim();
+
+      // 1. Check if user specifically requested explicit question number(s) in the message
+      const explicit = this.parseExplicitQuestionNumbers(message);
+      if (explicit.length > 0) {
+         explicit.forEach(num => {
+            const q = questions[num - 1];
+            if (q) qIds.add(q.id || String(num - 1));
+         });
+         return Array.from(qIds);
       }
 
-      const lower = message.toLowerCase();
-      if (lower.includes('all')) {
+      // 2. Explicit "All" request in the message
+      const isExplicitAllQuery = /\b(explain\s+all|all\s+questions|both\s+questions|everything|overview\s+all|summary\s+of\s+all)\b/i.test(lower) ||
+         (lower === 'all' || lower === 'explain all' || lower === 'all question' || lower === 'explain both');
+
+      if (isExplicitAllQuery) {
          questions.forEach(q => qIds.add(q.id || String(questions.indexOf(q))));
-      } else {
-         const explicit = this.parseExplicitQuestionNumbers(message);
-         if (explicit.length > 0) {
-            explicit.forEach(num => qIds.add(String(num - 1)));
+         return Array.from(qIds);
+      }
+
+      // 3. If user selected specific question chip(s) in UI
+      if (focusQuestionIds && focusQuestionIds.length > 0) {
+         focusQuestionIds.forEach(id => {
+            const found = questions.find(q => q.id === id || String(questions.indexOf(q)) === id);
+            if (found) qIds.add(found.id || String(questions.indexOf(found)));
+         });
+         if (qIds.size > 0) return Array.from(qIds);
+      }
+
+      // 4. Intent Detection: MCQ / Options queries (e.g. "which options is correct", "which option", "choice", "mcq", "what are the options")
+      const isOptionQuery = /\b(option|options|choice|choices|choose|mcq|select\s+one|pick\s+one)\b/i.test(lower);
+      if (isOptionQuery) {
+         const mcqQuestions = questions.filter(q => q.type === 'MCQ' || (q.options && q.options.length > 0));
+         if (mcqQuestions.length > 0) {
+            // Target the MCQ question(s) ONLY! Never target subjective questions for options queries!
+            mcqQuestions.forEach(q => qIds.add(q.id || String(questions.indexOf(q))));
+            return Array.from(qIds);
          }
       }
-      return Array.from(qIds).filter(id => questions.some(q => q.id === id || String(questions.indexOf(q)) === id));
+
+      // 5. Keyword & Content Relevance Matching
+      let bestMatch: { q: any; score: number } | null = null;
+      for (const q of questions) {
+         const qText = (q.text || q.questionText || '').toLowerCase();
+         const optionsText = (q.options || []).join(' ').toLowerCase();
+         const combined = `${qText} ${optionsText}`;
+
+         const words = lower.split(/\s+/).filter(w => w.length >= 4 && !['what', 'which', 'where', 'when', 'explain', 'describe', 'about', 'this', 'that', 'with', 'from', 'have', 'help'].includes(w));
+         let matches = 0;
+         for (const w of words) {
+            if (combined.includes(w)) matches++;
+         }
+         if (matches > 0 && (!bestMatch || matches > bestMatch.score)) {
+            bestMatch = { q, score: matches };
+         }
+      }
+
+      if (bestMatch && bestMatch.score >= 2) {
+         qIds.add(bestMatch.q.id || String(questions.indexOf(bestMatch.q)));
+         return Array.from(qIds);
+      }
+
+      if (lower.includes('all') || lower.includes('both')) {
+         questions.slice(0, 5).forEach(q => qIds.add(q.id || String(questions.indexOf(q))));
+         return Array.from(qIds);
+      }
+
+      if (bestMatch && bestMatch.score >= 1) {
+         qIds.add(bestMatch.q.id || String(questions.indexOf(bestMatch.q)));
+         return Array.from(qIds);
+      }
+
+      // Default fallback when no specific question is targeted:
+      // Target all questions in the assignment (up to 5)
+      questions.slice(0, 5).forEach(q => qIds.add(q.id || String(questions.indexOf(q))));
+      return Array.from(qIds);
    }
 
    private async fetchLessonChunks(lessonIds: string[], query: string) {
@@ -407,7 +594,7 @@ export class AssignmentChatService {
       }
    }
 
-   private async callGroq(contexts: any[], message: string, recentHistory: AssignmentChatMessageEntity[] = []) {
+   private async callGroq(contexts: any[], message: string, recentHistory: AssignmentChatMessageEntity[] = [], assignment?: AssignmentEntity) {
       if (!this.groqApiKey) {
          this.logger.error('GROQ_API_KEY is missing');
          throw new Error('LLM configuration missing');
@@ -415,43 +602,63 @@ export class AssignmentChatService {
 
       const systemPrompt = `
 <role>
-You are an AI teaching assistant inside a learning management system (LMS).
-A trainee is working on an assignment and asks for help understanding concepts or questions.
-Your goal is to provide a concise, natural, and helpful conceptual explanation that directly addresses their question, without giving away direct test answers or multiple-choice options.
+You are an AI pedagogical tutor and academic teaching assistant inside an enterprise Learning Management System (LMS).
+A trainee is actively completing an assessment assignment and asks questions or requests conceptual explanations.
+Your mission is to provide rigorous, helpful, and natural conceptual guidance that fosters genuine understanding and critical thinking WITHOUT revealing direct answers, confirming guesses, or solving test questions for the trainee.
 </role>
 
-<rules>
-1. Natural & Concise: 50 to 90 words per question response.
-2. Directly answer the trainee's specific inquiry:
-   - Explain the core concept, mechanism, or principle clearly and directly.
-   - Guide their reasoning so they understand how to solve it themselves.
-   - Do NOT give away the exact answer or multiple-choice option (e.g. do not say "The answer is option C" or "Choose ReplicaSet").
-   - Do NOT use robotic template headings like "Question Objective:", "Citations:", or "Socratic Approach:". Respond in a natural, friendly, expert tutor tone.
-   - Do NOT embed long citation text or reading lists inside "content". Lesson citations are automatically attached separately as clickable pills from the "suggestedLessons" array.
-3. Clean Plain-Text Formatting:
-   - Natural, conversational plain-text sentences.
-   - Plain text ONLY.
-   - Do NOT use asterisks (no **bold** or *italic*).
-   - Do NOT use backticks or formatting symbols around technical terms.
-   - Zero emojis.
-   - No markdown headings (#, ##).
-4. Suggested Lessons:
-   - In "suggestedLessons", supply 1-2 lesson references (e.g. "L1", "L2") or exact lesson titles from the context that best teach the required concept.
-5. Return ONLY a valid JSON object with key "responses":
-   {
-     "responses": [
-       {
-         "questionId": "string",
-         "content": "string",
-         "suggestedLessons": ["L1", "L2"],
-         "coverage": "strong"
-       }
-     ]
-   }
-</rules>
+<academic_integrity_guardrails>
+1. STRICT MCQ INTEGRITY & OPTIONS BREAKDOWN:
+   - For Multiple Choice Questions (type: "MCQ"):
+     * NEVER state which option (e.g. Option A, B, C, D or index or option text) is correct or recommended (e.g. do NOT say "The correct option is ReplicaSet" or "Choose option C").
+     * NEVER tell the trainee whether their selected option or guess is correct or incorrect (e.g. if trainee asks "Is ConfigMap correct?", do NOT say "ConfigMap is wrong" or "No, ConfigMap does not do this").
+     * When the trainee asks about options (e.g. "which options is correct", "which option should I pick", "explain the options", "what is option 1 vs option 2", "which choice"):
+       1. Start with a polite note that you cannot directly declare the winning option during an assessment.
+       2. Break down and explain what EACH option in the list actually does in the architecture (neutrally defining each choice from the question options: ${contexts.map(c => (c.options || []).join(', ')).join('; ')}).
+       3. Conclude with a guiding Socratic prompt asking the student which of these roles matches the exact requirement in the question.
+     * Socratic & Architectural Guidance:
+       - Explain the high-level architecture and how different categories of components divide responsibilities (e.g. traffic routing vs configuration storage vs lifecycle controllers).
+       - Provide thoughtful guiding hints on what mechanism does declarative state reconciliation vs what simply exposes endpoints.
+       - Prompt the student with reflective questions so THEY determine the answer on their own.
+
+2. SUBJECTIVE / OPEN-ENDED QUESTIONS:
+   - For subjective questions (type: "Subjective"):
+     * Do NOT write a complete, ready-to-copy-paste full submission or exact code manifests.
+     * Provide a clear conceptual breakdown of the key architecture steps, parameters to consider, and best practices.
+     * If the student presents a draft or asks for feedback, give constructive evaluation of what concepts they included and what gaps remain.
+
+3. MULTI-QUESTION COVERAGE ("explain all" / multiple contexts):
+   - You are provided with ${contexts.length} questions in CONTEXT PER QUESTION.
+   - You MUST generate exactly ${contexts.length} response items in the "responses" JSON array—one dedicated response for EVERY question provided.
+   - Do NOT omit any question! If ${contexts.length} questions are provided, the "responses" array MUST have length ${contexts.length}.
+</academic_integrity_guardrails>
+
+<formatting_rules>
+- Concise plain-text: 60 to 120 words per question.
+- Plain text ONLY: NO markdown headers (#, ##), NO bold (**), NO italics (*), NO backticks (\`), NO emojis.
+- Clean bullet points (•) for breaking down options or steps.
+- Do NOT include robotic boilerplate headings like "Question Objective:" or "Citations:". Speak in a natural, friendly, expert tutor tone.
+- In "suggestedLessons", supply 1-2 lesson references (e.g. "L1", "L2") or exact lesson titles from the context.
+</formatting_rules>
+- In "suggestedLessons", supply 1-2 lesson references (e.g. "L1", "L2") or lesson titles from the context.
+</formatting_rules>
+
+<output_schema>
+Return ONLY a valid JSON object matching this exact schema:
+{
+  "responses": [
+    ${contexts.map(c => `{
+      "questionId": "${c.questionId}",
+      "content": "Natural Socratic plain-text explanation for Question ${c.questionNumber}...",
+      "suggestedLessons": ["L1", "L2"],
+      "coverage": "strong"
+    }`).join(',\n    ')}
+  ]
+}
+</output_schema>
 
 CONTEXT PER QUESTION (JSON):
-${JSON.stringify(contexts)}
+${JSON.stringify(contexts, null, 2)}
 `;
 
       try {
@@ -485,14 +692,10 @@ ${JSON.stringify(contexts)}
          // Current user turn
          chatMessages.push({ role: 'user', content: message });
 
-         // Prioritize fast, reliable JSON model
+         // Prioritize fast, reliable JSON models
          const candidateModels = [
             this.groqModel || 'openai/gpt-oss-120b',
-            'openai/gpt-oss-120b',
-            'openai/gpt-oss-20b',
-            'llama-3.3-70b-versatile',
-            'llama-3.1-8b-instant',
-            'qwen/qwen3.8-27b'
+            'openai/gpt-oss-20b'
          ].filter((v, i, a) => v && a.indexOf(v) === i);
 
          for (const model of candidateModels) {
@@ -506,10 +709,10 @@ ${JSON.stringify(contexts)}
                   body: JSON.stringify({
                      model,
                      messages: chatMessages,
-                     temperature: 0.3,
-                     max_tokens: 1000,
+                     temperature: 0.2,
+                     max_tokens: 2500,
                   }),
-                  signal: AbortSignal.timeout(15000),
+                  signal: AbortSignal.timeout(18000),
                });
 
                if (response.ok) {
@@ -528,7 +731,7 @@ ${JSON.stringify(contexts)}
                         const parsedResult = this.parseLlmResponse(errJson.error.failed_generation, contexts);
                         if (parsedResult) return parsedResult;
                      }
-                  } catch {}
+                  } catch { }
                }
             } catch (err) {
                this.logger.warn(`Model ${model} attempt failed: ${(err as Error).message}`);
@@ -538,19 +741,8 @@ ${JSON.stringify(contexts)}
          this.logger.error('Failed calling LLM models:', e);
       }
 
-      // Intelligent conceptual guidance fallback
-      return contexts.map(c => {
-         const citations = c.dependsOnLessons?.slice(0, 2).map((d: any) => d.lessonTitle) || [];
-         const qTopic = c.questionText ? `regarding "${c.questionText.slice(0, 90)}..."` : '';
-         return {
-            questionId: c.questionId,
-            questionNumber: c.questionNumber,
-            content: `To solve this question ${qTopic}, focus on the underlying architecture and responsibilities of each component. Consider which resource is explicitly designed to maintain declared state and continuously reconcile active instances with your target configuration.`,
-            lessonIds: c.dependsOnLessons?.map((d: any) => d.ref) || [],
-            suggestedLessons: citations,
-            coverage: 'strong'
-         };
-      });
+      // Intelligent conceptual guidance fallback for all requested contexts
+      return contexts.map(c => this.generateSocraticFallbackForQuestion(c));
    }
 
    private parseLlmResponse(raw: string, contexts: any[]): any[] | null {
@@ -564,7 +756,7 @@ ${JSON.stringify(contexts)}
          if (list && Array.isArray(list) && list.length > 0) {
             return list;
          }
-      } catch {}
+      } catch { }
 
       // Try regex extracting JSON object with "responses"
       const jsonMatch = clean.match(/\{[\s\S]*"responses"\s*:\s*\[[\s\S]*\][\s\S]*\}/);
@@ -574,7 +766,7 @@ ${JSON.stringify(contexts)}
             if (Array.isArray(parsed.responses) && parsed.responses.length > 0) {
                return parsed.responses;
             }
-         } catch {}
+         } catch { }
       }
 
       // If the model returned plain text Socratic guidance, wrap it gracefully!

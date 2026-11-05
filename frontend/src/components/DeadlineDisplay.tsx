@@ -20,7 +20,7 @@ export const DeadlineDisplay = ({ task, submission }: { task: any; submission?: 
   // When deadline has expired, show "Expired" at the place of due date
   if (isExpired) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500, flexShrink: 0 }}>
         {isLocked && (
           <span style={{ color: '#94a3b8', display: 'flex', alignItems: 'center' }}>
             <Lock size={14} />

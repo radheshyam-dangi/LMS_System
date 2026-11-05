@@ -2,11 +2,17 @@
    AssignmentCard.css — Executive Assignment & Assessment Card Styling
    ========================================================================= */
 
+.assignment-card-executive-wrapper {
+  container-type: inline-size;
+  width: 100%;
+}
+
 .assignment-card-executive {
-  display: grid !important;
-  grid-template-columns: minmax(280px, 1.4fr) minmax(200px, 0.9fr) minmax(220px, 1fr) !important;
+  display: flex !important;
   align-items: center !important;
-  gap: 20px !important;
+  justify-content: space-between !important;
+  flex-wrap: wrap !important;
+  gap: 14px 20px !important;
   width: 100% !important;
   box-sizing: border-box !important;
   padding: 16px 22px !important;
@@ -52,8 +58,8 @@
   display: flex !important;
   align-items: center !important;
   gap: 14px !important;
-  min-width: 0 !important;
-  flex: 1 !important;
+  min-width: 240px !important;
+  flex: 1 1 280px !important;
 }
 
 .assignment-type-icon-box {
@@ -168,23 +174,32 @@
   width: fit-content !important;
 }
 
-/* ── Middle Column: Due Date / Deadline ───────────────────────────────── */
-.assignment-card-due-col {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  min-width: 0 !important;
-  width: 100% !important;
-}
-
-/* ── Right Column: Status Pill & Action Button ────────────────────────── */
-.assignment-card-actions-col {
+/* ── Right Group: Due Date + Status Pill + Actions ────────────────────── */
+.assignment-card-right-group {
   display: flex !important;
   align-items: center !important;
   justify-content: flex-end !important;
-  gap: 12px !important;
+  gap: 12px 16px !important;
+  flex-wrap: wrap !important;
+  flex: 0 1 auto !important;
   min-width: 0 !important;
-  width: 100% !important;
+}
+
+.assignment-card-due-col {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+  min-width: 0 !important;
+}
+
+.assignment-card-actions-col {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+  flex-shrink: 0 !important;
+  min-width: 0 !important;
 }
 
 .assignment-status-pill {
@@ -197,6 +212,7 @@
   align-items: center !important;
   gap: 5px !important;
   letter-spacing: 0.01em !important;
+  flex-shrink: 0 !important;
 }
 
 .assignment-action-btn {
@@ -214,6 +230,7 @@
   transition: all 0.15s ease !important;
   border: none !important;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  flex-shrink: 0 !important;
 }
 
 .assignment-action-btn--primary {
@@ -265,14 +282,48 @@
   border-color: #cbd5e1 !important;
 }
 
-/* ── Responsive Adaptations ───────────────────────────────────────────── */
+/* ── Container Queries (Exact Card Context Adaptation) ─────────────────── */
+@container (max-width: 820px) {
+  .assignment-card-executive {
+    padding: 14px 16px !important;
+    gap: 12px !important;
+  }
+  .assignment-card-left-col {
+    flex: 1 1 100% !important;
+    min-width: 100% !important;
+  }
+  .assignment-card-right-group {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+}
+
+@container (max-width: 520px) {
+  .assignment-card-right-group {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+  .assignment-card-actions-col {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+  .assignment-action-btn {
+    flex: 1 !important;
+  }
+}
+
+/* ── Responsive Adaptations Fallback ──────────────────────────────────── */
 @media (max-width: 860px) {
   .assignment-card-executive {
-    grid-template-columns: 1fr !important;
     gap: 14px !important;
     padding: 16px !important;
   }
-  .assignment-card-actions-col {
+  .assignment-card-left-col {
+    width: 100% !important;
+  }
+  .assignment-card-right-group {
+    width: 100% !important;
     justify-content: space-between !important;
   }
 }

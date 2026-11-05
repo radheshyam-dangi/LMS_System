@@ -2,11 +2,11 @@ import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TrainerAiAssistantController } from './trainerAiAssistant.controller';
 import { TrainerAiAssistantService } from './trainerAiAssistant.service';
-import { TrainerAiIntentService } from './trainerAiIntent.service';
 import { TrainerLpQaService } from './trainerLpQa.service';
 import { TrainerLpGenerationService } from './trainerLpGeneration.service';
 import { TrainerLpUpgradeService } from './trainerLpUpgrade.service';
 import { TrainerActionService } from './trainerAction.service';
+import { TrainerAgentService } from './trainerAgent.service';
 
 import { TrainerAiConversationEntity } from '../../entities/trainerAiConversation.entity';
 import { TrainerAiMessageEntity } from '../../entities/trainerAiMessage.entity';
@@ -38,12 +38,12 @@ import { McpModule } from '../../../mcp/mcp.module';
   controllers: [TrainerAiAssistantController],
   providers: [
     TrainerAiAssistantService,
-    TrainerAiIntentService,
     TrainerLpQaService,
     TrainerLpGenerationService,
     TrainerLpUpgradeService,
     TrainerActionService,
+    TrainerAgentService,
   ],
-  exports: [TrainerAiAssistantService, TrainerActionService, TrainerLpUpgradeService],
+  exports: [TrainerAiAssistantService, TrainerActionService, TrainerLpUpgradeService, TrainerAgentService],
 })
 export class TrainerAiAssistantModule {}

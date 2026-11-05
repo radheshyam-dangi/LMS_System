@@ -291,11 +291,14 @@ export function AssignmentChatDrawer({
 
     return (
       <div className="chat-body-paragraphs">
-        {cleanBlocks.map((text, idx) => (
-          <p key={idx} className="chat-body-p">
-            {text}
-          </p>
-        ))}
+        {cleanBlocks.map((text, idx) => {
+          const isBullet = text.startsWith('•') || text.startsWith('-');
+          return (
+            <p key={idx} className={`chat-body-p ${isBullet ? 'chat-body-bullet' : ''}`}>
+              {text}
+            </p>
+          );
+        })}
       </div>
     );
   };

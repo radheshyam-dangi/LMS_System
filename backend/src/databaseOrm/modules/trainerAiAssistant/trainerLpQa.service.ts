@@ -32,11 +32,6 @@ export class TrainerLpQaService {
     activePathId?: string | null,
     history: Array<{ role: 'user' | 'assistant'; content: string }> = [],
   ): Promise<LpQaResponse> {
-    // Intercept trainee inquiries directly to the FastMCP Postgres tool
-    if (this.mcpBridgeService.isTraineeInquiry(question)) {
-      const answer = await this.mcpBridgeService.handleTraineeInquiry(question, history);
-      return { answer, count: 0 };
-    }
     const groqKey = process.env.GROQ_API_KEY;
 
     // 1. Fetch all Learning Paths in system with deep relations
@@ -68,6 +63,12 @@ export class TrainerLpQaService {
         count: 0,
       };
     }
+
+    const cleanSnippet = question.trim().replace(/\s+/g, ' ');
+    const preview = cleanSnippet.length > 80 ? cleanSnippet.substring(0, 80) + '...' : cleanSnippet;
+    this.logger.log(
+      `[TrainerLpQaService] Handling curriculum QA inquiry: "${preview}" (accessible paths: ${accessiblePaths.length})`,
+    );
 
     // 2. Determine if the question targets a specific path
     // First, check if the question explicitly mentions any LP title in the catalog

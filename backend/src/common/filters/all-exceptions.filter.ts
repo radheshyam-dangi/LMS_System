@@ -26,6 +26,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = (exceptionResponse as any).message || exceptionResponse;
     } else if (exception instanceof Error) {
       message = exception.message;
+      if ((exception as any).status || (exception as any).statusCode) {
+        status = (exception as any).status || (exception as any).statusCode;
+      }
       this.logger.error(
         `Unhandled Exception: ${exception.message}`,
         exception.stack,

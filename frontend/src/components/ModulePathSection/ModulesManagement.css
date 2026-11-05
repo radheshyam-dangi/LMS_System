@@ -118,46 +118,18 @@
   width: 100% !important;
 }
 
-.assignment-card-grid {
-  display: grid !important;
-  grid-template-columns: minmax(280px, 1.4fr) minmax(200px, 0.9fr) minmax(220px, 1fr) !important;
-  align-items: center !important;
-  gap: 20px !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-}
-
+/* Dynamic layout handled by AssignmentCard.css container queries */
 .assignment-card-due-col {
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center !important;
-  justify-content: flex-start !important;
   min-width: 0 !important;
-  width: 100% !important;
 }
 
 .assignment-card-actions-col {
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center !important;
-  justify-content: flex-end !important;
   gap: 10px !important;
   min-width: 0 !important;
-  width: 100% !important;
-}
-
-@media (max-width: 860px) {
-  .tasks-header-row {
-    display: none !important;
-  }
-  .assignment-card-grid {
-    grid-template-columns: 1fr !important;
-    gap: 12px !important;
-  }
-  .assignment-card-due-col {
-    justify-content: flex-start !important;
-  }
-  .assignment-card-actions-col {
-    justify-content: flex-start !important;
-  }
 }
 
 /* ==========================================

@@ -61,6 +61,7 @@ export class TrainerLpUpgradeService {
     const lp = await this.lpRepo.findOne({
       where: { id: lpId },
       relations: [
+        'createdBy',
         'modules',
         'modules.lessons',
         'modules.lessons.resources',
@@ -74,6 +75,12 @@ export class TrainerLpUpgradeService {
     if (!lp) {
       throw new NotFoundException(`Learning Path with ID "${lpId}" was not found.`);
     }
+
+    const cleanSnippet = instruction.trim().replace(/\s+/g, ' ');
+    const preview = cleanSnippet.length > 80 ? cleanSnippet.substring(0, 80) + '...' : cleanSnippet;
+    this.logger.log(
+      `[TrainerLpUpgradeService] Upgrading LP "${lp.title}" (${lp.id}) with instruction: "${preview}"...`,
+    );
 
     // 2. Perform web search if instruction asks for new videos or documentation
     let searchContext = '';
@@ -174,9 +181,9 @@ export class TrainerLpUpgradeService {
       const targetModNum = inModMatch ? parseInt(inModMatch[1], 10) : null;
       const candidateModulesForLesson = targetModNum !== null
         ? existingTree.modules.filter((m, idx) => {
-            const titleLower = (m.title || '').toLowerCase();
-            return titleLower.includes(`module ${targetModNum}`) || idx + 1 === targetModNum;
-          })
+          const titleLower = (m.title || '').toLowerCase();
+          return titleLower.includes(`module ${targetModNum}`) || idx + 1 === targetModNum;
+        })
         : existingTree.modules;
 
       if (isLessonDeletion) {
@@ -611,6 +618,10 @@ SCHEMA REQUIRED:
     const moduleCount = formattedPayload.modules.length;
     const lessonCount = formattedPayload.modules.reduce((sum: number, m: any) => sum + (m.lessons?.length || 0), 0);
     const assignmentCount = formattedPayload.modules.reduce((sum: number, m: any) => sum + (m.assignments?.length || 0), 0);
+
+    this.logger.log(
+      `[TrainerLpUpgradeService] Upgrade complete for "${savedLp.title}" (${savedLp.id}) -> ${moduleCount} modules, ${lessonCount} lessons, ${assignmentCount} assignments. Summary: ${upgradeSummary}`,
+    );
 
     return {
       learningPath: savedLp,
